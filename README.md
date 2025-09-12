@@ -20,7 +20,7 @@
 ![PyPI - Wheel](https://img.shields.io/pypi/wheel/tunnel-manager)
 ![PyPI - Implementation](https://img.shields.io/pypi/implementation/tunnel-manager)
 
-*Version: 0.0.2*
+*Version: 0.0.3*
 
 This project provides a Python-based `Tunnel` class for secure SSH connections and file transfers,
 integrated with a FastMCP server (`tunnel_mcp.py`) to expose these capabilities as tools for AI-driven workflows.
