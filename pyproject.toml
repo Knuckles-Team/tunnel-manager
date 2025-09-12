@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=80.9.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tunnel-manager"
+version = "0.0.2"
+description = "Create SSH Tunnels to your remote hosts and host as an MCP Server for Agentic AI!"
+readme = "README.md"
+authors = [{ name = "Audel Rouhi", email = "knucklessg1@gmail.com" }]
+license = { text = "MIT" }
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "License :: Public Domain",
+    "Environment :: Console",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "fastmcp>=2.11.3",
+    "paramiko>=4.0.0",
+]
+
+[project.scripts]
+tunnel-manager-mcp = "tunnel_manager.tunnel_manager_mcp:tunnel_manager_mcp"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools]
+include-package-data = true
+package-data = { "tunnel_manager" = ["tunnel_manager"] }
