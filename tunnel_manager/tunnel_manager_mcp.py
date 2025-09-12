@@ -269,7 +269,7 @@ async def download_file(
             tunnel.close()
 
 
-def tunnel_mcp():
+def tunnel_manager_mcp():
     parser = argparse.ArgumentParser(
         description="Tunnel MCP Server for remote SSH and file operations",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -313,4 +313,4 @@ def tunnel_mcp():
 
 
 if __name__ == "__main__":
-    tunnel_mcp()
+    tunnel_manager_mcp()
