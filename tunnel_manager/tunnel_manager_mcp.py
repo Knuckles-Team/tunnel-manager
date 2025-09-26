@@ -277,19 +277,22 @@ def tunnel_manager_mcp():
     parser.add_argument(
         "-t",
         "--transport",
-        choices=["stdio", "http"],
         default="stdio",
-        help="Transport method for the MCP server (stdio or http).",
+        choices=["stdio", "http", "sse"],
+        help="Transport method: 'stdio', 'http', or 'sse' [legacy] (default: stdio)",
     )
     parser.add_argument(
-        "--host", default="0.0.0.0", help="Host address for HTTP transport."
+        "-s",
+        "--host",
+        default="0.0.0.0",
+        help="Host address for HTTP transport (default: 0.0.0.0)",
     )
     parser.add_argument(
         "-p",
         "--port",
         type=int,
         default=8000,
-        help="Port for HTTP transport (0-65535).",
+        help="Port number for HTTP transport (default: 8000)",
     )
 
     args = parser.parse_args()
@@ -298,16 +301,14 @@ def tunnel_manager_mcp():
         print(f"Error: Port {args.port} is out of valid range (0-65535).")
         sys.exit(1)
 
-    logger = logging.getLogger("TunnelServer")
     if args.transport == "stdio":
-        logger.info("Starting MCP server with stdio transport")
         mcp.run(transport="stdio")
     elif args.transport == "http":
-        logger.info(
-            f"Starting MCP server with HTTP transport on {args.host}:{args.port}"
-        )
         mcp.run(transport="http", host=args.host, port=args.port)
+    elif args.transport == "sse":
+        mcp.run(transport="sse", host=args.host, port=args.port)
     else:
+        logger = logging.getLogger("TunnelServer")
         logger.error("Transport not supported")
         sys.exit(1)
 
