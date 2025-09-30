@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tunnel-manager"
-version = "0.0.4"
+version = "0.0.5"
 description = "Create SSH Tunnels to your remote hosts and host as an MCP Server for Agentic AI!"
 readme = "README.md"
 authors = [{ name = "Audel Rouhi", email = "knucklessg1@gmail.com" }]
