@@ -20,7 +20,7 @@
 ![PyPI - Wheel](https://img.shields.io/pypi/wheel/tunnel-manager)
 ![PyPI - Implementation](https://img.shields.io/pypi/implementation/tunnel-manager)
 
-*Version: 1.0.0*
+*Version: 1.0.1*
 
 This project provides a Python-based `Tunnel` class for secure SSH connections and file transfers, integrated with a FastMCP server (`tunnel_manager_mcp.py`) to expose these capabilities as tools for AI-driven workflows. The implementation supports both standard SSH (e.g., for local networks) and Teleport's secure access platform, leveraging the `paramiko` library for SSH operations.
 
@@ -115,7 +115,7 @@ all:
     r510:
       ansible_host: 192.168.1.10
       ansible_user: admin
-      ansible_ssh_pass: mypassword
+      ansible_ssh_private_key_file: "~/.ssh/id_ed25519"
     r710:
       ansible_host: 192.168.1.11
       ansible_user: admin
@@ -123,13 +123,13 @@ all:
     gr1080:
       ansible_host: 192.168.1.14
       ansible_user: admin
-      ansible_ssh_pass: mypassword
+      ansible_ssh_private_key_file: "~/.ssh/id_rsa"
 homelab:
   hosts:
     r510:
       ansible_host: 192.168.1.10
       ansible_user: admin
-      ansible_ssh_pass: mypassword
+      ansible_ssh_private_key_file: "~/.ssh/id_ed25519"
     r710:
       ansible_host: 192.168.1.11
       ansible_user: admin
@@ -137,13 +137,13 @@ homelab:
     gr1080:
       ansible_host: 192.168.1.14
       ansible_user: admin
-      ansible_ssh_pass: mypassword
+      ansible_ssh_private_key_file: "~/.ssh/id_rsa"
 poweredge:
   hosts:
     r510:
       ansible_host: 192.168.1.10
       ansible_user: admin
-      ansible_ssh_pass: mypassword
+      ansible_ssh_private_key_file: "~/.ssh/id_ed25519"
     r710:
       ansible_host: 192.168.1.11
       ansible_user: admin
@@ -319,12 +319,16 @@ Configure `mcp.json`
       "env": {
         "TUNNEL_REMOTE_HOST": "user@192.168.1.12", // Optional
         "TUNNEL_USERNAME": "admin",                // Optional
-        "TUNNEL_PASSWORD": "",                    // Optional
-        "TUNNEL_REMOTE_PORT": "22",               // Optional
-        "TUNNEL_IDENTITY_FILE": "",               // Optional
-        "TUNNEL_CERTIFICATE": "",                 // Optional
-        "TUNNEL_PROXY_COMMAND": "",               // Optional
-        "TUNNEL_LOG_FILE": "~/tunnel_log.txt"     // Optional
+        "TUNNEL_PASSWORD": "",                     // Optional
+        "TUNNEL_REMOTE_PORT": "22",                // Optional
+        "TUNNEL_IDENTITY_FILE": "",                // Optional
+        "TUNNEL_INVENTORY": "~/inventory.yaml",    // Optional
+        "TUNNEL_INVENTORY_GROUP": "all",           // Optional
+        "TUNNEL_PARALLEL": "true",                 // Optional
+        "TUNNEL_CERTIFICATE": "",                  // Optional
+        "TUNNEL_PROXY_COMMAND": "",                // Optional
+        "TUNNEL_LOG_FILE": "~/tunnel_log.txt",     // Optional
+        "TUNNEL_MAX_THREADS": "6"                  // Optional
       },
       "timeout": 200000
     }
