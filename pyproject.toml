@@ -23,6 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
+tunnel-manager = "tunnel_manager.tunnel_manager:tunnel_manager"
 tunnel-manager-mcp = "tunnel_manager.tunnel_manager_mcp:tunnel_manager_mcp"
 
 [tool.setuptools.packages.find]

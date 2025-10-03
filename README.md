@@ -120,14 +120,6 @@ all:
       ansible_host: 192.168.1.11
       ansible_user: admin
       ansible_ssh_pass: mypassword
-    rw710:
-      ansible_host: 192.168.1.12
-      ansible_user: admin
-      ansible_ssh_pass: mypassword
-    r820:
-      ansible_host: 192.168.1.13
-      ansible_user: admin
-      ansible_ssh_pass: mypassword
     gr1080:
       ansible_host: 192.168.1.14
       ansible_user: admin
@@ -140,14 +132,6 @@ homelab:
       ansible_ssh_pass: mypassword
     r710:
       ansible_host: 192.168.1.11
-      ansible_user: admin
-      ansible_ssh_pass: mypassword
-    rw710:
-      ansible_host: 192.168.1.12
-      ansible_user: admin
-      ansible_ssh_pass: mypassword
-    r820:
-      ansible_host: 192.168.1.13
       ansible_user: admin
       ansible_ssh_pass: mypassword
     gr1080:
@@ -164,14 +148,6 @@ poweredge:
       ansible_host: 192.168.1.11
       ansible_user: admin
       ansible_ssh_pass: mypassword
-    rw710:
-      ansible_host: 192.168.1.12
-      ansible_user: admin
-      ansible_ssh_pass: mypassword
-    r820:
-      ansible_host: 192.168.1.13
-      ansible_user: admin
-      ansible_ssh_pass: mypassword
 ```
 
 Replace IPs, usernames, and passwords with your actual values.
@@ -182,90 +158,90 @@ Replace IPs, usernames, and passwords with your actual values.
 Set up passwordless SSH for hosts in the inventory, distributing a shared key.
 - **Target `all` group (sequential)**:
   ```bash
-  python tunnel_manager.py setup-all inventory.yml --shared-key-path ~/.ssh/id_shared --log-file setup.log
+  tunnel-manager setup-all --inventory inventory.yml --shared-key-path ~/.ssh/id_shared --log-file setup.log
   ```
 - **Target `homelab` group (parallel, 3 threads)**:
   ```bash
-  python tunnel_manager.py setup-all inventory.yml --shared-key-path ~/.ssh/id_shared --group homelab --parallel --max-threads 3 --log-file setup_homelab.log
+  tunnel-manager setup-all --inventory inventory.yml --shared-key-path ~/.ssh/id_shared --group homelab --parallel --max-threads 3 --log-file setup_homelab.log
   ```
 - **Target `poweredge` group (sequential)**:
   ```bash
-  python tunnel_manager.py setup-all inventory.yml --shared-key-path ~/.ssh/id_shared --group poweredge --log-file setup_poweredge.log
+  tunnel-manager setup-all --inventory inventory.yml --shared-key-path ~/.ssh/id_shared --group poweredge --log-file setup_poweredge.log
   ```
 
 #### 2. Run a Command
 Execute a shell command on all hosts in the specified group.
 - **Run `uptime` on `all` group (sequential)**:
   ```bash
-  python tunnel_manager.py run-command inventory.yml "uptime" --log-file uptime.log
+  tunnel-manager run-command --inventory inventory.yml --remote-command "uptime" --log-file uptime.log
   ```
 - **Run `df -h` on `homelab` group (parallel, 5 threads)**:
   ```bash
-  python tunnel_manager.py run-command inventory.yml "df -h" --group homelab --parallel --max-threads 5 --log-file df_homelab.log
+  tunnel-manager run-command --inventory inventory.yml --remote-command "df -h" --group homelab --parallel --max-threads 5 --log-file df_homelab.log
   ```
 - **Run `whoami` on `poweredge` group (sequential)**:
   ```bash
-  python tunnel_manager.py run-command inventory.yml "whoami" --group poweredge --log-file whoami_poweredge.log
+  tunnel-manager run-command --inventory inventory.yml --remote-command "whoami" --group poweredge --log-file whoami_poweredge.log
   ```
 
 #### 3. Copy SSH Config
 Copy a local SSH config file to the remote hosts’ `~/.ssh/config`.
 - **Copy to `all` group (sequential)**:
   ```bash
-  python tunnel_manager.py copy-config inventory.yml ~/.ssh/config --log-file copy_config.log
+  tunnel-manager copy-config --inventory inventory.yml --local-config-path ~/.ssh/config --log-file copy_config.log
   ```
 - **Copy to `homelab` group (parallel, 4 threads)**:
   ```bash
-  python tunnel_manager.py copy-config inventory.yml ~/.ssh/config --group homelab --parallel --max-threads 4 --log-file copy_homelab.log
+  tunnel-manager copy-config --inventory inventory.yml --local-config-path ~/.ssh/config --group homelab --parallel --max-threads 4 --log-file copy_homelab.log
   ```
 - **Copy to `poweredge` group with custom remote path**:
   ```bash
-  python tunnel_manager.py copy-config inventory.yml ~/.ssh/config --remote-config-path ~/.ssh/custom_config --group poweredge --log-file copy_poweredge.log
+  tunnel-manager copy-config --inventory inventory.yml --local-config-path ~/.ssh/config --remote-config-path ~/.ssh/custom_config --group poweredge --log-file copy_poweredge.log
   ```
 
 #### 4. Rotate SSH Keys
 Rotate SSH keys for hosts, generating new keys with a prefix.
 - **Rotate keys for `all` group (sequential)**:
   ```bash
-  python tunnel_manager.py rotate-key inventory.yml --key-prefix ~/.ssh/id_ --log-file rotate.log
+  tunnel-manager rotate-key --inventory inventory.yml --key-prefix ~/.ssh/id_ --log-file rotate.log
   ```
 - **Rotate keys for `homelab` group (parallel, 3 threads)**:
   ```bash
-  python tunnel_manager.py rotate-key inventory.yml --key-prefix ~/.ssh/id_ --group homelab --parallel --max-threads 3 --log-file rotate_homelab.log
+  tunnel-manager rotate-key --inventory inventory.yml --key-prefix ~/.ssh/id_ --group homelab --parallel --max-threads 3 --log-file rotate_homelab.log
   ```
 - **Rotate keys for `poweredge` group (sequential)**:
   ```bash
-  python tunnel_manager.py rotate-key inventory.yml --key-prefix ~/.ssh/id_ --group poweredge --log-file rotate_poweredge.log
+  tunnel-manager rotate-key --inventory inventory.yml --key-prefix ~/.ssh/id_ --group poweredge --log-file rotate_poweredge.log
   ```
 
 #### 5. Upload a File
 Upload a local file to all hosts in the specified group.
 - **Upload to `all` group (sequential)**:
   ```bash
-  python tunnel_manager.py send-file inventory.yml ./myfile.txt /home/user/myfile.txt --log-file upload.log
+  tunnel-manager send-file --inventory inventory.yml --local-path ./myfile.txt --remote-path /home/user/myfile.txt --log-file upload.log
   ```
 - **Upload to `homelab` group (parallel, 3 threads)**:
   ```bash
-  python tunnel_manager.py send-file inventory.yml ./myfile.txt /home/user/myfile.txt --group homelab --parallel --max-threads 3 --log-file upload_homelab.log
+  tunnel-manager send-file --inventory inventory.yml --local-path ./myfile.txt --remote-path /home/user/myfile.txt --group homelab --parallel --max-threads 3 --log-file upload_homelab.log
   ```
 - **Upload to `poweredge` group (sequential)**:
   ```bash
-  python tunnel_manager.py send-file inventory.yml ./myfile.txt /home/user/myfile.txt --group poweredge --log-file upload_poweredge.log
+  tunnel-manager send-file --inventory inventory.yml --local-path ./myfile.txt --remote-path /home/user/myfile.txt --group poweredge --log-file upload_poweredge.log
   ```
 
 #### 6. Download a File
 Download a file from all hosts in the specified group, saving to host-specific subdirectories (e.g., `downloads/R510/myfile.txt`).
 - **Download from `all` group (sequential)**:
   ```bash
-  python tunnel_manager.py receive-file inventory.yml /home/user/myfile.txt ./downloads --log-file download.log
+  tunnel-manager receive-file --inventory inventory.yml --remote-path /home/user/myfile.txt --local-path-prefix ./downloads --log-file download.log
   ```
 - **Download from `homelab` group (parallel, 3 threads)**:
   ```bash
-  python tunnel_manager.py receive-file inventory.yml /home/user/myfile.txt ./downloads --group homelab --parallel --max-threads 3 --log-file download_homelab.log
+  tunnel-manager receive-file --inventory inventory.yml --remote-path /home/user/myfile.txt --local-path-prefix ./downloads --group homelab --parallel --max-threads 3 --log-file download_homelab.log
   ```
 - **Download from `poweredge` group (sequential)**:
   ```bash
-  python tunnel_manager.py receive-file inventory.yml /home/user/myfile.txt ./downloads --group poweredge --log-file download_poweredge.log
+  tunnel-manager receive-file --inventory inventory.yml --remote-path /home/user/myfile.txt --local-path-prefix ./downloads --group poweredge --log-file download_poweredge.log
   ```
 
 ### CLI Command Table
@@ -274,26 +250,33 @@ Download a file from all hosts in the specified group, saving to host-specific s
 | -h         | --help               | Show usage for the script                                | No       | None          |
 |            | --log-file           | Log to specified file (default: console output)           | No       | Console       |
 |            | setup-all            | Setup passwordless SSH for all hosts in inventory         | Yes*     | None          |
+|            | --inventory          | YAML inventory path                                      | Yes      | None          |
 |            | --shared-key-path    | Path to shared private key                               | No       | ~/.ssh/id_shared |
 |            | --group              | Inventory group to target                                 | No       | all           |
 |            | --parallel           | Run operation in parallel                                | No       | False         |
 |            | --max-threads        | Max threads for parallel execution                       | No       | 5             |
 |            | run-command          | Run a shell command on all hosts in inventory            | Yes*     | None          |
+|            | --remote-command     | Shell command to run                                     | Yes      | None          |
 |            | copy-config          | Copy SSH config to all hosts in inventory                | Yes*     | None          |
+|            | --local-config-path  | Local SSH config path                                    | Yes      | None          |
 |            | --remote-config-path | Remote path for SSH config                               | No       | ~/.ssh/config |
 |            | rotate-key           | Rotate SSH keys for all hosts in inventory               | Yes*     | None          |
 |            | --key-prefix         | Prefix for new key paths (appends hostname)              | No       | ~/.ssh/id_    |
 |            | send-file            | Upload a file to all hosts in inventory                  | Yes*     | None          |
+|            | --local-path         | Local file path to upload                                | Yes      | None          |
+|            | --remote-path        | Remote destination path                                  | Yes      | None          |
 |            | receive-file         | Download a file from all hosts in inventory              | Yes*     | None          |
+|            | --remote-path        | Remote file path to download                             | Yes      | None          |
+|            | --local-path-prefix  | Local directory path prefix to save files                | Yes      | None          |
 
 ### Notes
-One of the commands (`setup-all`, `run-command`, `copy-config`, `rotate-key`, `send-file`, `receive-file`) must be specified as the first argument to `tunnel_manager.py`. Each command has required positional arguments:
-- `setup-all`: Requires `inventory_path`.
-- `run-command`: Requires `inventory_path` and `command`.
-- `copy-config`: Requires `inventory_path` and `local_config_path`.
-- `rotate-key`: Requires `inventory_path`.
-- `send-file`: Requires `inventory_path`, `local_path`, and `remote_path`.
-- `receive-file`: Requires `inventory_path`, `remote_path`, and `local_path_prefix`.
+One of the commands (`setup-all`, `run-command`, `copy-config`, `rotate-key`, `send-file`, `receive-file`) must be specified as the first argument to `tunnel_manager.py`. Each command has required arguments that must be specified with flags:
+- `setup-all`: Requires `--inventory`.
+- `run-command`: Requires `--inventory` and `--remote-command`.
+- `copy-config`: Requires `--inventory` and `--local-config-path`.
+- `rotate-key`: Requires `--inventory`.
+- `send-file`: Requires `--inventory`, `--local-path`, and `--remote-path`.
+- `receive-file`: Requires `--inventory`, `--remote-path`, and `--local-path-prefix`.
 
 ### Additional Notes
 - Ensure `ansible_host` values in `inventory.yml` are resolvable IPs or hostnames.
