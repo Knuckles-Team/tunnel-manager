@@ -39,26 +39,38 @@ def to_boolean(string: Union[str, bool] = None) -> bool:
         raise ValueError(f"Cannot convert '{string}' to boolean")
 
 
+def to_integer(string: Union[str, int] = None) -> int:
+    if isinstance(string, int):
+        return string
+    if not string:
+        return 0
+    try:
+        return int(string.strip())
+    except ValueError:
+        raise ValueError(f"Cannot convert '{string}' to integer")
+
+
 class ResponseBuilder:
     @staticmethod
     def build(
         status: int,
         msg: str,
         details: Dict,
-        err: str = "",
+        error: str = "",
+        stdout: str = "",  # Add this
         files: List = None,
-        locs: List = None,
+        locations: List = None,
         errors: List = None,
     ) -> Dict:
         return {
             "status_code": status,
             "message": msg,
-            "stdout": "",
-            "stderr": err,
+            "stdout": stdout,  # Use the parameter
+            "stderr": error,
             "files_copied": files or [],
-            "locations_copied_to": locs or [],
+            "locations_copied_to": locations or [],
             "details": details,
-            "errors": errors or ([err] if err else []),
+            "errors": errors or ([error] if error else []),
         }
 
 
@@ -80,10 +92,10 @@ def setup_logging(log_file: Optional[str], logger: logging.Logger) -> Dict:
 
 
 def load_inventory(
-    inventory_path: str, group: str, logger: logging.Logger
+    inventory: str, group: str, logger: logging.Logger
 ) -> tuple[List[Dict], Dict]:
     try:
-        with open(inventory_path, "r") as f:
+        with open(inventory, "r") as f:
             inv = yaml.safe_load(f)
         hosts = []
         if group in inv and isinstance(inv[group], dict) and "hosts" in inv[group]:
@@ -102,14 +114,14 @@ def load_inventory(
             return [], ResponseBuilder.build(
                 400,
                 f"Group '{group}' invalid",
-                {"inventory_path": inventory_path, "group": group},
+                {"inventory": inventory, "group": group},
                 errors=[f"Group '{group}' invalid"],
             )
         if not hosts:
             return [], ResponseBuilder.build(
                 400,
                 f"No hosts in group '{group}'",
-                {"inventory_path": inventory_path, "group": group},
+                {"inventory": inventory, "group": group},
                 errors=[f"No hosts in group '{group}'"],
             )
         return hosts, {}
@@ -118,21 +130,21 @@ def load_inventory(
         return [], ResponseBuilder.build(
             500,
             f"Load inv fail: {e}",
-            {"inventory_path": inventory_path, "group": group},
+            {"inventory": inventory, "group": group},
             str(e),
         )
 
 
 @mcp.tool(
     annotations={
-        "title": "Run Remote Command",
+        "title": "Run Command on Remote Host",
         "readOnlyHint": True,
         "destructiveHint": True,
         "idempotentHint": False,
     },
     tags={"remote_access"},
 )
-async def run_remote_command(
+async def run_command_on_remote_host(
     host: str = Field(
         description="Remote host.", default=os.environ.get("TUNNEL_REMOTE_HOST", None)
     ),
@@ -143,7 +155,8 @@ async def run_remote_command(
         description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
     ),
     port: int = Field(
-        description="Port.", default=int(os.environ.get("TUNNEL_REMOTE_PORT", 22))
+        description="Port.",
+        default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
     ),
     cmd: str = Field(description="Shell command.", default=None),
     id_file: Optional[str] = Field(
@@ -168,8 +181,8 @@ async def run_remote_command(
 ) -> Dict:
     """Run shell command on remote host. Expected return object type: dict"""
     logger = logging.getLogger("TunnelServer")
-    if err := setup_logging(log, logger):
-        return err
+    if error := setup_logging(log, logger):
+        return error
     logger.debug(f"Run cmd: host={host}, cmd={cmd}")
     if not host or not cmd:
         logger.error("Need host, cmd")
@@ -191,18 +204,19 @@ async def run_remote_command(
             await ctx.report_progress(progress=0, total=100)
             logger.debug("Progress: 0/100")
         t.connect()
-        out, err = t.run_command(cmd)
+        out, error = t.run_command(cmd)
         if ctx:
             await ctx.report_progress(progress=100, total=100)
             logger.debug("Progress: 100/100")
-        logger.debug(f"Cmd out: {out}, err: {err}")
+        logger.debug(f"Cmd out: {out}, error: {error}")
         return ResponseBuilder.build(
             200,
             f"Cmd '{cmd}' done on {host}",
             {"host": host, "cmd": cmd},
-            err,
-            [],
-            [],
+            error,
+            stdout=out,
+            files=[],
+            locations=[],
             errors=[],
         )
     except Exception as e:
@@ -217,14 +231,14 @@ async def run_remote_command(
 
 @mcp.tool(
     annotations={
-        "title": "Upload File",
+        "title": "Send File from Remote Host",
         "readOnlyHint": False,
         "destructiveHint": True,
         "idempotentHint": False,
     },
     tags={"remote_access"},
 )
-async def upload_file(
+async def send_file_to_remote_host(
     host: str = Field(
         description="Remote host.", default=os.environ.get("TUNNEL_REMOTE_HOST", None)
     ),
@@ -235,7 +249,8 @@ async def upload_file(
         description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
     ),
     port: int = Field(
-        description="Port.", default=int(os.environ.get("TUNNEL_REMOTE_PORT", 22))
+        description="Port.",
+        default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
     ),
     lpath: str = Field(description="Local file path.", default=None),
     rpath: str = Field(description="Remote path.", default=None),
@@ -261,8 +276,15 @@ async def upload_file(
 ) -> Dict:
     """Upload file to remote host. Expected return object type: dict"""
     logger = logging.getLogger("TunnelServer")
-    if err := setup_logging(log, logger):
-        return err
+    logger.debug(f"Upload: host={host}, local={lpath}, remote={rpath}")
+    lpath = os.path.abspath(os.path.expanduser(lpath))  # Normalize to absolute
+    rpath = os.path.expanduser(rpath)  # Handle ~ on remote
+    logger.debug(
+        f"Normalized: lpath={lpath} (exists={os.path.exists(lpath)}, isfile={os.path.isfile(lpath)}), rpath={rpath}, CWD={os.getcwd()}"
+    )
+
+    if error := setup_logging(log, logger):
+        return error
     logger.debug(f"Upload: host={host}, local={lpath}, remote={rpath}")
     if not host or not lpath or not rpath:
         logger.error("Need host, lpath, rpath")
@@ -272,14 +294,17 @@ async def upload_file(
             {"host": host, "lpath": lpath, "rpath": rpath},
             errors=["Need host, lpath, rpath"],
         )
-    if not os.path.exists(lpath):
-        logger.error(f"No file: {lpath}")
+    if not os.path.exists(lpath) or not os.path.isfile(lpath):
+        logger.error(
+            f"Invalid file: {lpath} (exists={os.path.exists(lpath)}, isfile={os.path.isfile(lpath)})"
+        )
         return ResponseBuilder.build(
             400,
-            f"No file: {lpath}",
+            f"Invalid file: {lpath}",
             {"host": host, "lpath": lpath, "rpath": rpath},
-            errors=[f"No file: {lpath}"],
+            errors=[f"Invalid file: {lpath}"],
         )
+    lpath = os.path.abspath(os.path.expanduser(lpath))
     try:
         t = Tunnel(
             remote_host=host,
@@ -305,9 +330,6 @@ async def upload_file(
                 asyncio.ensure_future(ctx.report_progress(progress=transf, total=total))
 
         sftp.put(lpath, rpath, callback=progress_callback)
-        if ctx:
-            await ctx.report_progress(progress=100, total=100)
-            logger.debug("Progress: 100/100")
         sftp.close()
         logger.debug(f"Uploaded: {lpath} -> {rpath}")
         return ResponseBuilder.build(
@@ -315,16 +337,17 @@ async def upload_file(
             f"Uploaded to {rpath}",
             {"host": host, "lpath": lpath, "rpath": rpath},
             files=[lpath],
-            locs=[rpath],
+            locations=[rpath],
             errors=[],
         )
     except Exception as e:
-        logger.error(f"Upload fail: {e}")
+        logger.error(f"Unexpected error during file transfer: {str(e)}")
         return ResponseBuilder.build(
             500,
-            f"Upload fail: {e}",
+            f"Upload fail: {str(e)}",
             {"host": host, "lpath": lpath, "rpath": rpath},
             str(e),
+            errors=[f"Unexpected error: {str(e)}"],
         )
     finally:
         if "t" in locals():
@@ -333,14 +356,14 @@ async def upload_file(
 
 @mcp.tool(
     annotations={
-        "title": "Download File",
+        "title": "Receive File from Remote Host",
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
     },
     tags={"remote_access"},
 )
-async def download_file(
+async def receive_file_from_remote_host(
     host: str = Field(
         description="Remote host.", default=os.environ.get("TUNNEL_REMOTE_HOST", None)
     ),
@@ -351,10 +374,11 @@ async def download_file(
         description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
     ),
     port: int = Field(
-        description="Port.", default=int(os.environ.get("TUNNEL_REMOTE_PORT", 22))
+        description="Port.",
+        default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
     ),
     rpath: str = Field(description="Remote file path.", default=None),
-    lpath: str = Field(description="Local path.", default=None),
+    lpath: str = Field(description="Local file path.", default=None),
     id_file: Optional[str] = Field(
         description="Private key path.",
         default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
@@ -377,8 +401,9 @@ async def download_file(
 ) -> Dict:
     """Download file from remote host. Expected return object type: dict"""
     logger = logging.getLogger("TunnelServer")
-    if err := setup_logging(log, logger):
-        return err
+    lpath = os.path.abspath(os.path.expanduser(lpath))
+    if error := setup_logging(log, logger):
+        return error
     logger.debug(f"Download: host={host}, remote={rpath}, local={lpath}")
     if not host or not rpath or not lpath:
         logger.error("Need host, rpath, lpath")
@@ -424,7 +449,7 @@ async def download_file(
             f"Downloaded to {lpath}",
             {"host": host, "rpath": rpath, "lpath": lpath},
             files=[rpath],
-            locs=[lpath],
+            locations=[lpath],
             errors=[],
         )
     except Exception as e:
@@ -460,7 +485,8 @@ async def check_ssh_server(
         description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
     ),
     port: int = Field(
-        description="Port.", default=int(os.environ.get("TUNNEL_REMOTE_PORT", 22))
+        description="Port.",
+        default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
     ),
     id_file: Optional[str] = Field(
         description="Private key path.",
@@ -484,8 +510,8 @@ async def check_ssh_server(
 ) -> Dict:
     """Check SSH server status. Expected return object type: dict"""
     logger = logging.getLogger("TunnelServer")
-    if err := setup_logging(log, logger):
-        return err
+    if error := setup_logging(log, logger):
+        return error
     logger.debug(f"Check SSH: host={host}")
     if not host:
         logger.error("Need host")
@@ -516,7 +542,7 @@ async def check_ssh_server(
             f"SSH check: {msg}",
             {"host": host, "success": success},
             files=[],
-            locs=[],
+            locations=[],
             errors=[] if success else [msg],
         )
     except Exception as e:
@@ -548,7 +574,8 @@ async def test_key_auth(
         default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
     ),
     port: int = Field(
-        description="Port.", default=int(os.environ.get("TUNNEL_REMOTE_PORT", 22))
+        description="Port.",
+        default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
     ),
     cfg: str = Field(
         description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
@@ -560,8 +587,8 @@ async def test_key_auth(
 ) -> Dict:
     """Test key-based auth. Expected return object type: dict"""
     logger = logging.getLogger("TunnelServer")
-    if err := setup_logging(log, logger):
-        return err
+    if error := setup_logging(log, logger):
+        return error
     logger.debug(f"Test key: host={host}, key={key}")
     if not host or not key:
         logger.error("Need host, key")
@@ -583,7 +610,7 @@ async def test_key_auth(
             f"Key test: {msg}",
             {"host": host, "key": key, "success": success},
             files=[],
-            locs=[],
+            locations=[],
             errors=[] if success else [msg],
         )
     except Exception as e:
@@ -613,10 +640,14 @@ async def setup_passwordless_ssh(
         description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
     ),
     port: int = Field(
-        description="Port.", default=int(os.environ.get("TUNNEL_REMOTE_PORT", 22))
+        description="Port.",
+        default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
     ),
     key: str = Field(
         description="Private key path.", default=os.path.expanduser("~/.ssh/id_rsa")
+    ),
+    key_type: str = Field(
+        description="Key type to generate (rsa or ed25519).", default="ed25519"
     ),
     cfg: str = Field(
         description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
@@ -628,16 +659,24 @@ async def setup_passwordless_ssh(
 ) -> Dict:
     """Setup passwordless SSH. Expected return object type: dict"""
     logger = logging.getLogger("TunnelServer")
-    if err := setup_logging(log, logger):
-        return err
-    logger.debug(f"Setup SSH: host={host}, key={key}")
+    if error := setup_logging(log, logger):
+        return error
+    logger.debug(f"Setup SSH: host={host}, key={key}, key_type={key_type}")
     if not host or not password:
         logger.error("Need host, password")
         return ResponseBuilder.build(
             400,
             "Need host, password",
-            {"host": host, "key": key},
+            {"host": host, "key": key, "key_type": key_type},
             errors=["Need host, password"],
+        )
+    if key_type not in ["rsa", "ed25519"]:
+        logger.error(f"Invalid key_type: {key_type}")
+        return ResponseBuilder.build(
+            400,
+            f"Invalid key_type: {key_type}",
+            {"host": host, "key": key, "key_type": key_type},
+            errors=["key_type must be 'rsa' or 'ed25519'"],
         )
     try:
         t = Tunnel(
@@ -653,9 +692,12 @@ async def setup_passwordless_ssh(
         key = os.path.expanduser(key)
         pub_key = key + ".pub"
         if not os.path.exists(pub_key):
-            os.system(f"ssh-keygen -t rsa -b 4096 -f {key} -N ''")
-            logger.info(f"Gen key: {key}, {pub_key}")
-        t.setup_passwordless_ssh(key)
+            if key_type == "rsa":
+                os.system(f"ssh-keygen -t rsa -b 4096 -f {key} -N ''")
+            else:  # ed25519
+                os.system(f"ssh-keygen -t ed25519 -f {key} -N ''")
+            logger.info(f"Generated {key_type} key: {key}, {pub_key}")
+        t.setup_passwordless_ssh(local_key_path=key, key_type=key_type)
         if ctx:
             await ctx.report_progress(progress=100, total=100)
             logger.debug("Progress: 100/100")
@@ -663,15 +705,18 @@ async def setup_passwordless_ssh(
         return ResponseBuilder.build(
             200,
             f"SSH setup for {user}@{host}",
-            {"host": host, "key": key, "user": user},
+            {"host": host, "key": key, "user": user, "key_type": key_type},
             files=[pub_key],
-            locs=[f"~/.ssh/authorized_keys on {host}"],
+            locations=[f"~/.ssh/authorized_keys on {host}"],
             errors=[],
         )
     except Exception as e:
         logger.error(f"SSH setup fail: {e}")
         return ResponseBuilder.build(
-            500, f"SSH setup fail: {e}", {"host": host, "key": key}, str(e)
+            500,
+            f"SSH setup fail: {e}",
+            {"host": host, "key": key, "key_type": key_type},
+            str(e),
         )
     finally:
         if "t" in locals():
@@ -698,7 +743,8 @@ async def copy_ssh_config(
         description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
     ),
     port: int = Field(
-        description="Port.", default=int(os.environ.get("TUNNEL_REMOTE_PORT", 22))
+        description="Port.",
+        default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
     ),
     lcfg: str = Field(description="Local SSH config.", default=None),
     rcfg: str = Field(
@@ -726,8 +772,8 @@ async def copy_ssh_config(
 ) -> Dict:
     """Copy SSH config to remote host. Expected return object type: dict"""
     logger = logging.getLogger("TunnelServer")
-    if err := setup_logging(log, logger):
-        return err
+    if error := setup_logging(log, logger):
+        return error
     logger.debug(f"Copy cfg: host={host}, local={lcfg}, remote={rcfg}")
     if not host or not lcfg:
         logger.error("Need host, lcfg")
@@ -761,7 +807,7 @@ async def copy_ssh_config(
             f"Copied cfg to {rcfg} on {host}",
             {"host": host, "lcfg": lcfg, "rcfg": rcfg},
             files=[lcfg],
-            locs=[rcfg],
+            locations=[rcfg],
             errors=[],
         )
     except Exception as e:
@@ -797,9 +843,13 @@ async def rotate_ssh_key(
         description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
     ),
     port: int = Field(
-        description="Port.", default=int(os.environ.get("TUNNEL_REMOTE_PORT", 22))
+        description="Port.",
+        default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
     ),
     new_key: str = Field(description="New private key path.", default=None),
+    key_type: str = Field(
+        description="Key type to generate (rsa or ed25519).", default="ed25519"
+    ),
     id_file: Optional[str] = Field(
         description="Current key path.",
         default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
@@ -822,16 +872,24 @@ async def rotate_ssh_key(
 ) -> Dict:
     """Rotate SSH key on remote host. Expected return object type: dict"""
     logger = logging.getLogger("TunnelServer")
-    if err := setup_logging(log, logger):
-        return err
-    logger.debug(f"Rotate key: host={host}, new_key={new_key}")
+    if error := setup_logging(log, logger):
+        return error
+    logger.debug(f"Rotate key: host={host}, new_key={new_key}, key_type={key_type}")
     if not host or not new_key:
         logger.error("Need host, new_key")
         return ResponseBuilder.build(
             400,
             "Need host, new_key",
-            {"host": host, "new_key": new_key},
+            {"host": host, "new_key": new_key, "key_type": key_type},
             errors=["Need host, new_key"],
+        )
+    if key_type not in ["rsa", "ed25519"]:
+        logger.error(f"Invalid key_type: {key_type}")
+        return ResponseBuilder.build(
+            400,
+            f"Invalid key_type: {key_type}",
+            {"host": host, "new_key": new_key, "key_type": key_type},
+            errors=["key_type must be 'rsa' or 'ed25519'"],
         )
     try:
         t = Tunnel(
@@ -850,25 +908,36 @@ async def rotate_ssh_key(
         new_key = os.path.expanduser(new_key)
         new_public_key = new_key + ".pub"
         if not os.path.exists(new_key):
-            os.system(f"ssh-keygen -t rsa -b 4096 -f {new_key} -N ''")
-            logger.info(f"Gen key: {new_key}")
-        t.rotate_ssh_key(new_key)
+            if key_type == "rsa":
+                os.system(f"ssh-keygen -t rsa -b 4096 -f {new_key} -N ''")
+            else:  # ed25519
+                os.system(f"ssh-keygen -t ed25519 -f {new_key} -N ''")
+            logger.info(f"Generated {key_type} key: {new_key}")
+        t.rotate_ssh_key(new_key, key_type=key_type)
         if ctx:
             await ctx.report_progress(progress=100, total=100)
             logger.debug("Progress: 100/100")
-        logger.debug(f"Rotated key to {new_key} on {host}")
+        logger.debug(f"Rotated {key_type} key to {new_key} on {host}")
         return ResponseBuilder.build(
             200,
-            f"Rotated key to {new_key} on {host}",
-            {"host": host, "new_key": new_key, "old_key": id_file},
+            f"Rotated {key_type} key to {new_key} on {host}",
+            {
+                "host": host,
+                "new_key": new_key,
+                "old_key": id_file,
+                "key_type": key_type,
+            },
             files=[new_public_key],
-            locs=[f"~/.ssh/authorized_keys on {host}"],
+            locations=[f"~/.ssh/authorized_keys on {host}"],
             errors=[],
         )
     except Exception as e:
         logger.error(f"Rotate fail: {e}")
         return ResponseBuilder.build(
-            500, f"Rotate fail: {e}", {"host": host, "new_key": new_key}, str(e)
+            500,
+            f"Rotate fail: {e}",
+            {"host": host, "new_key": new_key, "key_type": key_type},
+            str(e),
         )
     finally:
         if "t" in locals():
@@ -899,8 +968,8 @@ async def remove_host_key(
 ) -> Dict:
     """Remove host key from known_hosts. Expected return object type: dict"""
     logger = logging.getLogger("TunnelServer")
-    if err := setup_logging(log, logger):
-        return err
+    if error := setup_logging(log, logger):
+        return error
     logger.debug(f"Remove key: host={host}, known_hosts={known_hosts}")
     if not host:
         logger.error("Need host")
@@ -926,7 +995,7 @@ async def remove_host_key(
             msg,
             {"host": host, "known_hosts": known_hosts},
             files=[],
-            locs=[],
+            locations=[],
             errors=[] if "Removed" in msg else [msg],
         )
     except Exception as e:
@@ -945,8 +1014,8 @@ async def remove_host_key(
     },
     tags={"remote_access"},
 )
-async def setup_all_passwordless_ssh(
-    inventory_path: str = Field(
+async def configure_key_auth_on_inventory(
+    inventory: str = Field(
         description="YAML inventory path.",
         default=os.environ.get("TUNNEL_INVENTORY", None),
     ),
@@ -955,6 +1024,9 @@ async def setup_all_passwordless_ssh(
         default=os.environ.get(
             "TUNNEL_IDENTITY_FILE", os.path.expanduser("~/.ssh/id_shared")
         ),
+    ),
+    key_type: str = Field(
+        description="Key type to generate (rsa or ed25519).", default="ed25519"
     ),
     group: str = Field(
         description="Target group.",
@@ -965,35 +1037,47 @@ async def setup_all_passwordless_ssh(
         default=to_boolean(os.environ.get("TUNNEL_PARALLEL", False)),
     ),
     max_threads: int = Field(
-        description="Max threads.", default=int(os.environ.get("TUNNEL_MAX_THREADS", 5))
+        description="Max threads.",
+        default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
     ),
     log: Optional[str] = Field(description="Log file.", default=None),
     ctx: Context = Field(description="MCP context.", default=None),
 ) -> Dict:
     """Setup passwordless SSH for all hosts in group. Expected return object type: dict"""
     logger = logging.getLogger("TunnelServer")
-    if err := setup_logging(log, logger):
-        return err
-    logger.debug(f"Setup SSH all: inv={inventory_path}, group={group}")
-    if not inventory_path:
-        logger.error("Need inventory_path")
+    if error := setup_logging(log, logger):
+        return error
+    logger.debug(f"Setup SSH all: inv={inventory}, group={group}, key_type={key_type}")
+    if not inventory:
+        logger.error("Need inventory")
         return ResponseBuilder.build(
             400,
-            "Need inventory_path",
-            {"inventory_path": inventory_path, "group": group},
-            errors=["Need inventory_path"],
+            "Need inventory",
+            {"inventory": inventory, "group": group, "key_type": key_type},
+            errors=["Need inventory"],
+        )
+    if key_type not in ["rsa", "ed25519"]:
+        logger.error(f"Invalid key_type: {key_type}")
+        return ResponseBuilder.build(
+            400,
+            f"Invalid key_type: {key_type}",
+            {"inventory": inventory, "group": group, "key_type": key_type},
+            errors=["key_type must be 'rsa' or 'ed25519'"],
         )
     try:
         key = os.path.expanduser(key)
         pub_key = key + ".pub"
         if not os.path.exists(key):
-            os.system(f"ssh-keygen -t rsa -b 4096 -f {key} -N ''")
-            logger.info(f"Gen key: {key}, {pub_key}")
+            if key_type == "rsa":
+                os.system(f"ssh-keygen -t rsa -b 4096 -f {key} -N ''")
+            else:  # ed25519
+                os.system(f"ssh-keygen -t ed25519 -f {key} -N ''")
+            logger.info(f"Generated {key_type} key: {key}, {pub_key}")
         with open(pub_key, "r") as f:
             pub = f.read().strip()
-        hosts, err = load_inventory(inventory_path, group, logger)
-        if err:
-            return err
+        hosts, error = load_inventory(inventory, group, logger)
+        if error:
+            return error
         total = len(hosts)
         if ctx:
             await ctx.report_progress(progress=0, total=total)
@@ -1006,16 +1090,16 @@ async def setup_all_passwordless_ssh(
             try:
                 t = Tunnel(remote_host=host, username=user, password=password)
                 t.remove_host_key()
-                t.setup_passwordless_ssh(local_key_path=kpath)
+                t.setup_passwordless_ssh(local_key_path=kpath, key_type=key_type)
                 t.connect()
                 t.run_command(f"echo '{pub}' >> ~/.ssh/authorized_keys")
                 t.run_command("chmod 600 ~/.ssh/authorized_keys")
-                logger.info(f"Added key to {user}@{host}")
-                res, msg = t.test_key_auth(key)
+                logger.info(f"Added {key_type} key to {user}@{host}")
+                res, msg = t.test_key_auth(kpath)
                 return {
                     "hostname": host,
                     "status": "success",
-                    "message": f"SSH setup for {user}@{host}",
+                    "message": f"SSH setup for {user}@{host} with {key_type} key",
                     "errors": [] if res else [msg],
                 }
             except Exception as e:
@@ -1030,7 +1114,7 @@ async def setup_all_passwordless_ssh(
                 if "t" in locals():
                     t.close()
 
-        results, files, locs, errors = [], [], [], []
+        results, files, locations, errors = [], [], [], []
         if parallel:
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
                 futures = [
@@ -1043,19 +1127,21 @@ async def setup_all_passwordless_ssh(
                         results.append(r)
                         if r["status"] == "success":
                             files.append(pub_key)
-                            locs.append(f"~/.ssh/authorized_keys on {r['hostname']}")
+                            locations.append(
+                                f"~/.ssh/authorized_keys on {r['hostname']}"
+                            )
                         else:
                             errors.extend(r["errors"])
                         if ctx:
                             await ctx.report_progress(progress=i, total=total)
                             logger.debug(f"Progress: {i}/{total}")
                     except Exception as e:
-                        logger.error(f"Parallel err: {e}")
+                        logger.error(f"Parallel error: {e}")
                         results.append(
                             {
                                 "hostname": "unknown",
                                 "status": "failed",
-                                "message": f"Parallel err: {e}",
+                                "message": f"Parallel error: {e}",
                                 "errors": [str(e)],
                             }
                         )
@@ -1066,7 +1152,7 @@ async def setup_all_passwordless_ssh(
                 results.append(r)
                 if r["status"] == "success":
                     files.append(pub_key)
-                    locs.append(f"~/.ssh/authorized_keys on {r['hostname']}")
+                    locations.append(f"~/.ssh/authorized_keys on {r['hostname']}")
                 else:
                     errors.extend(r["errors"])
                 if ctx:
@@ -1081,10 +1167,15 @@ async def setup_all_passwordless_ssh(
         return ResponseBuilder.build(
             200 if not errors else 500,
             msg,
-            {"inventory_path": inventory_path, "group": group, "host_results": results},
+            {
+                "inventory": inventory,
+                "group": group,
+                "key_type": key_type,
+                "host_results": results,
+            },
             "; ".join(errors),
             files,
-            locs,
+            locations,
             errors,
         )
     except Exception as e:
@@ -1092,7 +1183,7 @@ async def setup_all_passwordless_ssh(
         return ResponseBuilder.build(
             500,
             f"Setup all fail: {e}",
-            {"inventory_path": inventory_path, "group": group},
+            {"inventory": inventory, "group": group, "key_type": key_type},
             str(e),
         )
 
@@ -1106,8 +1197,8 @@ async def setup_all_passwordless_ssh(
     },
     tags={"remote_access"},
 )
-async def run_command_on_all(
-    inventory_path: str = Field(
+async def run_command_on_inventory(
+    inventory: str = Field(
         description="YAML inventory path.",
         default=os.environ.get("TUNNEL_INVENTORY", None),
     ),
@@ -1121,28 +1212,29 @@ async def run_command_on_all(
         default=to_boolean(os.environ.get("TUNNEL_PARALLEL", False)),
     ),
     max_threads: int = Field(
-        description="Max threads.", default=int(os.environ.get("TUNNEL_MAX_THREADS", 5))
+        description="Max threads.",
+        default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
     ),
     log: Optional[str] = Field(description="Log file.", default=None),
     ctx: Context = Field(description="MCP context.", default=None),
 ) -> Dict:
     """Run command on all hosts in group. Expected return object type: dict"""
     logger = logging.getLogger("TunnelServer")
-    if err := setup_logging(log, logger):
-        return err
-    logger.debug(f"Run cmd all: inv={inventory_path}, group={group}, cmd={cmd}")
-    if not inventory_path or not cmd:
-        logger.error("Need inventory_path, cmd")
+    if error := setup_logging(log, logger):
+        return error
+    logger.debug(f"Run cmd all: inv={inventory}, group={group}, cmd={cmd}")
+    if not inventory or not cmd:
+        logger.error("Need inventory, cmd")
         return ResponseBuilder.build(
             400,
-            "Need inventory_path, cmd",
-            {"inventory_path": inventory_path, "group": group, "cmd": cmd},
-            errors=["Need inventory_path, cmd"],
+            "Need inventory, cmd",
+            {"inventory": inventory, "group": group, "cmd": cmd},
+            errors=["Need inventory, cmd"],
         )
     try:
-        hosts, err = load_inventory(inventory_path, group, logger)
-        if err:
-            return err
+        hosts, error = load_inventory(inventory, group, logger)
+        if error:
+            return error
         total = len(hosts)
         if ctx:
             await ctx.report_progress(progress=0, total=total)
@@ -1157,14 +1249,14 @@ async def run_command_on_all(
                     password=h.get("password"),
                     identity_file=h.get("key_path"),
                 )
-                out, err = t.run_command(cmd)
-                logger.info(f"Host {host}: Out: {out}, Err: {err}")
+                out, error = t.run_command(cmd)
+                logger.info(f"Host {host}: Out: {out}, Err: {error}")
                 return {
                     "hostname": host,
                     "status": "success",
                     "message": f"Cmd '{cmd}' done on {host}",
                     "stdout": out,
-                    "stderr": err,
+                    "stderr": error,
                     "errors": [],
                 }
             except Exception as e:
@@ -1196,12 +1288,12 @@ async def run_command_on_all(
                             await ctx.report_progress(progress=i, total=total)
                             logger.debug(f"Progress: {i}/{total}")
                     except Exception as e:
-                        logger.error(f"Parallel err: {e}")
+                        logger.error(f"Parallel error: {e}")
                         results.append(
                             {
                                 "hostname": "unknown",
                                 "status": "failed",
-                                "message": f"Parallel err: {e}",
+                                "message": f"Parallel error: {e}",
                                 "stdout": "",
                                 "stderr": str(e),
                                 "errors": [str(e)],
@@ -1226,7 +1318,7 @@ async def run_command_on_all(
             200 if not errors else 500,
             msg,
             {
-                "inventory_path": inventory_path,
+                "inventory": inventory,
                 "group": group,
                 "cmd": cmd,
                 "host_results": results,
@@ -1241,7 +1333,7 @@ async def run_command_on_all(
         return ResponseBuilder.build(
             500,
             f"Cmd all fail: {e}",
-            {"inventory_path": inventory_path, "group": group, "cmd": cmd},
+            {"inventory": inventory, "group": group, "cmd": cmd},
             str(e),
         )
 
@@ -1255,8 +1347,8 @@ async def run_command_on_all(
     },
     tags={"remote_access"},
 )
-async def copy_ssh_config_on_all(
-    inventory_path: str = Field(
+async def copy_ssh_config_on_inventory(
+    inventory: str = Field(
         description="YAML inventory path.",
         default=os.environ.get("TUNNEL_INVENTORY", None),
     ),
@@ -1273,7 +1365,8 @@ async def copy_ssh_config_on_all(
         default=to_boolean(os.environ.get("TUNNEL_PARALLEL", False)),
     ),
     max_threads: int = Field(
-        description="Max threads.", default=int(os.environ.get("TUNNEL_MAX_THREADS", 5))
+        description="Max threads.",
+        default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
     ),
     log: Optional[str] = Field(
         description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
@@ -1282,22 +1375,22 @@ async def copy_ssh_config_on_all(
 ) -> Dict:
     """Copy SSH config to all hosts in YAML group. Expected return object type: dict"""
     logger = logging.getLogger("TunnelServer")
-    if err := setup_logging(log, logger):
-        return err
-    logger.debug(f"Copy SSH config: inv={inventory_path}, group={group}")
+    if error := setup_logging(log, logger):
+        return error
+    logger.debug(f"Copy SSH config: inv={inventory}, group={group}")
 
-    if not inventory_path or not cfg:
-        logger.error("Need inventory_path, cfg")
+    if not inventory or not cfg:
+        logger.error("Need inventory, cfg")
         return ResponseBuilder.build(
             400,
-            "Need inventory_path, cfg",
+            "Need inventory, cfg",
             {
-                "inventory_path": inventory_path,
+                "inventory": inventory,
                 "group": group,
                 "cfg": cfg,
                 "rmt_cfg": rmt_cfg,
             },
-            errors=["Need inventory_path, cfg"],
+            errors=["Need inventory, cfg"],
         )
 
     if not os.path.exists(cfg):
@@ -1306,7 +1399,7 @@ async def copy_ssh_config_on_all(
             400,
             f"No cfg file: {cfg}",
             {
-                "inventory_path": inventory_path,
+                "inventory": inventory,
                 "group": group,
                 "cfg": cfg,
                 "rmt_cfg": rmt_cfg,
@@ -1315,16 +1408,16 @@ async def copy_ssh_config_on_all(
         )
 
     try:
-        hosts, err = load_inventory(inventory_path, group, logger)
-        if err:
-            return err
+        hosts, error = load_inventory(inventory, group, logger)
+        if error:
+            return error
 
         total = len(hosts)
         if ctx:
             await ctx.report_progress(progress=0, total=total)
             logger.debug(f"Progress: 0/{total}")
 
-        results, files, locs, errors = [], [], [], []
+        results, files, locations, errors = [], [], [], []
 
         async def copy_host(h: Dict) -> Dict:
             try:
@@ -1365,19 +1458,19 @@ async def copy_ssh_config_on_all(
                         results.append(r)
                         if r["status"] == "success":
                             files.append(cfg)
-                            locs.append(f"{rmt_cfg} on {r['hostname']}")
+                            locations.append(f"{rmt_cfg} on {r['hostname']}")
                         else:
                             errors.extend(r["errors"])
                         if ctx:
                             await ctx.report_progress(progress=i, total=total)
                             logger.debug(f"Progress: {i}/{total}")
                     except Exception as e:
-                        logger.error(f"Parallel err: {e}")
+                        logger.error(f"Parallel error: {e}")
                         results.append(
                             {
                                 "hostname": "unknown",
                                 "status": "failed",
-                                "message": f"Parallel err: {e}",
+                                "message": f"Parallel error: {e}",
                                 "errors": [str(e)],
                             }
                         )
@@ -1388,7 +1481,7 @@ async def copy_ssh_config_on_all(
                 results.append(r)
                 if r["status"] == "success":
                     files.append(cfg)
-                    locs.append(f"{rmt_cfg} on {r['hostname']}")
+                    locations.append(f"{rmt_cfg} on {r['hostname']}")
                 else:
                     errors.extend(r["errors"])
                 if ctx:
@@ -1405,7 +1498,7 @@ async def copy_ssh_config_on_all(
             200 if not errors else 500,
             msg,
             {
-                "inventory_path": inventory_path,
+                "inventory": inventory,
                 "group": group,
                 "cfg": cfg,
                 "rmt_cfg": rmt_cfg,
@@ -1413,7 +1506,7 @@ async def copy_ssh_config_on_all(
             },
             "; ".join(errors),
             files,
-            locs,
+            locations,
             errors,
         )
 
@@ -1423,7 +1516,7 @@ async def copy_ssh_config_on_all(
             500,
             f"Copy all fail: {e}",
             {
-                "inventory_path": inventory_path,
+                "inventory": inventory,
                 "group": group,
                 "cfg": cfg,
                 "rmt_cfg": rmt_cfg,
@@ -1441,13 +1534,16 @@ async def copy_ssh_config_on_all(
     },
     tags={"remote_access"},
 )
-async def rotate_ssh_key_on_all(
-    inventory_path: str = Field(
+async def rotate_ssh_key_on_inventory(
+    inventory: str = Field(
         description="YAML inventory path.",
         default=os.environ.get("TUNNEL_INVENTORY", None),
     ),
     key_pfx: str = Field(
         description="Prefix for new keys.", default=os.path.expanduser("~/.ssh/id_")
+    ),
+    key_type: str = Field(
+        description="Key type to generate (rsa or ed25519).", default="ed25519"
     ),
     group: str = Field(
         description="Target group.",
@@ -1458,7 +1554,8 @@ async def rotate_ssh_key_on_all(
         default=to_boolean(os.environ.get("TUNNEL_PARALLEL", False)),
     ),
     max_threads: int = Field(
-        description="Max threads.", default=int(os.environ.get("TUNNEL_MAX_THREADS", 5))
+        description="Max threads.",
+        default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
     ),
     log: Optional[str] = Field(
         description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
@@ -1467,30 +1564,50 @@ async def rotate_ssh_key_on_all(
 ) -> Dict:
     """Rotate SSH keys for all hosts in YAML group. Expected return object type: dict"""
     logger = logging.getLogger("TunnelServer")
-    if err := setup_logging(log, logger):
-        return err
-    logger.debug(f"Rotate SSH keys: inv={inventory_path}, group={group}")
+    if error := setup_logging(log, logger):
+        return error
+    logger.debug(
+        f"Rotate SSH keys: inv={inventory}, group={group}, key_type={key_type}"
+    )
 
-    if not inventory_path:
-        logger.error("Need inventory_path")
+    if not inventory:
+        logger.error("Need inventory")
         return ResponseBuilder.build(
             400,
-            "Need inventory_path",
-            {"inventory_path": inventory_path, "group": group, "key_pfx": key_pfx},
-            errors=["Need inventory_path"],
+            "Need inventory",
+            {
+                "inventory": inventory,
+                "group": group,
+                "key_pfx": key_pfx,
+                "key_type": key_type,
+            },
+            errors=["Need inventory"],
+        )
+    if key_type not in ["rsa", "ed25519"]:
+        logger.error(f"Invalid key_type: {key_type}")
+        return ResponseBuilder.build(
+            400,
+            f"Invalid key_type: {key_type}",
+            {
+                "inventory": inventory,
+                "group": group,
+                "key_pfx": key_pfx,
+                "key_type": key_type,
+            },
+            errors=["key_type must be 'rsa' or 'ed25519'"],
         )
 
     try:
-        hosts, err = load_inventory(inventory_path, group, logger)
-        if err:
-            return err
+        hosts, error = load_inventory(inventory, group, logger)
+        if error:
+            return error
 
         total = len(hosts)
         if ctx:
             await ctx.report_progress(progress=0, total=total)
             logger.debug(f"Progress: 0/{total}")
 
-        results, files, locs, errors = [], [], [], []
+        results, files, locations, errors = [], [], [], []
 
         async def rotate_host(h: Dict) -> Dict:
             key = os.path.expanduser(key_pfx + h["hostname"])
@@ -1501,12 +1618,12 @@ async def rotate_ssh_key_on_all(
                     password=h.get("password"),
                     identity_file=h.get("key_path"),
                 )
-                t.rotate_ssh_key(key)
-                logger.info(f"Rotated key for {h['hostname']}: {key}")
+                t.rotate_ssh_key(key, key_type=key_type)
+                logger.info(f"Rotated {key_type} key for {h['hostname']}: {key}")
                 return {
                     "hostname": h["hostname"],
                     "status": "success",
-                    "message": f"Rotated key to {key}",
+                    "message": f"Rotated {key_type} key to {key}",
                     "errors": [],
                     "new_key_path": key,
                 }
@@ -1528,25 +1645,27 @@ async def rotate_ssh_key_on_all(
                 futures = [
                     ex.submit(lambda h: asyncio.run(rotate_host(h)), h) for h in hosts
                 ]
-                for i, f in enumerate(concurrent.futures.as_completed(futures), 1):
+                for i, f in enumerate(concurrent.fences.as_completed(futures), 1):
                     try:
                         r = f.result()
                         results.append(r)
                         if r["status"] == "success":
                             files.append(r["new_key_path"] + ".pub")
-                            locs.append(f"~/.ssh/authorized_keys on {r['hostname']}")
+                            locations.append(
+                                f"~/.ssh/authorized_keys on {r['hostname']}"
+                            )
                         else:
                             errors.extend(r["errors"])
                         if ctx:
                             await ctx.report_progress(progress=i, total=total)
                             logger.debug(f"Progress: {i}/{total}")
                     except Exception as e:
-                        logger.error(f"Parallel err: {e}")
+                        logger.error(f"Parallel error: {e}")
                         results.append(
                             {
                                 "hostname": "unknown",
                                 "status": "failed",
-                                "message": f"Parallel err: {e}",
+                                "message": f"Parallel error: {e}",
                                 "errors": [str(e)],
                                 "new_key_path": None,
                             }
@@ -1558,7 +1677,7 @@ async def rotate_ssh_key_on_all(
                 results.append(r)
                 if r["status"] == "success":
                     files.append(r["new_key_path"] + ".pub")
-                    locs.append(f"~/.ssh/authorized_keys on {r['hostname']}")
+                    locations.append(f"~/.ssh/authorized_keys on {r['hostname']}")
                 else:
                     errors.extend(r["errors"])
                 if ctx:
@@ -1567,7 +1686,7 @@ async def rotate_ssh_key_on_all(
 
         logger.debug(f"Done SSH key rotate for {group}")
         msg = (
-            f"Rotated keys for {group}"
+            f"Rotated {key_type} keys for {group}"
             if not errors
             else f"Rotate failed for some in {group}"
         )
@@ -1575,14 +1694,15 @@ async def rotate_ssh_key_on_all(
             200 if not errors else 500,
             msg,
             {
-                "inventory_path": inventory_path,
+                "inventory": inventory,
                 "group": group,
                 "key_pfx": key_pfx,
+                "key_type": key_type,
                 "host_results": results,
             },
             "; ".join(errors),
             files,
-            locs,
+            locations,
             errors,
         )
 
@@ -1591,7 +1711,386 @@ async def rotate_ssh_key_on_all(
         return ResponseBuilder.build(
             500,
             f"Rotate all fail: {e}",
-            {"inventory_path": inventory_path, "group": group, "key_pfx": key_pfx},
+            {
+                "inventory": inventory,
+                "group": group,
+                "key_pfx": key_pfx,
+                "key_type": key_type,
+            },
+            str(e),
+        )
+
+
+@mcp.tool(
+    annotations={
+        "title": "Upload File to All Hosts",
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "idempotentHint": False,
+    },
+    tags={"remote_access"},
+)
+async def send_file_to_inventory(
+    inventory: str = Field(
+        description="YAML inventory path.",
+        default=os.environ.get("TUNNEL_INVENTORY", None),
+    ),
+    lpath: str = Field(description="Local file path.", default=None),
+    rpath: str = Field(description="Remote destination path.", default=None),
+    group: str = Field(
+        description="Target group.",
+        default=os.environ.get("TUNNEL_INVENTORY_GROUP", "all"),
+    ),
+    parallel: bool = Field(
+        description="Run parallel.",
+        default=to_boolean(os.environ.get("TUNNEL_PARALLEL", False)),
+    ),
+    max_threads: int = Field(
+        description="Max threads.",
+        default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "5")),
+    ),
+    log: Optional[str] = Field(
+        description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+    ),
+    ctx: Context = Field(description="MCP context.", default=None),
+) -> Dict:
+    """Upload a file to all hosts in the specified inventory group. Expected return object type: dict"""
+    logger = logging.getLogger("TunnelServer")
+    lpath = os.path.abspath(os.path.expanduser(lpath))  # Normalize
+    rpath = os.path.expanduser(rpath)
+    logger.debug(
+        f"Normalized: lpath={lpath} (exists={os.path.exists(lpath)}, isfile={os.path.isfile(lpath)}), rpath={rpath}, CWD={os.getcwd()}"
+    )
+    if error := setup_logging(log, logger):
+        return error
+    logger.debug(
+        f"Upload file all: inv={inventory}, group={group}, local={lpath}, remote={rpath}"
+    )
+    if not inventory or not lpath or not rpath:
+        logger.error("Need inventory, lpath, rpath")
+        return ResponseBuilder.build(
+            400,
+            "Need inventory, lpath, rpath",
+            {"inventory": inventory, "group": group, "lpath": lpath, "rpath": rpath},
+            errors=["Need inventory, lpath, rpath"],
+        )
+    if not os.path.exists(lpath) or not os.path.isfile(lpath):
+        logger.error(f"Invalid file: {lpath}")
+        return ResponseBuilder.build(
+            400,
+            f"Invalid file: {lpath}",
+            {"inventory": inventory, "group": group, "lpath": lpath, "rpath": rpath},
+            errors=[f"Invalid file: {lpath}"],
+        )
+    try:
+        hosts, error = load_inventory(inventory, group, logger)
+        if error:
+            return error
+        total = len(hosts)
+        if ctx:
+            await ctx.report_progress(progress=0, total=total)
+            logger.debug(f"Progress: 0/{total}")
+
+        async def send_host(h: Dict) -> Dict:
+            host = h["hostname"]
+            try:
+                t = Tunnel(
+                    remote_host=host,
+                    username=h["username"],
+                    password=h.get("password"),
+                    identity_file=h.get("key_path"),
+                )
+                t.connect()
+                sftp = t.ssh_client.open_sftp()
+                transferred = 0
+
+                def progress_callback(transf, total):
+                    nonlocal transferred
+                    transferred = transf
+                    if ctx:
+                        asyncio.ensure_future(
+                            ctx.report_progress(progress=transf, total=total)
+                        )
+
+                sftp.put(lpath, rpath, callback=progress_callback)
+                sftp.close()
+                logger.info(f"Host {host}: Uploaded {lpath} to {rpath}")
+                return {
+                    "hostname": host,
+                    "status": "success",
+                    "message": f"Uploaded {lpath} to {rpath}",
+                    "errors": [],
+                }
+            except Exception as e:
+                logger.error(f"Upload fail {host}: {e}")
+                return {
+                    "hostname": host,
+                    "status": "failed",
+                    "message": f"Upload fail: {e}",
+                    "errors": [str(e)],
+                }
+            finally:
+                if "t" in locals():
+                    t.close()
+
+        results, files, locations, errors = [], [lpath], [], []
+        if parallel:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
+                futures = [
+                    ex.submit(lambda h: asyncio.run(send_host(h)), h) for h in hosts
+                ]
+                for i, f in enumerate(concurrent.futures.as_completed(futures), 1):
+                    try:
+                        r = f.result()
+                        results.append(r)
+                        if r["status"] == "success":
+                            locations.append(f"{rpath} on {r['hostname']}")
+                        else:
+                            errors.extend(r["errors"])
+                        if ctx:
+                            await ctx.report_progress(progress=i, total=total)
+                            logger.debug(f"Progress: {i}/{total}")
+                    except Exception as e:
+                        logger.error(f"Parallel error: {e}")
+                        results.append(
+                            {
+                                "hostname": "unknown",
+                                "status": "failed",
+                                "message": f"Parallel error: {e}",
+                                "errors": [str(e)],
+                            }
+                        )
+                        errors.append(str(e))
+        else:
+            for i, h in enumerate(hosts, 1):
+                r = await send_host(h)
+                results.append(r)
+                if r["status"] == "success":
+                    locations.append(f"{rpath} on {r['hostname']}")
+                else:
+                    errors.extend(r["errors"])
+                if ctx:
+                    await ctx.report_progress(progress=i, total=total)
+                    logger.debug(f"Progress: {i}/{total}")
+
+        logger.debug(f"Done file upload for {group}")
+        msg = (
+            f"Uploaded {lpath} to {group}"
+            if not errors
+            else f"Upload failed for some in {group}"
+        )
+        return ResponseBuilder.build(
+            200 if not errors else 500,
+            msg,
+            {
+                "inventory": inventory,
+                "group": group,
+                "lpath": lpath,
+                "rpath": rpath,
+                "host_results": results,
+            },
+            "; ".join(errors),
+            files,
+            locations,
+            errors,
+        )
+    except Exception as e:
+        logger.error(f"Upload all fail: {e}")
+        return ResponseBuilder.build(
+            500,
+            f"Upload all fail: {e}",
+            {"inventory": inventory, "group": group, "lpath": lpath, "rpath": rpath},
+            str(e),
+        )
+
+
+@mcp.tool(
+    annotations={
+        "title": "Download File from All Hosts",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+    },
+    tags={"remote_access"},
+)
+async def receive_file_from_inventory(
+    inventory: str = Field(
+        description="YAML inventory path.",
+        default=os.environ.get("TUNNEL_INVENTORY", None),
+    ),
+    rpath: str = Field(description="Remote file path to download.", default=None),
+    lpath_prefix: str = Field(
+        description="Local directory path prefix to save files.", default=None
+    ),
+    group: str = Field(
+        description="Target group.",
+        default=os.environ.get("TUNNEL_INVENTORY_GROUP", "all"),
+    ),
+    parallel: bool = Field(
+        description="Run parallel.",
+        default=to_boolean(os.environ.get("TUNNEL_PARALLEL", False)),
+    ),
+    max_threads: int = Field(
+        description="Max threads.",
+        default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "5")),
+    ),
+    log: Optional[str] = Field(
+        description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+    ),
+    ctx: Context = Field(description="MCP context.", default=None),
+) -> Dict:
+    """Download a file from all hosts in the specified inventory group. Expected return object type: dict"""
+    logger = logging.getLogger("TunnelServer")
+    if error := setup_logging(log, logger):
+        return error
+    logger.debug(
+        f"Download file all: inv={inventory}, group={group}, remote={rpath}, local_prefix={lpath_prefix}"
+    )
+    if not inventory or not rpath or not lpath_prefix:
+        logger.error("Need inventory, rpath, lpath_prefix")
+        return ResponseBuilder.build(
+            400,
+            "Need inventory, rpath, lpath_prefix",
+            {
+                "inventory": inventory,
+                "group": group,
+                "rpath": rpath,
+                "lpath_prefix": lpath_prefix,
+            },
+            errors=["Need inventory, rpath, lpath_prefix"],
+        )
+    try:
+        os.makedirs(lpath_prefix, exist_ok=True)
+        hosts, error = load_inventory(inventory, group, logger)
+        if error:
+            return error
+        total = len(hosts)
+        if ctx:
+            await ctx.report_progress(progress=0, total=total)
+            logger.debug(f"Progress: 0/{total}")
+
+        async def receive_host(h: Dict) -> Dict:
+            host = h["hostname"]
+            lpath = os.path.join(lpath_prefix, host, os.path.basename(rpath))
+            os.makedirs(os.path.dirname(lpath), exist_ok=True)
+            try:
+                t = Tunnel(
+                    remote_host=host,
+                    username=h["username"],
+                    password=h.get("password"),
+                    identity_file=h.get("key_path"),
+                )
+                t.connect()
+                sftp = t.ssh_client.open_sftp()
+                sftp.stat(rpath)
+                transferred = 0
+
+                def progress_callback(transf, total):
+                    nonlocal transferred
+                    transferred = transf
+                    if ctx:
+                        asyncio.ensure_future(
+                            ctx.report_progress(progress=transf, total=total)
+                        )
+
+                sftp.get(rpath, lpath, callback=progress_callback)
+                sftp.close()
+                logger.info(f"Host {host}: Downloaded {rpath} to {lpath}")
+                return {
+                    "hostname": host,
+                    "status": "success",
+                    "message": f"Downloaded {rpath} to {lpath}",
+                    "errors": [],
+                    "local_path": lpath,
+                }
+            except Exception as e:
+                logger.error(f"Download fail {host}: {e}")
+                return {
+                    "hostname": host,
+                    "status": "failed",
+                    "message": f"Download fail: {e}",
+                    "errors": [str(e)],
+                    "local_path": lpath,
+                }
+            finally:
+                if "t" in locals():
+                    t.close()
+
+        results, files, locations, errors = [], [], [], []
+        if parallel:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
+                futures = [
+                    ex.submit(lambda h: asyncio.run(receive_host(h)), h) for h in hosts
+                ]
+                for i, f in enumerate(concurrent.futures.as_completed(futures), 1):
+                    try:
+                        r = f.result()
+                        results.append(r)
+                        if r["status"] == "success":
+                            files.append(rpath)
+                            locations.append(r["local_path"])
+                        else:
+                            errors.extend(r["errors"])
+                        if ctx:
+                            await ctx.report_progress(progress=i, total=total)
+                            logger.debug(f"Progress: {i}/{total}")
+                    except Exception as e:
+                        logger.error(f"Parallel error: {e}")
+                        results.append(
+                            {
+                                "hostname": "unknown",
+                                "status": "failed",
+                                "message": f"Parallel error: {e}",
+                                "errors": [str(e)],
+                                "local_path": None,
+                            }
+                        )
+                        errors.append(str(e))
+        else:
+            for i, h in enumerate(hosts, 1):
+                r = await receive_host(h)
+                results.append(r)
+                if r["status"] == "success":
+                    files.append(rpath)
+                    locations.append(r["local_path"])
+                else:
+                    errors.extend(r["errors"])
+                if ctx:
+                    await ctx.report_progress(progress=i, total=total)
+                    logger.debug(f"Progress: {i}/{total}")
+
+        logger.debug(f"Done file download for {group}")
+        msg = (
+            f"Downloaded {rpath} from {group}"
+            if not errors
+            else f"Download failed for some in {group}"
+        )
+        return ResponseBuilder.build(
+            200 if not errors else 500,
+            msg,
+            {
+                "inventory": inventory,
+                "group": group,
+                "rpath": rpath,
+                "lpath_prefix": lpath_prefix,
+                "host_results": results,
+            },
+            "; ".join(errors),
+            files,
+            locations,
+            errors,
+        )
+    except Exception as e:
+        logger.error(f"Download all fail: {e}")
+        return ResponseBuilder.build(
+            500,
+            f"Download all fail: {e}",
+            {
+                "inventory": inventory,
+                "group": group,
+                "rpath": rpath,
+                "lpath_prefix": lpath_prefix,
+            },
             str(e),
         )
 

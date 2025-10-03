@@ -68,9 +68,6 @@ class Tunnel:
             raise ValueError("Either identity_file or password must be provided.")
 
     def connect(self):
-        """
-        Establish the SSH connection if not already connected.
-        """
         if (
             self.ssh_client
             and self.ssh_client.get_transport()
@@ -88,7 +85,18 @@ class Tunnel:
 
         try:
             if self.identity_file:
-                private_key = paramiko.RSAKey.from_private_key_file(self.identity_file)
+                # Try loading as ED25519 key first
+                try:
+                    private_key = paramiko.Ed25519Key.from_private_key_file(
+                        self.identity_file
+                    )
+                    self.logger.info(f"Loaded ED25519 key from: {self.identity_file}")
+                except paramiko.ssh_exception.SSHException:
+                    # Fallback to RSA key
+                    private_key = paramiko.RSAKey.from_private_key_file(
+                        self.identity_file
+                    )
+                    self.logger.info(f"Loaded RSA key from: {self.identity_file}")
                 if self.certificate_file:
                     private_key.load_certificate(self.certificate_file)
                     self.logger.info(f"Loaded certificate: {self.certificate_file}")
@@ -141,18 +149,60 @@ class Tunnel:
     def send_file(self, local_path, remote_path):
         """
         Send (upload) a file to the remote host.
-
         :param local_path: Path to the local file.
         :param remote_path: Path on the remote host.
         """
         self.connect()
         try:
+            # Normalize paths for consistency
+            local_path = os.path.abspath(os.path.expanduser(local_path))
+            remote_path = os.path.expanduser(
+                remote_path
+            )  # ~ expansion for remote, but paramiko handles it
+
+            self.logger.debug(
+                f"send_file: local_path='{local_path}', remote_path='{remote_path}'"
+            )
+            self.logger.debug(f"send_file: CWD={os.getcwd()}")
+
+            # Explicit checks before SFTP
+            if not os.path.exists(local_path):
+                err_msg = f"Local file does not exist: {local_path}"
+                self.logger.error(err_msg)
+                raise IOError(err_msg)
+            if not os.path.isfile(local_path):
+                err_msg = (
+                    f"Local path is not a regular file (dir/symlink?): {local_path}"
+                )
+                self.logger.error(err_msg)
+                raise IOError(err_msg)
+            if not os.access(local_path, os.R_OK):
+                err_msg = f"No read permission for local file: {local_path}"
+                self.logger.error(err_msg)
+                raise PermissionError(err_msg)
+
+            # Test binary open (mimics what sftp.put does)
+            try:
+                with open(local_path, "rb") as f:
+                    sample = f.read(1024)  # Read a chunk to simulate transfer
+                    self.logger.debug(
+                        f"Binary open successful for {local_path}, sample size: {len(sample)} bytes"
+                    )
+            except Exception as open_err:
+                err_msg = f"Failed to open {local_path} in binary mode: {str(open_err)}"
+                self.logger.error(err_msg)
+                raise IOError(err_msg)
+
             if not self.sftp:
                 self.sftp = self.ssh_client.open_sftp()
+            self.logger.debug(f"Opening SFTP for put: {local_path} -> {remote_path}")
             self.sftp.put(local_path, remote_path)
             self.logger.info(f"File sent: {local_path} -> {remote_path}")
         except Exception as e:
-            self.logger.error(f"File send failed: {str(e)}")
+            self.logger.error(f"File send failed: {str(e)} (type: {type(e).__name__})")
+            import traceback
+
+            self.logger.error(traceback.format_exc())
             raise
         finally:
             if self.sftp:
@@ -234,13 +284,14 @@ class Tunnel:
             self.ssh_client = None
 
     def setup_passwordless_ssh(
-        self, local_key_path=os.path.expanduser("~/.ssh/id_rsa")
+        self, local_key_path=os.path.expanduser("~/.ssh/id_rsa"), key_type="ed25519"
     ):
         """
         Set up passwordless SSH by copying a public key to the remote host.
         Requires password-based authentication to be configured.
 
         :param local_key_path: Path to the local private key (public key is assumed to be .pub).
+        :param key_type: Type of key to generate ('rsa' or 'ed25519', default: 'rsa').
         """
         if not self.password:
             raise ValueError("Password-based authentication required for setup.")
@@ -248,9 +299,17 @@ class Tunnel:
         local_key_path = os.path.expanduser(local_key_path)
         pub_key_path = local_key_path + ".pub"
 
+        if key_type not in ["rsa", "ed25519"]:
+            raise ValueError("key_type must be 'rsa' or 'ed25519'")
+
         if not os.path.exists(pub_key_path):
-            os.system(f"ssh-keygen -t rsa -b 4096 -f {local_key_path} -N ''")
-            self.logger.info(f"Generated key pair: {local_key_path}, {pub_key_path}")
+            if key_type == "rsa":
+                os.system(f"ssh-keygen -t rsa -b 4096 -f {local_key_path} -N ''")
+            else:  # ed25519
+                os.system(f"ssh-keygen -t ed25519 -f {local_key_path} -N ''")
+            self.logger.info(
+                f"Generated {key_type} key pair: {local_key_path}, {pub_key_path}"
+            )
 
         with open(pub_key_path, "r") as f:
             pub_key = f.read().strip()
@@ -261,7 +320,7 @@ class Tunnel:
             self.run_command(f"echo '{pub_key}' >> ~/.ssh/authorized_keys")
             self.run_command("chmod 600 ~/.ssh/authorized_keys")
             self.logger.info(
-                f"Set up passwordless SSH for {self.username}@{self.remote_host}"
+                f"Set up passwordless SSH for {self.username}@{self.remote_host} with {key_type} key"
             )
         except Exception as e:
             self.logger.error(f"Failed to set up passwordless SSH: {str(e)}")
@@ -270,7 +329,9 @@ class Tunnel:
             self.close()
 
     @staticmethod
-    def execute_on_all(inventory, func, group="all", parallel=False, max_threads=5):
+    def execute_on_inventory(
+        inventory, func, group="all", parallel=False, max_threads=5
+    ):
         """
         Execute a function on all hosts in the specified group of the YAML inventory, sequentially or in parallel.
         :param inventory: Path to the YAML inventory file.
@@ -400,16 +461,23 @@ class Tunnel:
             f"Copied SSH config to {remote_config_path} on {self.remote_host}"
         )
 
-    def rotate_ssh_key(self, new_key_path):
+    def rotate_ssh_key(self, new_key_path, key_type="ed25519"):
         """
         Rotate the SSH key by generating a new pair and updating authorized_keys.
         :param new_key_path: Path for the new private key.
+        :param key_type: Type of key to generate ('rsa' or 'ed25519', default: 'rsa').
         """
         new_key_path = os.path.expanduser(new_key_path)
         new_pub_path = new_key_path + ".pub"
+        if key_type not in ["rsa", "ed25519"]:
+            raise ValueError("key_type must be 'rsa' or 'ed25519'")
+
         if not os.path.exists(new_key_path):
-            os.system(f"ssh-keygen -t rsa -b 4096 -f {new_key_path} -N ''")
-            self.logger.info(f"Generated new key pair: {new_key_path}")
+            if key_type == "rsa":
+                os.system(f"ssh-keygen -t rsa -b 4096 -f {new_key_path} -N ''")
+            else:  # ed25519
+                os.system(f"ssh-keygen -t ed25519 -f {new_key_path} -N ''")
+            self.logger.info(f"Generated new {key_type} key pair: {new_key_path}")
 
         with open(new_pub_path, "r") as f:
             new_pub = f.read().strip()
@@ -433,7 +501,6 @@ class Tunnel:
         new_auth.append(new_pub)
 
         temp_file = "/tmp/authorized_keys.new"
-        # Construct the command string without escape sequences in f-string
         new_auth_joined = "\n".join(new_auth)
         self.run_command(f"echo '{new_auth_joined}' > {temp_file}")
         self.run_command(f"mv {temp_file} ~/.ssh/authorized_keys")
@@ -441,7 +508,9 @@ class Tunnel:
 
         self.identity_file = new_key_path
         self.password = None
-        self.logger.info(f"Rotated key to {new_key_path} on {self.remote_host}")
+        self.logger.info(
+            f"Rotated {key_type} key to {new_key_path} on {self.remote_host}"
+        )
         logging.info(
             f"Please update SSH config for {self.remote_host} IdentityFile to {new_key_path}"
         )
@@ -450,6 +519,7 @@ class Tunnel:
     def setup_all_passwordless_ssh(
         inventory,
         shared_key_path=os.path.expanduser("~/.ssh/id_shared"),
+        key_type="ed25519",
         group="all",
         parallel=False,
         max_threads=5,
@@ -458,16 +528,23 @@ class Tunnel:
         Set up passwordless SSH for all hosts in the specified group of the YAML inventory.
         :param inventory: Path to the YAML inventory file.
         :param shared_key_path: Path to a shared private key (optional, generates if missing).
+        :param key_type: Type of key to generate ('rsa' or 'ed25519', default: 'rsa').
         :param group: Inventory group to target (default: 'all').
         :param parallel: Run in parallel.
         :param max_threads: Max threads for parallel.
         """
         shared_key_path = os.path.expanduser(shared_key_path)
         shared_pub_key_path = shared_key_path + ".pub"
+        if key_type not in ["rsa", "ed25519"]:
+            raise ValueError("key_type must be 'rsa' or 'ed25519'")
+
         if not os.path.exists(shared_key_path):
-            os.system(f"ssh-keygen -t rsa -b 4096 -f {shared_key_path} -N ''")
+            if key_type == "rsa":
+                os.system(f"ssh-keygen -t rsa -b 4096 -f {shared_key_path} -N ''")
+            else:  # ed25519
+                os.system(f"ssh-keygen -t ed25519 -f {shared_key_path} -N ''")
             logging.info(
-                f"Generated shared key pair: {shared_key_path}, {shared_pub_key_path}"
+                f"Generated shared {key_type} key pair: {shared_key_path}, {shared_pub_key_path}"
             )
 
         with open(shared_pub_key_path, "r") as f:
@@ -487,13 +564,13 @@ class Tunnel:
                 password=password,
             )
             tunnel.remove_host_key()
-            tunnel.setup_passwordless_ssh(local_key_path=key_path)
+            tunnel.setup_passwordless_ssh(local_key_path=key_path, key_type=key_type)
 
             try:
                 tunnel.connect()
                 tunnel.run_command(f"echo '{shared_pub_key}' >> ~/.ssh/authorized_keys")
                 tunnel.run_command("chmod 600 ~/.ssh/authorized_keys")
-                logging.info(f"Added shared key to {username}@{hostname}")
+                logging.info(f"Added shared {key_type} key to {username}@{hostname}")
             except Exception as e:
                 logging.error(
                     f"Failed to add shared key to {username}@{hostname}: {str(e)}"
@@ -501,13 +578,13 @@ class Tunnel:
             finally:
                 tunnel.close()
 
-            result, msg = tunnel.test_key_auth(shared_key_path)
+            result, msg = tunnel.test_key_auth(key_path)
             logging.info(f"Key auth test for {username}@{hostname}: {msg}")
 
-        Tunnel.execute_on_all(inventory, setup_host, group, parallel, max_threads)
+        Tunnel.execute_on_inventory(inventory, setup_host, group, parallel, max_threads)
 
     @staticmethod
-    def run_command_on_all(
+    def run_command_on_inventory(
         inventory, command, group="all", parallel=False, max_threads=5
     ):
         """
@@ -543,7 +620,9 @@ class Tunnel:
                 print(f"Error on {host['hostname']}: {str(e)}", file=sys.stderr)
 
         try:
-            Tunnel.execute_on_all(inventory, run_host, group, parallel, max_threads)
+            Tunnel.execute_on_inventory(
+                inventory, run_host, group, parallel, max_threads
+            )
             print(f"Completed command execution on group '{group}'")
         except Exception as e:
             logger.error(f"Failed to execute command on group '{group}': {str(e)}")
@@ -553,7 +632,7 @@ class Tunnel:
             raise
 
     @staticmethod
-    def copy_ssh_config_on_all(
+    def copy_ssh_config_on_inventory(
         inventory,
         local_config_path,
         remote_config_path=os.path.expanduser("~/.ssh/config"),
@@ -581,12 +660,13 @@ class Tunnel:
             tunnel.copy_ssh_config(local_config_path, remote_config_path)
             tunnel.close()
 
-        Tunnel.execute_on_all(inventory, copy_host, group, parallel, max_threads)
+        Tunnel.execute_on_inventory(inventory, copy_host, group, parallel, max_threads)
 
     @staticmethod
-    def rotate_ssh_key_on_all(
+    def rotate_ssh_key_on_inventory(
         inventory,
         key_prefix=os.path.expanduser("~/.ssh/id_"),
+        key_type="ed25519",
         group="all",
         parallel=False,
         max_threads=5,
@@ -595,6 +675,7 @@ class Tunnel:
         Rotate SSH keys for all hosts in the specified group of the YAML inventory.
         :param inventory: Path to the YAML inventory file.
         :param key_prefix: Prefix for new key paths (appends hostname).
+        :param key_type: Type of key to generate ('rsa' or 'ed25519', default: 'rsa').
         :param group: Inventory group to target (default: 'all').
         :param parallel: Run in parallel.
         :param max_threads: Max threads for parallel.
@@ -608,16 +689,18 @@ class Tunnel:
                 password=host.get("password"),
                 identity_file=host.get("key_path"),
             )
-            tunnel.rotate_ssh_key(new_key_path)
+            tunnel.rotate_ssh_key(new_key_path, key_type=key_type)
             logging.info(
-                f"Rotated key for {host['hostname']}. Update inventory key_path to {new_key_path} if needed."
+                f"Rotated {key_type} key for {host['hostname']}. Update inventory key_path to {new_key_path} if needed."
             )
             tunnel.close()
 
-        Tunnel.execute_on_all(inventory, rotate_host, group, parallel, max_threads)
+        Tunnel.execute_on_inventory(
+            inventory, rotate_host, group, parallel, max_threads
+        )
 
     @staticmethod
-    def send_file_on_all(
+    def send_file_on_inventory(
         inventory,
         local_path,
         remote_path,
@@ -649,10 +732,10 @@ class Tunnel:
         if not os.path.exists(local_path):
             raise ValueError(f"Local file does not exist: {local_path}")
 
-        Tunnel.execute_on_all(inventory, send_host, group, parallel, max_threads)
+        Tunnel.execute_on_inventory(inventory, send_host, group, parallel, max_threads)
 
     @staticmethod
-    def receive_file_on_all(
+    def receive_file_on_inventory(
         inventory,
         remote_path: str,
         local_path_prefix,
@@ -685,7 +768,9 @@ class Tunnel:
             tunnel.close()
 
         os.makedirs(local_path_prefix, exist_ok=True)
-        Tunnel.execute_on_all(inventory, receive_host, group, parallel, max_threads)
+        Tunnel.execute_on_inventory(
+            inventory, receive_host, group, parallel, max_threads
+        )
 
 
 def tunnel_manager():
@@ -701,6 +786,12 @@ def tunnel_manager():
         "--shared-key-path",
         default="~/.ssh/id_shared",
         help="Path to shared private key",
+    )
+    setup_parser.add_argument(
+        "--key-type",
+        choices=["rsa", "ed25519"],
+        default="ed25519",
+        help="Key type to generate (rsa or ed25519, default: ed25519)",
     )
     setup_parser.add_argument(
         "--group", default="all", help="Inventory group to target (default: all)"
@@ -748,6 +839,12 @@ def tunnel_manager():
         "--key-prefix",
         default="~/.ssh/id_",
         help="Prefix for new key paths (appends hostname)",
+    )
+    rotate_parser.add_argument(
+        "--key-type",
+        choices=["rsa", "ed25519"],
+        default="ed25519",
+        help="Key type to generate (rsa or ed25519, default: ed25519)",
     )
     rotate_parser.add_argument(
         "--group", default="all", help="Inventory group to target (default: all)"
@@ -832,12 +929,13 @@ def tunnel_manager():
             Tunnel.setup_all_passwordless_ssh(
                 args.inventory,
                 args.shared_key_path,
+                args.key_type,
                 args.group,
                 args.parallel,
                 args.max_threads,
             )
         elif args.command == "run-command":
-            Tunnel.run_command_on_all(
+            Tunnel.run_command_on_inventory(
                 args.inventory,
                 args.remote_command,
                 args.group,
@@ -845,7 +943,7 @@ def tunnel_manager():
                 args.max_threads,
             )
         elif args.command == "copy-config":
-            Tunnel.copy_ssh_config_on_all(
+            Tunnel.copy_ssh_config_on_inventory(
                 args.inventory,
                 args.local_config_path,
                 args.remote_config_path,
@@ -854,15 +952,16 @@ def tunnel_manager():
                 args.max_threads,
             )
         elif args.command == "rotate-key":
-            Tunnel.rotate_ssh_key_on_all(
+            Tunnel.rotate_ssh_key_on_inventory(
                 args.inventory,
                 args.key_prefix,
+                args.key_type,
                 args.group,
                 args.parallel,
                 args.max_threads,
             )
         elif args.command == "send-file":
-            Tunnel.send_file_on_all(
+            Tunnel.send_file_on_inventory(
                 args.inventory,
                 args.local_path,
                 args.remote_path,
@@ -871,7 +970,7 @@ def tunnel_manager():
                 args.max_threads,
             )
         elif args.command == "receive-file":
-            Tunnel.receive_file_on_all(
+            Tunnel.receive_file_on_inventory(
                 args.inventory,
                 args.remote_path,
                 args.local_path_prefix,

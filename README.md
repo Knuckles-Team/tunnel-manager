@@ -31,31 +31,34 @@ This project provides a Python-based `Tunnel` class for secure SSH connections a
 - **Key Functionality**:
     - **Run Remote Commands**: Execute shell commands on a remote host and retrieve output.
     - **File Upload/Download**: Transfer files to/from a single host or all hosts in an inventory group using SFTP.
-    - **Passwordless SSH Setup**: Configure key-based authentication for secure, passwordless access.
+    - **Passwordless SSH Setup**: Configure key-based authentication for secure, passwordless access, with support for RSA and Ed25519 key types.
     - **SSH Config Management**: Copy local SSH config files to remote hosts.
-    - **Key Rotation**: Generate and deploy new SSH key pairs, updating `authorized_keys`.
+    - **Key Rotation**: Generate and deploy new SSH key pairs (RSA or Ed25519), updating `authorized_keys`.
     - **Inventory Support**: Operate on multiple hosts defined in an Ansible-style YAML inventory, with group targeting (e.g., `all`, `homelab`, `poweredge`).
     - **Teleport Support**: Seamlessly integrates with Teleport's certificate-based authentication and proxying.
     - **Configuration Flexibility**: Loads SSH settings from `~/.ssh/config` by default, with optional overrides for username, password, identity files, certificates, and proxy commands.
     - **Logging**: Optional file-based logging for debugging and auditing.
     - **Parallel Execution**: Support for parallel operations across multiple hosts with configurable thread limits.
+    - **Key Type Support**: Explicit support for both RSA and Ed25519 keys in authentication, generation, and rotation for enhanced security and compatibility.
 
-### FastMCP Server
+## FastMCP Server
 - **Purpose**: Exposes `Tunnel` class functionality as a FastMCP server, enabling AI tools to perform remote operations programmatically.
 - **Tools Provided**:
-    - `run_remote_command`: Runs a shell command on a single remote host.
-    - `upload_file`: Uploads a file to a single remote host via SFTP.
-    - `download_file`: Downloads a file from a single remote host via SFTP.
+    - `run_command_on_remote_host`: Runs a shell command on a single remote host.
+    - `send_file_to_remote_host`: Uploads a file to a single remote host via SFTP.
+    - `receive_file_from_remote_host`: Downloads a file from a single remote host via SFTP.
     - `check_ssh_server`: Checks if the SSH server is running and configured for key-based authentication.
     - `test_key_auth`: Tests key-based authentication for a host.
     - `setup_passwordless_ssh`: Sets up passwordless SSH for a single host.
     - `copy_ssh_config`: Copies an SSH config file to a single remote host.
     - `rotate_ssh_key`: Rotates SSH keys for a single host.
     - `remove_host_key`: Removes a host’s key from the local `known_hosts` file.
-    - `setup_all_passwordless_ssh`: Sets up passwordless SSH for all hosts in an inventory group.
-    - `run_command_on_all`: Runs a command on all hosts in an inventory group.
-    - `copy_ssh_config_on_all`: Copies an SSH config file to all hosts in an inventory group.
-    - `rotate_ssh_key_on_all`: Rotates SSH keys for all hosts in an inventory group.
+    - `configure_key_auth_on_inventory`: Sets up passwordless SSH for all hosts in an inventory group.
+    - `run_command_on_inventory`: Runs a command on all hosts in an inventory group.
+    - `copy_ssh_config_on_inventory`: Copies an SSH config file to all hosts in an inventory group.
+    - `rotate_ssh_key_on_inventory`: Rotates SSH keys for all hosts in an inventory group.
+    - `send_file_to_inventory`: Uploads a file to all hosts in an inventory group via SFTP.
+    - `receive_file_from_inventory`: Downloads a file from all hosts in an inventory group via SFTP.
 - **Transport Options**: Supports `stdio` (for local scripting) and `http` (for networked access) transport modes.
 - **Progress Reporting**: Integrates with FastMCP's `Context` for progress updates during operations.
 - **Logging**: Comprehensive logging to a file (`tunnel_mcp.log` by default) or a user-specified file.
@@ -64,8 +67,9 @@ This project provides a Python-based `Tunnel` class for secure SSH connections a
   <summary><b>Usage:</b></summary>
 
 ## Tunnel Class
-The `Tunnel` class can be used standalone for SSH operations. Example:
+The `Tunnel` class can be used standalone for SSH operations. Examples:
 
+### Using RSA Keys
 ```python
 from tunnel_manager.tunnel_manager import Tunnel
 
@@ -78,7 +82,6 @@ tunnel = Tunnel(
     certificate_file="/path/to/cert",  # Optional for Teleport
     proxy_command="tsh proxy ssh %h",  # Optional for Teleport
     ssh_config_file="~/.ssh/config",
-    log_file="tunnel.log"
 )
 
 # Connect and run a command
@@ -92,21 +95,60 @@ tunnel.send_file("/local/file.txt", "/remote/file.txt")
 # Download a file
 tunnel.receive_file("/remote/file.txt", "/local/downloaded.txt")
 
-# Setup passwordless SSH
-tunnel.setup_passwordless_ssh(local_key_path="~/.ssh/id_rsa")
+# Setup passwordless SSH with RSA
+tunnel.setup_passwordless_ssh(local_key_path="~/.ssh/id_rsa", key_type="rsa")
 
 # Copy SSH config
 tunnel.copy_ssh_config("/local/ssh_config", "~/.ssh/config")
 
-# Rotate SSH key
-tunnel.rotate_ssh_key("/path/to/new_key")
+# Rotate SSH key with RSA
+tunnel.rotate_ssh_key("/path/to/new_rsa_key", key_type="rsa")
+
+# Close the connection
+tunnel.close()
+```
+
+### Using Ed25519 Keys
+```python
+from tunnel_manager.tunnel_manager import Tunnel
+
+# Initialize with a remote host (assumes ~/.ssh/config or explicit params)
+tunnel = Tunnel(
+    remote_host="192.168.1.10",
+    username="admin",
+    password="mypassword",
+    identity_file="/path/to/id_ed25519",
+    certificate_file="/path/to/cert",  # Optional for Teleport
+    proxy_command="tsh proxy ssh %h",  # Optional for Teleport
+    ssh_config_file="~/.ssh/config",
+)
+
+# Connect and run a command
+tunnel.connect()
+out, err = tunnel.run_command("ls -la /tmp")
+print(f"Output: {out}\nError: {err}")
+
+# Upload a file
+tunnel.send_file("/local/file.txt", "/remote/file.txt")
+
+# Download a file
+tunnel.receive_file("/remote/file.txt", "/local/downloaded.txt")
+
+# Setup passwordless SSH with Ed25519
+tunnel.setup_passwordless_ssh(local_key_path="~/.ssh/id_ed25519", key_type="ed25519")
+
+# Copy SSH config
+tunnel.copy_ssh_config("/local/ssh_config", "~/.ssh/config")
+
+# Rotate SSH key with Ed25519
+tunnel.rotate_ssh_key("/path/to/new_ed25519_key", key_type="ed25519")
 
 # Close the connection
 tunnel.close()
 ```
 
 ## Tunnel Manager CLI Usage
-The `tunnel_manager.py` script provides a CLI for managing SSH operations across hosts defined in an Ansible-style YAML inventory file. Below are examples for each command, targeting different inventory groups (`all`, `homelab`, `poweredge`).
+The `tunnel_manager.py` script provides a CLI for managing SSH operations across hosts defined in an Ansible-style YAML inventory file. Below are examples for each command, targeting different inventory groups (`all`, `homelab`, `poweredge`). The CLI now supports both RSA and Ed25519 keys via the `--key-type` flag for relevant commands (default: `ed25519`).
 
 **Inventory File Example (`inventory.yml`)**:
 ```yaml
@@ -155,93 +197,93 @@ Replace IPs, usernames, and passwords with your actual values.
 ### CLI Commands
 
 #### 1. Setup Passwordless SSH
-Set up passwordless SSH for hosts in the inventory, distributing a shared key.
-- **Target `all` group (sequential)**:
+Set up passwordless SSH for hosts in the inventory, distributing a shared key. Use `--key-type` to specify RSA or Ed25519 (default: ed25519).
+- **Target `all` group (sequential, Ed25519)**:
   ```bash
-  tunnel-manager setup-all --inventory inventory.yml --shared-key-path ~/.ssh/id_shared --log-file setup.log
+  tunnel-manager setup-all --inventory inventory.yml --shared-key-path ~/.ssh/id_shared --key-type ed25519
   ```
-- **Target `homelab` group (parallel, 3 threads)**:
+- **Target `homelab` group (parallel, 3 threads, RSA)**:
   ```bash
-  tunnel-manager setup-all --inventory inventory.yml --shared-key-path ~/.ssh/id_shared --group homelab --parallel --max-threads 3 --log-file setup_homelab.log
+  tunnel-manager setup-all --inventory inventory.yml --shared-key-path ~/.ssh/id_shared_rsa --key-type rsa --group homelab --parallel --max-threads 3
   ```
-- **Target `poweredge` group (sequential)**:
+- **Target `poweredge` group (sequential, Ed25519)**:
   ```bash
-  tunnel-manager setup-all --inventory inventory.yml --shared-key-path ~/.ssh/id_shared --group poweredge --log-file setup_poweredge.log
+  tunnel-manager --log-file setup_poweredge.log setup-all --inventory inventory.yml --shared-key-path ~/.ssh/id_shared --key-type ed25519 --group poweredge
   ```
 
 #### 2. Run a Command
 Execute a shell command on all hosts in the specified group.
 - **Run `uptime` on `all` group (sequential)**:
   ```bash
-  tunnel-manager run-command --inventory inventory.yml --remote-command "uptime" --log-file uptime.log
+  tunnel-manager run-command --inventory inventory.yml --remote-command "uptime"
   ```
 - **Run `df -h` on `homelab` group (parallel, 5 threads)**:
   ```bash
-  tunnel-manager run-command --inventory inventory.yml --remote-command "df -h" --group homelab --parallel --max-threads 5 --log-file df_homelab.log
+  tunnel-manager run-command --inventory inventory.yml --remote-command "df -h" --group homelab --parallel --max-threads 5
   ```
 - **Run `whoami` on `poweredge` group (sequential)**:
   ```bash
-  tunnel-manager run-command --inventory inventory.yml --remote-command "whoami" --group poweredge --log-file whoami_poweredge.log
+  tunnel-manager run-command --inventory inventory.yml --remote-command "whoami" --group poweredge
   ```
 
 #### 3. Copy SSH Config
 Copy a local SSH config file to the remote hosts’ `~/.ssh/config`.
 - **Copy to `all` group (sequential)**:
   ```bash
-  tunnel-manager copy-config --inventory inventory.yml --local-config-path ~/.ssh/config --log-file copy_config.log
+  tunnel-manager copy-config --inventory inventory.yml --local-config-path ~/.ssh/config
   ```
 - **Copy to `homelab` group (parallel, 4 threads)**:
   ```bash
-  tunnel-manager copy-config --inventory inventory.yml --local-config-path ~/.ssh/config --group homelab --parallel --max-threads 4 --log-file copy_homelab.log
+  tunnel-manager copy-config --inventory inventory.yml --local-config-path ~/.ssh/config --group homelab --parallel --max-threads 4
   ```
 - **Copy to `poweredge` group with custom remote path**:
   ```bash
-  tunnel-manager copy-config --inventory inventory.yml --local-config-path ~/.ssh/config --remote-config-path ~/.ssh/custom_config --group poweredge --log-file copy_poweredge.log
+  tunnel-manager --log-file copy_config.log copy-config --inventory inventory.yml --local-config-path ~/.ssh/config --remote-config-path ~/.ssh/custom_config --group poweredge
   ```
 
 #### 4. Rotate SSH Keys
-Rotate SSH keys for hosts, generating new keys with a prefix.
-- **Rotate keys for `all` group (sequential)**:
+Rotate SSH keys for hosts, generating new keys with a prefix. Use `--key-type` to specify RSA or Ed25519 (default: ed25519).
+- **Rotate keys for `all` group (sequential, Ed25519)**:
   ```bash
-  tunnel-manager rotate-key --inventory inventory.yml --key-prefix ~/.ssh/id_ --log-file rotate.log
+  tunnel-manager rotate-key --inventory inventory.yml --key-prefix ~/.ssh/id_ --key-type ed25519
   ```
-- **Rotate keys for `homelab` group (parallel, 3 threads)**:
+- **Rotate keys for `homelab` group (parallel, 3 threads, RSA)**:
   ```bash
-  tunnel-manager rotate-key --inventory inventory.yml --key-prefix ~/.ssh/id_ --group homelab --parallel --max-threads 3 --log-file rotate_homelab.log
+  tunnel-manager rotate-key --inventory inventory.yml --key-prefix ~/.ssh/id_rsa_ --key-type rsa --group homelab --parallel --max-threads 3
   ```
-- **Rotate keys for `poweredge` group (sequential)**:
+- **Rotate keys for `poweredge` group (sequential, Ed25519)**:
   ```bash
-  tunnel-manager rotate-key --inventory inventory.yml --key-prefix ~/.ssh/id_ --group poweredge --log-file rotate_poweredge.log
+  tunnel-manager --log-file rotate.log rotate-key --inventory inventory.yml --key-prefix ~/.ssh/id_ --key-type ed25519 --group poweredge
   ```
 
 #### 5. Upload a File
 Upload a local file to all hosts in the specified group.
 - **Upload to `all` group (sequential)**:
   ```bash
-  tunnel-manager send-file --inventory inventory.yml --local-path ./myfile.txt --remote-path /home/user/myfile.txt --log-file upload.log
+  tunnel-manager send-file --inventory inventory.yml --local-path ./myfile.txt --remote-path /home/user/myfile.txt
   ```
 - **Upload to `homelab` group (parallel, 3 threads)**:
   ```bash
-  tunnel-manager send-file --inventory inventory.yml --local-path ./myfile.txt --remote-path /home/user/myfile.txt --group homelab --parallel --max-threads 3 --log-file upload_homelab.log
+  tunnel-manager send-file --inventory inventory.yml --local-path ./myfile.txt --remote-path /home/user/myfile.txt --group homelab --parallel --max-threads 3
   ```
 - **Upload to `poweredge` group (sequential)**:
   ```bash
-  tunnel-manager send-file --inventory inventory.yml --local-path ./myfile.txt --remote-path /home/user/myfile.txt --group poweredge --log-file upload_poweredge.log
+  tunnel-manager --log-file upload_poweredge.log send-file --inventory inventory.yml --local-path ./myfile.txt --remote-path /home/user/myfile.txt --group poweredge
   ```
 
 #### 6. Download a File
 Download a file from all hosts in the specified group, saving to host-specific subdirectories (e.g., `downloads/R510/myfile.txt`).
 - **Download from `all` group (sequential)**:
   ```bash
-  tunnel-manager receive-file --inventory inventory.yml --remote-path /home/user/myfile.txt --local-path-prefix ./downloads --log-file download.log
+  tunnel-manager receive-file --inventory inventory.yml --remote-path /home/user/myfile.txt --local-path-prefix ./downloads
   ```
 - **Download from `homelab` group (parallel, 3 threads)**:
   ```bash
-  tunnel-manager receive-file --inventory inventory.yml --remote-path /home/user/myfile.txt --local-path-prefix ./downloads --group homelab --parallel --max-threads 3 --log-file download_homelab.log
+  tunnel-manager receive-file --inventory inventory.yml --remote-path /home/user/myfile.txt --local-path-prefix ./downloads --group homelab --parallel --max-threads 3
   ```
 - **Download from `poweredge` group (sequential)**:
   ```bash
-  tunnel-manager receive-file --inventory inventory.yml --remote-path /home/user/myfile.txt --local-path-prefix ./downloads --group poweredge --log-file download_poweredge.log
+  tunnel-manager --log-file download_poweredge.log receive-file --inventory inventory.yml --remote-path /home/user/myfile.txt --local-path-prefix ./downloads --group poweredge
   ```
 
 ### CLI Command Table
@@ -252,6 +294,7 @@ Download a file from all hosts in the specified group, saving to host-specific s
 |            | setup-all            | Setup passwordless SSH for all hosts in inventory         | Yes*     | None          |
 |            | --inventory          | YAML inventory path                                      | Yes      | None          |
 |            | --shared-key-path    | Path to shared private key                               | No       | ~/.ssh/id_shared |
+|            | --key-type           | Key type (rsa or ed25519)                                | No       | ed25519       |
 |            | --group              | Inventory group to target                                 | No       | all           |
 |            | --parallel           | Run operation in parallel                                | No       | False         |
 |            | --max-threads        | Max threads for parallel execution                       | No       | 5             |
@@ -262,6 +305,7 @@ Download a file from all hosts in the specified group, saving to host-specific s
 |            | --remote-config-path | Remote path for SSH config                               | No       | ~/.ssh/config |
 |            | rotate-key           | Rotate SSH keys for all hosts in inventory               | Yes*     | None          |
 |            | --key-prefix         | Prefix for new key paths (appends hostname)              | No       | ~/.ssh/id_    |
+|            | --key-type           | Key type (rsa or ed25519)                                | No       | ed25519       |
 |            | send-file            | Upload a file to all hosts in inventory                  | Yes*     | None          |
 |            | --local-path         | Local file path to upload                                | Yes      | None          |
 |            | --remote-path        | Remote destination path                                  | Yes      | None          |
@@ -284,6 +328,7 @@ One of the commands (`setup-all`, `run-command`, `copy-config`, `rotate-key`, `s
 - Use `--log-file` for file-based logging or omit for console output.
 - The `--parallel` option speeds up operations but may overload resources; adjust `--max-threads` as needed.
 - The `receive-file` command saves files to `local_path_prefix/<hostname>/<filename>` to preserve original filenames and avoid conflicts.
+- Ed25519 keys are recommended for better security and performance over RSA, but RSA is supported for compatibility with older systems.
 
 ## FastMCP Server
 The FastMCP server exposes the `Tunnel` functionality as AI-accessible tools. Start the server with:
@@ -317,7 +362,7 @@ Configure `mcp.json`
         "tunnel_manager_mcp"
       ],
       "env": {
-        "TUNNEL_REMOTE_HOST": "user@192.168.1.12", // Optional
+        "TUNNEL_REMOTE_HOST": "192.168.1.12",      // Optional
         "TUNNEL_USERNAME": "admin",                // Optional
         "TUNNEL_PASSWORD": "",                     // Optional
         "TUNNEL_REMOTE_PORT": "22",                // Optional

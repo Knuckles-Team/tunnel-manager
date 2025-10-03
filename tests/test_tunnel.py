@@ -14,7 +14,6 @@ def test_password_authentication():
             remote_host="10.0.0.11",
             username=username,
             password=password,
-            log_file="tunnel_password.log",
         )
 
         # Connect to the remote host
@@ -29,10 +28,11 @@ def test_password_authentication():
         print(f"Command output: {out}")
         # Example file transfer (uncomment to test, ensure files exist)
         tunnel.send_file(
-            "./tests/local_test.txt", "/home/genius/Downloads/remote_test.txt"
+            "/home/genius/Development/inventory/inventory.yml",
+            "/home/genius/Downloads/remote_test.txt",
         )
         tunnel.receive_file(
-            "/home/genius/Downloads/remote_test.txt", "./tests/downloaded_test.txt"
+            "/home/genius/Downloads/remote_test.txt", "./tests/downloaded_inventory.txt"
         )
 
         tunnel.close()
@@ -49,7 +49,6 @@ def test_key_authentication():
             remote_host="10.0.0.11",
             username=username,
             identity_file=os.path.expanduser("~/.ssh/id_rsa"),
-            log_file="tunnel_key.log",
         )
 
         # Connect to the remote host
