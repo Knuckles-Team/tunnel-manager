@@ -1,2 +1,2 @@
 paramiko>=4.0.0
-fastmcp>=2.12.4
+fastmcp>=2.13.0.2
