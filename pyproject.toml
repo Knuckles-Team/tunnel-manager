@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tunnel-manager"
-version = "1.0.5"
+version = "1.0.6"
 description = "Create SSH Tunnels to your remote hosts and host as an MCP Server for Agentic AI!"
 readme = "README.md"
 authors = [{ name = "Audel Rouhi", email = "knucklessg1@gmail.com" }]
@@ -18,7 +18,7 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "fastmcp>=2.12.4",
+    "fastmcp>=2.13.0.2",
     "paramiko>=4.0.0",
 ]
 

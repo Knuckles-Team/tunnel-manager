@@ -48,7 +48,7 @@ ENV EUNOMIA_REMOTE_URL=${EUNOMIA_REMOTE_URL}
 ENV PATH="/usr/local/bin:${PATH}"
 
 RUN pip install uv \
-    && uv pip install --system --upgrade tunnel-manager>=1.0.5
+    && uv pip install --system --upgrade tunnel-manager>=1.0.6
 
 ENTRYPOINT exec tunnel-manager-mcp \
     --transport "${TRANSPORT}" \
