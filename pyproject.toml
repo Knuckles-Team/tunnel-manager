@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tunnel-manager"
-version = "1.0.8"
+version = "1.0.9"
 description = "Create SSH Tunnels to your remote hosts and host as an MCP Server for Agentic AI!"
 readme = "README.md"
 authors = [{ name = "Audel Rouhi", email = "knucklessg1@gmail.com" }]
@@ -22,13 +22,34 @@ dependencies = [
     "paramiko>=4.0.0",
 ]
 
+[project.optional-dependencies]
+mcp = [
+    "fastmcp>=2.13.0.2",
+    "eunomia-mcp>=0.3.10"
+]
+
+a2a = [
+    "pydantic-ai-slim[fastmcp,openai,anthropic,google,huggingface,a2a]>=1.32.0",
+    "pydantic-ai-skills",
+]
+
+all = [
+    "fastmcp>=2.13.0.2",
+    "eunomia-mcp>=0.3.10",
+    "pydantic-ai-slim[fastmcp,openai,anthropic,google,huggingface,a2a]>=1.32.0",
+    "pydantic-ai-skills",
+]
+
 [project.scripts]
 tunnel-manager = "tunnel_manager.tunnel_manager:tunnel_manager"
 tunnel-manager-mcp = "tunnel_manager.tunnel_manager_mcp:tunnel_manager_mcp"
+tunnel-manager-a2a = "tunnel_manager.tunnel_manager_a2a:agent_server"
 
 [tool.setuptools.packages.find]
 where = ["."]
 
+[tool.setuptools.package-data]
+tunnel_manager = ["mcp_config.json", "skills/**"]
+
 [tool.setuptools]
 include-package-data = true
-package-data = { "tunnel_manager" = ["tunnel_manager"] }

@@ -1,6 +1,7 @@
 # Tunnel Manager
 
 ![PyPI - Version](https://img.shields.io/pypi/v/tunnel-manager)
+![MCP Server](https://badge.mcpx.dev?type=server 'MCP Server')
 ![PyPI - Downloads](https://img.shields.io/pypi/dd/tunnel-manager)
 ![GitHub Repo stars](https://img.shields.io/github/stars/Knuckles-Team/tunnel-manager)
 ![GitHub forks](https://img.shields.io/github/forks/Knuckles-Team/tunnel-manager)
@@ -20,7 +21,7 @@
 ![PyPI - Wheel](https://img.shields.io/pypi/wheel/tunnel-manager)
 ![PyPI - Implementation](https://img.shields.io/pypi/implementation/tunnel-manager)
 
-*Version: 1.0.8*
+*Version: 1.0.9*
 
 This project provides a Python-based `Tunnel` class for secure SSH connections and file transfers, integrated with a FastMCP server (`tunnel_manager_mcp.py`) to expose these capabilities as tools for AI-driven workflows. The implementation supports both standard SSH (e.g., for local networks) and Teleport's secure access platform, leveraging the `paramiko` library for SSH operations.
 
