@@ -1,4 +1,4 @@
-# Tunnel Manager
+# Tunnel Manager - A2A & MCP Server
 
 ![PyPI - Version](https://img.shields.io/pypi/v/tunnel-manager)
 ![MCP Server](https://badge.mcpx.dev?type=server 'MCP Server')
@@ -23,9 +23,11 @@
 
 *Version: 1.0.9*
 
+## Overview
+
 This project provides a Python-based `Tunnel` class for secure SSH connections and file transfers, integrated with a FastMCP server (`tunnel_manager_mcp.py`) to expose these capabilities as tools for AI-driven workflows. The implementation supports both standard SSH (e.g., for local networks) and Teleport's secure access platform, leveraging the `paramiko` library for SSH operations.
 
-## Features
+### Features
 
 ### Tunnel Class
 - **Purpose**: Facilitates secure SSH connections, file transfers, and key management for single or multiple hosts.
@@ -42,7 +44,7 @@ This project provides a Python-based `Tunnel` class for secure SSH connections a
     - **Parallel Execution**: Support for parallel operations across multiple hosts with configurable thread limits.
     - **Key Type Support**: Explicit support for both RSA and Ed25519 keys in authentication, generation, and rotation for enhanced security and compatibility.
 
-## FastMCP Server
+### FastMCP Server
 - **Purpose**: Exposes `Tunnel` class functionality as a FastMCP server, enabling AI tools to perform remote operations programmatically.
 - **Tools Provided**:
     - `run_command_on_remote_host`: Runs a shell command on a single remote host.
@@ -64,8 +66,7 @@ This project provides a Python-based `Tunnel` class for secure SSH connections a
 - **Progress Reporting**: Integrates with FastMCP's `Context` for progress updates during operations.
 - **Logging**: Comprehensive logging to a file (`tunnel_mcp.log` by default) or a user-specified file.
 
-<details>
-  <summary><b>Usage:</b></summary>
+## Usage
 
 ### CLI
 | Short Flag | Long Flag            | Description                                              | Required | Default Value |
@@ -281,6 +282,22 @@ Replace IPs, usernames, and passwords with your actual values.
 
 The MCP Server can be run in two modes: `stdio` (for local testing) or `http` (for networked access). To start the server, use the following commands:
 
+### A2A CLI
+
+| Short Flag | Long Flag         | Description                                                            |
+|------------|-------------------|------------------------------------------------------------------------|
+| -h         | --help            | Display help information                                               |
+|            | --host            | Host to bind the server to (default: 0.0.0.0)                          |
+|            | --port            | Port to bind the server to (default: 9000)                             |
+|            | --reload          | Enable auto-reload                                                     |
+|            | --provider        | LLM Provider: 'openai', 'anthropic', 'google', 'huggingface'           |
+|            | --model-id        | LLM Model ID (default: qwen3:4b)                                       |
+|            | --base-url        | LLM Base URL (for OpenAI compatible providers)                         |
+|            | --api-key         | LLM API Key                                                            |
+|            | --mcp-url         | MCP Server URL (default: http://localhost:8000/mcp)                    |
+
+
+
 #### Run in stdio mode (default):
 ```bash
 tunnel-manager-mcp --transport "stdio"
@@ -492,12 +509,8 @@ docker-compose up -d
   }
 }
 ```
-</details>
 
-<details>
-  <summary><b>Installation Instructions:</b></summary>
-
-### Install Python Package
+## Install Python Package
 ```bash
 python -m pip install tunnel-manager
 ```
@@ -508,14 +521,11 @@ or
 uv pip install --upgrade tunnel-manager
 ```
 
-</details>
-
-<details>
-  <summary><b>Repository Owners:</b></summary>
+## Repository Owners
 
 
 <img width="100%" height="180em" src="https://github-readme-stats.vercel.app/api?username=Knucklessg1&show_icons=true&hide_border=true&&count_private=true&include_all_commits=true" />
 
 ![GitHub followers](https://img.shields.io/github/followers/Knucklessg1)
 ![GitHub User's stars](https://img.shields.io/github/stars/Knucklessg1)
-</details>
+
