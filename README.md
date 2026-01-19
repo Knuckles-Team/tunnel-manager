@@ -1,4 +1,4 @@
-# Tunnel Manager - A2A & MCP Server
+# Tunnel Manager - A2A | AG-UI | MCP
 
 ![PyPI - Version](https://img.shields.io/pypi/v/tunnel-manager)
 ![MCP Server](https://badge.mcpx.dev?type=server 'MCP Server')
@@ -283,6 +283,10 @@ Replace IPs, usernames, and passwords with your actual values.
 The MCP Server can be run in two modes: `stdio` (for local testing) or `http` (for networked access). To start the server, use the following commands:
 
 ### A2A CLI
+#### Endpoints
+- **Web UI**: `http://localhost:8000/` (if enabled)
+- **A2A**: `http://localhost:8000/a2a` (Discovery: `/a2a/.well-known/agent.json`)
+- **AG-UI**: `http://localhost:8000/ag-ui` (POST)
 
 | Short Flag | Long Flag         | Description                                                            |
 |------------|-------------------|------------------------------------------------------------------------|
@@ -295,6 +299,8 @@ The MCP Server can be run in two modes: `stdio` (for local testing) or `http` (f
 |            | --base-url        | LLM Base URL (for OpenAI compatible providers)                         |
 |            | --api-key         | LLM API Key                                                            |
 |            | --mcp-url         | MCP Server URL (default: http://localhost:8000/mcp)                    |
+|            | --web             | Enable Pydantic AI Web UI                                              | False (Env: ENABLE_WEB_UI) |
+
 
 
 
@@ -528,4 +534,3 @@ uv pip install --upgrade tunnel-manager
 
 ![GitHub followers](https://img.shields.io/github/followers/Knucklessg1)
 ![GitHub User's stars](https://img.shields.io/github/stars/Knucklessg1)
-

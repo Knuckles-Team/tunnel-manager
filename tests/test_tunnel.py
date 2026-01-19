@@ -1,7 +1,6 @@
 import os
 from tunnel_manager.tunnel_manager import Tunnel
 
-
 username = os.environ.get("TUNNEL_USERNAME")
 password = os.environ.get("TUNNEL_PASSWORD")
 
