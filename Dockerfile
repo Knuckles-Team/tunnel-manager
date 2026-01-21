@@ -47,6 +47,6 @@ ENV EUNOMIA_POLICY_FILE=${EUNOMIA_POLICY_FILE}
 ENV EUNOMIA_REMOTE_URL=${EUNOMIA_REMOTE_URL}
 
 RUN pip install uv \
-    && uv pip install --system tunnel-manager[all]>=1.0.10
+    && uv pip install --system tunnel-manager[all]>=1.0.11
 
 CMD ["tunnel-manager-mcp"]
