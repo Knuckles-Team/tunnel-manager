@@ -10,6 +10,8 @@ import asyncio
 from typing import Optional, Dict, List, Union
 import requests
 from eunomia_mcp.middleware import EunomiaMcpMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 from pydantic import Field
 from fastmcp import FastMCP
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
@@ -123,6 +125,10 @@ def load_inventory(
 
 
 def register_tools(mcp: FastMCP):
+    @mcp.custom_route("/health", methods=["GET"])
+    async def health_check(request: Request) -> JSONResponse:
+        return JSONResponse({"status": "OK"})
+
     @mcp.tool(
         annotations={
             "title": "Run Command on Remote Host",

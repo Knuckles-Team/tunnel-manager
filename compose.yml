@@ -5,7 +5,7 @@ services:
     # build: . # Debug
     container_name: tunnel-manager-mcp
     hostname: tunnel-manager-mcp
-    command: ["tunnel-manager-mcp"]
+    command: [ "tunnel-manager-mcp" ]
     extra_hosts:
       - "host.docker.internal:host-gateway"
     logging:
@@ -21,6 +21,12 @@ services:
       - "TUNNEL_REMOTE_HOST=${TUNNEL_REMOTE_HOST}"
     ports:
       - "8002:8002"
+    healthcheck:
+      test: [ "CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     volumes:
       - ~/.ssh:/root/.ssh:ro
 
@@ -29,7 +35,7 @@ services:
     # build: . # Debug
     container_name: tunnel-manager-agent
     hostname: tunnel-manager-agent
-    command: ["tunnel-manager-agent"]
+    command: [ "tunnel-manager-agent" ]
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -52,3 +58,9 @@ services:
       - "ENABLE_WEB_UI=True"
     ports:
       - "9002:9002"
+    healthcheck:
+      test: [ "CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9002/health')" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
