@@ -13,10 +13,6 @@ from pydantic_ai import Agent, ModelSettings
 from pydantic_ai.mcp import load_mcp_servers
 from pydantic_ai.toolsets.fastmcp import FastMCPToolset
 from pydantic_ai_skills import SkillsToolset
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.models.anthropic import AnthropicModel
-from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.models.huggingface import HuggingFaceModel
 from fasta2a import Skill
 from tunnel_manager.utils import (
     to_boolean,
@@ -24,6 +20,7 @@ from tunnel_manager.utils import (
     get_mcp_config_path,
     get_skills_path,
     load_skills_from_directory,
+    create_model,
 )
 
 from fastapi import FastAPI, Request
@@ -73,38 +70,6 @@ AGENT_SYSTEM_PROMPT = (
     "5. Always confirm destructive actions (like file overwrites) unless explicitly instructed otherwise.\n"
     "6. Provide clear output of command execution results.\n"
 )
-
-
-def create_model(
-    provider: str = DEFAULT_PROVIDER,
-    model_id: str = DEFAULT_MODEL_ID,
-    base_url: Optional[str] = DEFAULT_OPENAI_BASE_URL,
-    api_key: Optional[str] = DEFAULT_OPENAI_API_KEY,
-):
-    if provider == "openai":
-        target_base_url = base_url or DEFAULT_OPENAI_BASE_URL
-        target_api_key = api_key or DEFAULT_OPENAI_API_KEY
-        if target_base_url:
-            os.environ["OPENAI_BASE_URL"] = target_base_url
-        if target_api_key:
-            os.environ["OPENAI_API_KEY"] = target_api_key
-        return OpenAIChatModel(model_id, provider="openai")
-
-    elif provider == "anthropic":
-        if api_key:
-            os.environ["ANTHROPIC_API_KEY"] = api_key
-        return AnthropicModel(model_id)
-
-    elif provider == "google":
-        if api_key:
-            os.environ["GEMINI_API_KEY"] = api_key
-            os.environ["GOOGLE_API_KEY"] = api_key
-        return GoogleModel(model_id)
-
-    elif provider == "huggingface":
-        if api_key:
-            os.environ["HF_TOKEN"] = api_key
-        return HuggingFaceModel(model_id)
 
 
 def create_agent(
@@ -197,7 +162,7 @@ def create_agent_server(
     a2a_app = agent.to_a2a(
         name=AGENT_NAME,
         description=AGENT_DESCRIPTION,
-        version="1.0.12",
+        version="1.0.13",
         skills=skills,
         debug=debug,
     )
