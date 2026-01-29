@@ -30,6 +30,8 @@ from tunnel_manager.utils import (
 )
 from tunnel_manager.middlewares import UserTokenMiddleware, JWTClaimsLoggingMiddleware
 
+__version__ = "1.0.16"
+
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
@@ -2088,6 +2090,7 @@ def register_tools(mcp: FastMCP):
 
 
 def tunnel_manager_mcp():
+    print(f"tunnel_manager_mcp v{__version__}")
     parser = argparse.ArgumentParser(
         description="Tunnel MCP Server for remote SSH and file operations",
     )

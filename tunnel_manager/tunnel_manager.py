@@ -9,6 +9,8 @@ import os
 import paramiko
 import yaml
 
+__version__ = "1.0.16"
+
 
 class Tunnel:
     def __init__(
@@ -774,6 +776,7 @@ class Tunnel:
 
 
 def tunnel_manager():
+    print(f"tunnel_manager v{__version__}")
     parser = argparse.ArgumentParser(description="Tunnel Manager CLI")
     parser.add_argument("--log-file", help="Log to this file (default: console output)")
 
