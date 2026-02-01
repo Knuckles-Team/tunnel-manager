@@ -17,10 +17,14 @@ from fasta2a import Skill
 from tunnel_manager.utils import (
     to_boolean,
     to_integer,
+    to_float,
+    to_list,
+    to_dict,
     get_mcp_config_path,
     get_skills_path,
     load_skills_from_directory,
     create_model,
+    prune_large_messages,
 )
 
 from fastapi import FastAPI, Request
@@ -29,7 +33,7 @@ from pydantic import ValidationError
 from pydantic_ai.ui import SSE_CONTENT_TYPE
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 
-__version__ = "1.0.19"
+__version__ = "1.0.20"
 
 # Configure logging
 logging.basicConfig(
@@ -58,6 +62,21 @@ DEFAULT_MCP_CONFIG = os.getenv("MCP_CONFIG", get_mcp_config_path())
 DEFAULT_SKILLS_DIRECTORY = os.getenv("SKILLS_DIRECTORY", get_skills_path())
 DEFAULT_ENABLE_WEB_UI = to_boolean(os.getenv("ENABLE_WEB_UI", "False"))
 
+# Model Settings
+DEFAULT_MAX_TOKENS = to_integer(os.getenv("MAX_TOKENS", "8192"))
+DEFAULT_TEMPERATURE = to_float(os.getenv("TEMPERATURE", "0.7"))
+DEFAULT_TOP_P = to_float(os.getenv("TOP_P", "1.0"))
+DEFAULT_TIMEOUT = to_float(os.getenv("TIMEOUT", "32400.0"))
+DEFAULT_TOOL_TIMEOUT = to_float(os.getenv("TOOL_TIMEOUT", "32400.0"))
+DEFAULT_PARALLEL_TOOL_CALLS = to_boolean(os.getenv("PARALLEL_TOOL_CALLS", "True"))
+DEFAULT_SEED = to_integer(os.getenv("SEED", None))
+DEFAULT_PRESENCE_PENALTY = to_float(os.getenv("PRESENCE_PENALTY", "0.0"))
+DEFAULT_FREQUENCY_PENALTY = to_float(os.getenv("FREQUENCY_PENALTY", "0.0"))
+DEFAULT_LOGIT_BIAS = to_dict(os.getenv("LOGIT_BIAS", None))
+DEFAULT_STOP_SEQUENCES = to_list(os.getenv("STOP_SEQUENCES", None))
+DEFAULT_EXTRA_HEADERS = to_dict(os.getenv("EXTRA_HEADERS", None))
+DEFAULT_EXTRA_BODY = to_dict(os.getenv("EXTRA_BODY", None))
+
 AGENT_NAME = "Tunnel Manager Agent"
 AGENT_DESCRIPTION = "A specialist agent for managing remote servers via SSH tunnels."
 
@@ -66,7 +85,7 @@ AGENT_SYSTEM_PROMPT = (
     "You have access to tools for running commands, transferring files, and managing SSH keys on remote hosts.\n"
     "Your responsibilities:\n"
     "1. Analyze the user's request for remote server management.\n"
-    "2. Use the 'run_command_on_remote_host' tools to execute commands on the remote host.\n"
+    "2. Use the 'remote_access' skill to perform actions on the remote host.\n"
     "3. Ensure secure practices when handling SSH keys and credentials.\n"
     "4. If a connection fails, diagnose the issue (e.g., check SSH server status) and suggest fixes.\n"
     "5. Always confirm destructive actions (like file overwrites) unless explicitly instructed otherwise.\n"
@@ -105,7 +124,22 @@ def create_agent(
 
     logger.info("Initializing Agent...")
 
-    settings = ModelSettings(timeout=3600.0)
+    logger.info("Initializing Agent...")
+
+    settings = ModelSettings(
+        max_tokens=DEFAULT_MAX_TOKENS,
+        temperature=DEFAULT_TEMPERATURE,
+        top_p=DEFAULT_TOP_P,
+        timeout=DEFAULT_TIMEOUT,
+        parallel_tool_calls=DEFAULT_PARALLEL_TOOL_CALLS,
+        seed=DEFAULT_SEED,
+        presence_penalty=DEFAULT_PRESENCE_PENALTY,
+        frequency_penalty=DEFAULT_FREQUENCY_PENALTY,
+        logit_bias=DEFAULT_LOGIT_BIAS,
+        stop_sequences=DEFAULT_STOP_SEQUENCES,
+        extra_headers=DEFAULT_EXTRA_HEADERS,
+        extra_body=DEFAULT_EXTRA_BODY,
+    )
 
     return Agent(
         name=AGENT_NAME,
@@ -113,7 +147,7 @@ def create_agent(
         model=model,
         model_settings=settings,
         toolsets=agent_toolsets,
-        tool_timeout=32400.0,
+        tool_timeout=DEFAULT_TOOL_TIMEOUT,
         deps_type=Any,
     )
 
@@ -208,6 +242,10 @@ def create_agent_server(
                 media_type="application/json",
                 status_code=422,
             )
+
+        # Prune large messages from history
+        if hasattr(run_input, "messages"):
+            run_input.messages = prune_large_messages(run_input.messages)
 
         # Create adapter and run the agent → stream AG-UI events
         adapter = AGUIAdapter(agent=agent, run_input=run_input, accept=accept)
