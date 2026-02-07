@@ -9,7 +9,7 @@ import os
 import paramiko
 import yaml
 
-__version__ = "1.0.20"
+__version__ = "1.0.21"
 
 
 class Tunnel:
@@ -777,7 +777,7 @@ class Tunnel:
 
 def tunnel_manager():
     print(f"tunnel_manager v{__version__}")
-    parser = argparse.ArgumentParser(description="Tunnel Manager CLI")
+    parser = argparse.ArgumentParser(add_help=False, description="Tunnel Manager CLI")
     parser.add_argument("--log-file", help="Log to this file (default: console output)")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -893,7 +893,15 @@ def tunnel_manager():
         "--max-threads", type=int, default=5, help="Max threads for parallel execution"
     )
 
+    parser.add_argument("--help", action="store_true", help="Show usage")
+
     args = parser.parse_args()
+
+    if hasattr(args, "help") and args.help:
+
+        usage()
+
+        sys.exit(0)
 
     # Ensure log file directory exists
     if args.log_file:
@@ -987,6 +995,53 @@ def tunnel_manager():
         logger.error(f"Automation failed: {str(e)}")
         print(f"Error: Automation failed: {str(e)}", file=sys.stderr)
         sys.exit(1)
+
+
+def usage():
+    print(
+        f"Tunnel Manager ({__version__}): Tunnel Manager CLI\n\n"
+        "Usage:\n"
+        "--log-file              [ Log to this file (default: console output) ]\n"
+        "--inventory             [ YAML inventory path ]\n"
+        "--shared-key-path       [ Path to shared private key ]\n"
+        "--key-type              [ Key type to generate (rsa or ed25519, default: ed25519) ]\n"
+        "--group                 [ Inventory group to target (default: all) ]\n"
+        "--parallel              [ Run in parallel ]\n"
+        "--max-threads           [ Max threads for parallel execution ]\n"
+        "--inventory             [ YAML inventory path ]\n"
+        "--remote-command        [ Shell command to run ]\n"
+        "--group                 [ Inventory group to target (default: all) ]\n"
+        "--parallel              [ Run in parallel ]\n"
+        "--max-threads           [ Max threads for parallel execution ]\n"
+        "--inventory             [ YAML inventory path ]\n"
+        "--local-config-path     [ Local SSH config path ]\n"
+        "--remote-config-path    [ Remote path (default ~/.ssh/config) ]\n"
+        "--group                 [ Inventory group to target (default: all) ]\n"
+        "--parallel              [ Run in parallel ]\n"
+        "--max-threads           [ Max threads for parallel execution ]\n"
+        "--inventory             [ YAML inventory path ]\n"
+        "--key-prefix            [ Prefix for new key paths (appends hostname) ]\n"
+        "--key-type              [ Key type to generate (rsa or ed25519, default: ed25519) ]\n"
+        "--group                 [ Inventory group to target (default: all) ]\n"
+        "--parallel              [ Run in parallel ]\n"
+        "--max-threads           [ Max threads for parallel execution ]\n"
+        "--inventory             [ YAML inventory path ]\n"
+        "--local-path            [ Local file path to upload ]\n"
+        "--remote-path           [ Remote destination path ]\n"
+        "--group                 [ Inventory group to target (default: all) ]\n"
+        "--parallel              [ Run in parallel ]\n"
+        "--max-threads           [ Max threads for parallel execution ]\n"
+        "--inventory             [ YAML inventory path ]\n"
+        "--remote-path           [ Remote file path to download ]\n"
+        "--local-path-prefix     [ Local directory path prefix to save files ]\n"
+        "--group                 [ Inventory group to target (default: all) ]\n"
+        "--parallel              [ Run in parallel ]\n"
+        "--max-threads           [ Max threads for parallel execution ]\n"
+        "\n"
+        "Examples:\n"
+        "  [Simple]  tunnel-manager \n"
+        '  [Complex] tunnel-manager --log-file "value" --inventory "value" --shared-key-path "value" --key-type "value" --group "value" --parallel --max-threads "value" --inventory "value" --remote-command "value" --group "value" --parallel --max-threads "value" --inventory "value" --local-config-path "value" --remote-config-path "value" --group "value" --parallel --max-threads "value" --inventory "value" --key-prefix "value" --key-type "value" --group "value" --parallel --max-threads "value" --inventory "value" --local-path "value" --remote-path "value" --group "value" --parallel --max-threads "value" --inventory "value" --remote-path "value" --local-path-prefix "value" --group "value" --parallel --max-threads "value"\n'
+    )
 
 
 if __name__ == "__main__":
