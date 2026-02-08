@@ -2,7 +2,9 @@
 services:
   tunnel-manager-mcp:
     image: docker.io/knucklessg1/tunnel-manager:latest
-    # build: . # Debug
+    #    build:
+    #      context: . # Debug
+    #      dockerfile: debug.Dockerfile
     container_name: tunnel-manager-mcp
     hostname: tunnel-manager-mcp
     command: [ "tunnel-manager-mcp" ]
@@ -32,7 +34,9 @@ services:
 
   tunnel-manager-agent:
     image: docker.io/knucklessg1/tunnel-manager:latest
-    # build: . # Debug
+    #    build:
+    #      context: . # Debug
+    #      dockerfile: debug.Dockerfile
     container_name: tunnel-manager-agent
     hostname: tunnel-manager-agent
     command: [ "tunnel-manager-agent" ]
