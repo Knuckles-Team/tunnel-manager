@@ -9,7 +9,7 @@ import os
 import paramiko
 import yaml
 
-__version__ = "1.0.21"
+__version__ = "1.0.22"
 
 
 class Tunnel:
