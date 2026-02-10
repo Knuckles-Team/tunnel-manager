@@ -30,7 +30,7 @@ from tunnel_manager.utils import (
 )
 from tunnel_manager.middlewares import UserTokenMiddleware, JWTClaimsLoggingMiddleware
 
-__version__ = "1.0.22"
+__version__ = "1.1.0"
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
