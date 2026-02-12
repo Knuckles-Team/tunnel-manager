@@ -9,7 +9,7 @@ import os
 import paramiko
 import yaml
 
-__version__ = "1.1.4"
+__version__ = "1.1.5"
 
 
 class Tunnel:
@@ -45,7 +45,6 @@ class Tunnel:
         self.sftp = None
         self.logger = logging.getLogger(__name__)
 
-        # Load SSH config from custom or default path
         self.ssh_config = paramiko.SSHConfig()
         if os.path.exists(ssh_config_file) and os.path.isfile(ssh_config_file):
             with open(ssh_config_file, "r") as f:
@@ -87,14 +86,12 @@ class Tunnel:
 
         try:
             if self.identity_file:
-                # Try loading as ED25519 key first
                 try:
                     private_key = paramiko.Ed25519Key.from_private_key_file(
                         self.identity_file
                     )
                     self.logger.info(f"Loaded ED25519 key from: {self.identity_file}")
                 except paramiko.ssh_exception.SSHException:
-                    # Fallback to RSA key
                     private_key = paramiko.RSAKey.from_private_key_file(
                         self.identity_file
                     )
@@ -156,18 +153,14 @@ class Tunnel:
         """
         self.connect()
         try:
-            # Normalize paths for consistency
             local_path = os.path.abspath(os.path.expanduser(local_path))
-            remote_path = os.path.expanduser(
-                remote_path
-            )  # ~ expansion for remote, but paramiko handles it
+            remote_path = os.path.expanduser(remote_path)
 
             self.logger.debug(
                 f"send_file: local_path='{local_path}', remote_path='{remote_path}'"
             )
             self.logger.debug(f"send_file: CWD={os.getcwd()}")
 
-            # Explicit checks before SFTP
             if not os.path.exists(local_path):
                 err_msg = f"Local file does not exist: {local_path}"
                 self.logger.error(err_msg)
@@ -183,10 +176,9 @@ class Tunnel:
                 self.logger.error(err_msg)
                 raise PermissionError(err_msg)
 
-            # Test binary open (mimics what sftp.put does)
             try:
                 with open(local_path, "rb") as f:
-                    sample = f.read(1024)  # Read a chunk to simulate transfer
+                    sample = f.read(1024)
                     self.logger.debug(
                         f"Binary open successful for {local_path}, sample size: {len(sample)} bytes"
                     )
@@ -307,7 +299,7 @@ class Tunnel:
         if not os.path.exists(pub_key_path):
             if key_type == "rsa":
                 os.system(f"ssh-keygen -t rsa -b 4096 -f {local_key_path} -N ''")
-            else:  # ed25519
+            else:
                 os.system(f"ssh-keygen -t ed25519 -f {local_key_path} -N ''")
             self.logger.info(
                 f"Generated {key_type} key pair: {local_key_path}, {pub_key_path}"
@@ -477,7 +469,7 @@ class Tunnel:
         if not os.path.exists(new_key_path):
             if key_type == "rsa":
                 os.system(f"ssh-keygen -t rsa -b 4096 -f {new_key_path} -N ''")
-            else:  # ed25519
+            else:
                 os.system(f"ssh-keygen -t ed25519 -f {new_key_path} -N ''")
             self.logger.info(f"Generated new {key_type} key pair: {new_key_path}")
 
@@ -543,7 +535,7 @@ class Tunnel:
         if not os.path.exists(shared_key_path):
             if key_type == "rsa":
                 os.system(f"ssh-keygen -t rsa -b 4096 -f {shared_key_path} -N ''")
-            else:  # ed25519
+            else:
                 os.system(f"ssh-keygen -t ed25519 -f {shared_key_path} -N ''")
             logging.info(
                 f"Generated shared {key_type} key pair: {shared_key_path}, {shared_pub_key_path}"
@@ -782,7 +774,6 @@ def tunnel_manager():
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # Setup-all command
     setup_parser = subparsers.add_parser("setup-all", help="Setup passwordless for all")
     setup_parser.add_argument("--inventory", help="YAML inventory path")
     setup_parser.add_argument(
@@ -804,7 +795,6 @@ def tunnel_manager():
         "--max-threads", type=int, default=5, help="Max threads for parallel execution"
     )
 
-    # Run-command command
     run_parser = subparsers.add_parser("run-command", help="Run command on all")
     run_parser.add_argument("--inventory", help="YAML inventory path")
     run_parser.add_argument("--remote-command", help="Shell command to run")
@@ -816,7 +806,6 @@ def tunnel_manager():
         "--max-threads", type=int, default=5, help="Max threads for parallel execution"
     )
 
-    # Copy-config command
     copy_parser = subparsers.add_parser("copy-config", help="Copy SSH config to all")
     copy_parser.add_argument("--inventory", help="YAML inventory path")
     copy_parser.add_argument(
@@ -835,7 +824,6 @@ def tunnel_manager():
         "--max-threads", type=int, default=5, help="Max threads for parallel execution"
     )
 
-    # Rotate-key command
     rotate_parser = subparsers.add_parser("rotate-key", help="Rotate keys for all")
     rotate_parser.add_argument("--inventory", help="YAML inventory path")
     rotate_parser.add_argument(
@@ -859,7 +847,6 @@ def tunnel_manager():
         "--max-threads", type=int, default=5, help="Max threads for parallel execution"
     )
 
-    # Send-file command
     send_parser = subparsers.add_parser(
         "send-file", help="Upload file to all hosts in inventory"
     )
@@ -874,7 +861,6 @@ def tunnel_manager():
         "--max-threads", type=int, default=5, help="Max threads for parallel execution"
     )
 
-    # Receive-file command
     receive_parser = subparsers.add_parser(
         "receive-file", help="Download file from all hosts in inventory"
     )
@@ -903,7 +889,6 @@ def tunnel_manager():
 
         sys.exit(0)
 
-    # Ensure log file directory exists
     if args.log_file:
         log_dir = (
             os.path.dirname(os.path.abspath(args.log_file))
