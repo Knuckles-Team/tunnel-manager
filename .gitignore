@@ -4,6 +4,8 @@ __pycache__/
 *$py.class
 /tests/*.txt
 
+/.ruff_cache/
+/mcp/
 # C extensions
 *.so
 
