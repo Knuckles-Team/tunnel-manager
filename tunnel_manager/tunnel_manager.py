@@ -9,7 +9,80 @@ import os
 import paramiko
 import yaml
 
-__version__ = "1.1.7"
+__version__ = "1.1.8"
+
+
+class HostManager:
+    def __init__(self, config_file: str = None):
+        if config_file:
+            self.config_file = config_file
+        else:
+            self.config_file = os.path.expanduser("~/.tunnel_manager/hosts.yaml")
+
+        self.logger = logging.getLogger(__name__)
+        self.hosts = {}
+        self.load_inventory()
+
+    def load_inventory(self):
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, "r") as f:
+                    self.hosts = yaml.safe_load(f) or {}
+                self.logger.info(f"Loaded inventory from {self.config_file}")
+            except Exception as e:
+                self.logger.error(f"Failed to load inventory: {e}")
+                self.hosts = {}
+        else:
+            self.logger.info(
+                f"No inventory file found at {self.config_file}, starting empty."
+            )
+            self.hosts = {}
+
+    def save_inventory(self):
+        try:
+            os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
+            with open(self.config_file, "w") as f:
+                yaml.dump(self.hosts, f)
+            self.logger.info(f"Saved inventory to {self.config_file}")
+        except Exception as e:
+            self.logger.error(f"Failed to save inventory: {e}")
+
+    def add_host(
+        self,
+        alias: str,
+        hostname: str,
+        user: str,
+        port: int = 22,
+        identity_file: str = None,
+        password: str = None,
+        proxy_command: str = None,
+        **kwargs,
+    ):
+        self.hosts[alias] = {
+            "hostname": hostname,
+            "user": user,
+            "port": port,
+            "identity_file": identity_file,
+            "password": password,
+            "proxy_command": proxy_command,
+            **kwargs,
+        }
+        self.save_inventory()
+        self.logger.info(f"Added host: {alias}")
+
+    def remove_host(self, alias: str):
+        if alias in self.hosts:
+            del self.hosts[alias]
+            self.save_inventory()
+            self.logger.info(f"Removed host: {alias}")
+        else:
+            self.logger.warning(f"Host not found: {alias}")
+
+    def list_hosts(self):
+        return self.hosts
+
+    def get_host(self, alias: str):
+        return self.hosts.get(alias)
 
 
 class Tunnel:

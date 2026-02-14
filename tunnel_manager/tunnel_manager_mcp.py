@@ -23,19 +23,20 @@ from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
 from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
 from fastmcp import Context
 from fastmcp.utilities.logging import get_logger
-from tunnel_manager.tunnel_manager import Tunnel
+from tunnel_manager.tunnel_manager import Tunnel, HostManager
 from tunnel_manager.utils import (
     to_boolean,
     to_integer,
 )
 from tunnel_manager.middlewares import UserTokenMiddleware, JWTClaimsLoggingMiddleware
 
-__version__ = "1.1.7"
+__version__ = "1.1.8"
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = get_logger("TunnelManager")
+host_manager = HostManager()
 
 config = {
     "enable_delegation": to_boolean(os.environ.get("ENABLE_DELEGATION", "False")),
@@ -126,10 +127,123 @@ def load_inventory(
         )
 
 
+def _resolve_host(
+    host_alias: str,
+    user: str = None,
+    password: str = None,
+    port: int = None,
+    identity_file: str = None,
+    certificate_file: str = None,
+    proxy_command: str = None,
+    ssh_config_file: str = None,
+) -> Dict:
+    """
+    Resolve host details from HostManager if alias exists,
+    otherwise return provided parameters as a config dict.
+    """
+    host_config = host_manager.get_host(host_alias)
+    if host_config:
+        logger.debug(f"Resolved host alias '{host_alias}' to config: {host_config}")
+        # Override with provided params if they are not None
+        final_config = host_config.copy()
+        if user:
+            final_config["user"] = user
+        if password:
+            final_config["password"] = password
+        if port:
+            final_config["port"] = port
+        if identity_file:
+            final_config["identity_file"] = identity_file
+        if certificate_file:
+            final_config["certificate_file"] = certificate_file
+        if proxy_command:
+            final_config["proxy_command"] = proxy_command
+        # ssh_config_file is usually not in host config but passed to Tunnel
+        # We'll return it separately or just pass it through
+    else:
+        logger.debug(f"Host alias '{host_alias}' not found, using provided params.")
+        final_config = {
+            "hostname": host_alias,
+            "user": user,
+            "password": password,
+            "port": port or 22,
+            "identity_file": identity_file,
+            "certificate_file": certificate_file,
+            "proxy_command": proxy_command,
+        }
+
+    return final_config, ssh_config_file
+
+
 def register_tools(mcp: FastMCP):
     @mcp.custom_route("/health", methods=["GET"])
     async def health_check(request: Request) -> JSONResponse:
         return JSONResponse({"status": "OK"})
+
+    @mcp.tool(
+        annotations={
+            "title": "List Managed Hosts",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+        tags={"host_management"},
+    )
+    async def list_hosts() -> Dict:
+        """List all managed hosts in the inventory."""
+        return {"hosts": host_manager.list_hosts()}
+
+    @mcp.tool(
+        annotations={
+            "title": "Add Managed Host",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+        },
+        tags={"host_management"},
+    )
+    async def add_host(
+        alias: str = Field(description="Alias for the host."),
+        hostname: str = Field(description="Real hostname or IP."),
+        user: str = Field(description="Username."),
+        port: int = Field(description="SSH Port.", default=22),
+        identity_file: Optional[str] = Field(
+            description="Path to private key.", default=None
+        ),
+        password: Optional[str] = Field(
+            description="Password (if no key).", default=None
+        ),
+        proxy_command: Optional[str] = Field(
+            description="Proxy command.", default=None
+        ),
+    ) -> Dict:
+        """Add a new host to the managed inventory."""
+        host_manager.add_host(
+            alias=alias,
+            hostname=hostname,
+            user=user,
+            port=port,
+            identity_file=identity_file,
+            password=password,
+            proxy_command=proxy_command,
+        )
+        return {"status": "success", "message": f"Host '{alias}' added."}
+
+    @mcp.tool(
+        annotations={
+            "title": "Remove Managed Host",
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": False,
+        },
+        tags={"host_management"},
+    )
+    async def remove_host(
+        alias: str = Field(description="Alias of the host to remove."),
+    ) -> Dict:
+        """Remove a host from the managed inventory."""
+        host_manager.remove_host(alias)
+        return {"status": "success", "message": f"Host '{alias}' removed."}
 
     @mcp.tool(
         annotations={
@@ -187,15 +301,26 @@ def register_tools(mcp: FastMCP):
                 errors=["Need host, cmd"],
             )
         try:
-            t = Tunnel(
-                remote_host=host,
-                username=user,
+            conf, final_cfg = _resolve_host(
+                host_alias=host,
+                user=user,
                 password=password,
                 port=port,
                 identity_file=id_file,
                 certificate_file=certificate,
                 proxy_command=proxy,
                 ssh_config_file=cfg,
+            )
+
+            t = Tunnel(
+                remote_host=conf["hostname"],
+                username=conf["user"],
+                password=conf["password"],
+                port=conf["port"],
+                identity_file=conf["identity_file"],
+                certificate_file=conf.get("certificate_file"),
+                proxy_command=conf.get("proxy_command"),
+                ssh_config_file=final_cfg,
             )
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
@@ -208,8 +333,8 @@ def register_tools(mcp: FastMCP):
             logger.debug(f"Cmd out: {out}, error: {error}")
             return ResponseBuilder.build(
                 200,
-                f"Cmd '{cmd}' done on {host}",
-                {"host": host, "cmd": cmd},
+                f"Cmd '{cmd}' done on {host} ({conf['hostname']})",
+                {"host": host, "real_host": conf["hostname"], "cmd": cmd},
                 error,
                 stdout=out,
                 files=[],
@@ -300,15 +425,25 @@ def register_tools(mcp: FastMCP):
             )
         lpath = os.path.abspath(os.path.expanduser(lpath))
         try:
-            t = Tunnel(
-                remote_host=host,
-                username=user,
+            conf, final_cfg = _resolve_host(
+                host_alias=host,
+                user=user,
                 password=password,
                 port=port,
                 identity_file=id_file,
                 certificate_file=certificate,
                 proxy_command=proxy,
                 ssh_config_file=cfg,
+            )
+            t = Tunnel(
+                remote_host=conf["hostname"],
+                username=conf["user"],
+                password=conf["password"],
+                port=conf["port"],
+                identity_file=conf["identity_file"],
+                certificate_file=conf.get("certificate_file"),
+                proxy_command=conf.get("proxy_command"),
+                ssh_config_file=final_cfg,
             )
             t.connect()
             if ctx:
@@ -511,15 +646,25 @@ def register_tools(mcp: FastMCP):
                 400, "Need host", {"host": host}, errors=["Need host"]
             )
         try:
-            t = Tunnel(
-                remote_host=host,
-                username=user,
+            conf, final_cfg = _resolve_host(
+                host_alias=host,
+                user=user,
                 password=password,
                 port=port,
                 identity_file=id_file,
                 certificate_file=certificate,
                 proxy_command=proxy,
                 ssh_config_file=cfg,
+            )
+            t = Tunnel(
+                remote_host=conf["hostname"],
+                username=conf["user"],
+                password=conf["password"],
+                port=conf["port"],
+                identity_file=conf["identity_file"],
+                certificate_file=conf.get("certificate_file"),
+                proxy_command=conf.get("proxy_command"),
+                ssh_config_file=final_cfg,
             )
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
@@ -590,7 +735,18 @@ def register_tools(mcp: FastMCP):
                 errors=["Need host, key"],
             )
         try:
-            t = Tunnel(remote_host=host, username=user, port=port, ssh_config_file=cfg)
+            conf, final_cfg = _resolve_host(
+                host_alias=host,
+                user=user,
+                port=port,
+                ssh_config_file=cfg,
+            )
+            t = Tunnel(
+                remote_host=conf["hostname"],
+                username=conf["user"],
+                port=conf["port"],
+                ssh_config_file=final_cfg,
+            )
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
                 logger.debug("Progress: 0/100")
@@ -670,12 +826,19 @@ def register_tools(mcp: FastMCP):
                 errors=["key_type must be 'rsa' or 'ed25519'"],
             )
         try:
-            t = Tunnel(
-                remote_host=host,
-                username=user,
+            conf, final_cfg = _resolve_host(
+                host_alias=host,
+                user=user,
                 password=password,
                 port=port,
                 ssh_config_file=cfg,
+            )
+            t = Tunnel(
+                remote_host=conf["hostname"],
+                username=conf["user"],
+                password=conf["password"],
+                port=conf["port"],
+                ssh_config_file=final_cfg,
             )
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
@@ -773,15 +936,25 @@ def register_tools(mcp: FastMCP):
                 errors=["Need host, lcfg"],
             )
         try:
-            t = Tunnel(
-                remote_host=host,
-                username=user,
+            conf, final_cfg = _resolve_host(
+                host_alias=host,
+                user=user,
                 password=password,
                 port=port,
                 identity_file=id_file,
                 certificate_file=certificate,
                 proxy_command=proxy,
                 ssh_config_file=cfg,
+            )
+            t = Tunnel(
+                remote_host=conf["hostname"],
+                username=conf["user"],
+                password=conf["password"],
+                port=conf["port"],
+                identity_file=conf["identity_file"],
+                certificate_file=conf.get("certificate_file"),
+                proxy_command=conf.get("proxy_command"),
+                ssh_config_file=final_cfg,
             )
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
@@ -878,15 +1051,25 @@ def register_tools(mcp: FastMCP):
                 errors=["key_type must be 'rsa' or 'ed25519'"],
             )
         try:
-            t = Tunnel(
-                remote_host=host,
-                username=user,
+            conf, final_cfg = _resolve_host(
+                host_alias=host,
+                user=user,
                 password=password,
                 port=port,
                 identity_file=id_file,
                 certificate_file=certificate,
                 proxy_command=proxy,
                 ssh_config_file=cfg,
+            )
+            t = Tunnel(
+                remote_host=conf["hostname"],
+                username=conf["user"],
+                password=conf["password"],
+                port=conf["port"],
+                identity_file=conf["identity_file"],
+                certificate_file=conf.get("certificate_file"),
+                proxy_command=conf.get("proxy_command"),
+                ssh_config_file=final_cfg,
             )
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
@@ -963,7 +1146,8 @@ def register_tools(mcp: FastMCP):
                 errors=["Need host"],
             )
         try:
-            t = Tunnel(remote_host=host)
+            conf, _ = _resolve_host(host_alias=host)
+            t = Tunnel(remote_host=conf["hostname"])
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
                 logger.debug("Progress: 0/100")
