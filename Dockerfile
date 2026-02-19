@@ -52,8 +52,8 @@ ENV HOST=${HOST} \
     UV_COMPILE_BYTECODE=1
 
 RUN apt-get update \
-    && apt-get install -y curl nano \
+    && apt-get install -y ripgrep tree fd-find curl nano \
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
-    && uv pip install --system --upgrade --verbose --no-cache --break-system-packages --prerelease=allow tunnel-manager[all]>=1.1.13
+    && uv pip install --system --upgrade --verbose --no-cache --break-system-packages --prerelease=allow tunnel-manager[all]>=1.1.14
 
 CMD ["tunnel-manager-mcp"]
