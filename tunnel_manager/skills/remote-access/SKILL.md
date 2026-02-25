@@ -1,6 +1,7 @@
 ---
-name: tunnel-manager-remote-access
+name: remote-access
 description: Tunnel Manager Remote Access capabilities for A2A Agent.
+tags: [remote-access]
 ---
 ### Overview
 This skill provides access to remote_access operations.
