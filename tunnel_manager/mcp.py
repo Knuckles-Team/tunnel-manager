@@ -33,7 +33,7 @@ from agent_utilities.middlewares import (
     JWTClaimsLoggingMiddleware,
 )
 
-__version__ = "1.1.16"
+__version__ = "1.1.17"
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
