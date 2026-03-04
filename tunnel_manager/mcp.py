@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
+from dotenv import load_dotenv, find_dotenv
 import os
 import sys
 import logging
@@ -33,7 +34,7 @@ from agent_utilities.middlewares import (
     JWTClaimsLoggingMiddleware,
 )
 
-__version__ = "1.1.24"
+__version__ = "1.1.25"
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -158,11 +159,12 @@ def _resolve_host(
     return final_config, ssh_config_file
 
 
-def register_tools(mcp: FastMCP):
-    @mcp.custom_route("/health", methods=["GET"])
+def register_misc_tools(mcp: FastMCP):
     async def health_check(request: Request) -> JSONResponse:
         return JSONResponse({"status": "OK"})
 
+
+def register_host_management_tools(mcp: FastMCP):
     @mcp.tool(
         annotations={
             "title": "List Managed Hosts",
@@ -228,6 +230,8 @@ def register_tools(mcp: FastMCP):
         host_manager.remove_host(alias)
         return {"status": "success", "message": f"Host '{alias}' removed."}
 
+
+def register_remote_access_tools(mcp: FastMCP):
     @mcp.tool(
         annotations={
             "title": "Run Command on Remote Host",
@@ -2257,6 +2261,7 @@ def register_tools(mcp: FastMCP):
 
 
 def mcp_server():
+    load_dotenv(find_dotenv())
     print(f"mcp_server v{__version__}")
     parser = create_mcp_parser()
 
@@ -2560,7 +2565,15 @@ def mcp_server():
             sys.exit(1)
 
     mcp = FastMCP(name="TunnelManagerMCP", auth=auth)
-    register_tools(mcp)
+    DEFAULT_MISCTOOL = to_boolean(os.getenv("MISCTOOL", "True"))
+    if DEFAULT_MISCTOOL:
+        register_misc_tools(mcp)
+    DEFAULT_HOST_MANAGEMENTTOOL = to_boolean(os.getenv("HOST_MANAGEMENTTOOL", "True"))
+    if DEFAULT_HOST_MANAGEMENTTOOL:
+        register_host_management_tools(mcp)
+    DEFAULT_REMOTE_ACCESSTOOL = to_boolean(os.getenv("REMOTE_ACCESSTOOL", "True"))
+    if DEFAULT_REMOTE_ACCESSTOOL:
+        register_remote_access_tools(mcp)
 
     for mw in middlewares:
         mcp.add_middleware(mw)

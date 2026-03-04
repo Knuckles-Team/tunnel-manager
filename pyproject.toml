@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tunnel-manager"
-version = "1.1.24"
+version = "1.1.25"
 description = "Create SSH Tunnels to your remote hosts and host as an MCP Server for Agentic AI!"
 readme = "README.md"
 authors = [{ name = "Audel Rouhi", email = "knucklessg1@gmail.com" }]
@@ -14,27 +14,22 @@ classifiers = [
     "License :: Public Domain",
     "Environment :: Console",
     "Operating System :: POSIX :: Linux",
-    "Programming Language :: Python :: 3",
-]
+    "Programming Language :: Python :: 3"]
 requires-python = ">=3.10"
 dependencies = [
-    "agent-utilities>=0.2.11",
+    "agent-utilities>=0.2.12",
     "fastmcp>=3.0.0b1",
-    "paramiko>=4.0.0",
-]
+    "paramiko>=4.0.0"]
 
 [project.optional-dependencies]
 mcp = [
-    "agent-utilities[mcp]>=0.2.11",
-]
+    "agent-utilities[mcp]>=0.2.12"]
 
 agent = [
-    "agent-utilities[agent,logfire]>=0.2.11",
-]
+    "agent-utilities[agent,logfire]>=0.2.12"]
 
 all = [
-    "agent-utilities[mcp,agent,logfire]>=0.2.11",
-]
+    "agent-utilities[mcp,agent,logfire]>=0.2.12"]
 
 [project.scripts]
 tunnel-manager = "tunnel_manager.tunnel_manager:tunnel_manager"
@@ -45,7 +40,7 @@ tunnel-manager-agent = "tunnel_manager.agent:agent_server"
 where = ["."]
 
 [tool.setuptools.package-data]
-tunnel_manager = [ "mcp_config.json", "skills/**", "agent/**",]
+tunnel_manager = [ "mcp_config.json", "agent/**"]
 
 [tool.setuptools]
 include-package-data = true
