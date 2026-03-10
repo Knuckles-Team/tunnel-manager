@@ -33,14 +33,14 @@ all = [
 
 [project.scripts]
 tunnel-manager = "tunnel_manager.tunnel_manager:tunnel_manager"
-tunnel-manager-mcp = "tunnel_manager.mcp:mcp_server"
-tunnel-manager-agent = "tunnel_manager.agent:agent_server"
+tunnel-manager-mcp = "tunnel_manager.mcp_server:mcp_server"
+tunnel-manager-agent = "tunnel_manager.agent_server:agent_server"
 
 [tool.setuptools.packages.find]
 where = ["."]
 
 [tool.setuptools.package-data]
-tunnel_manager = [ "mcp_config.json", "agent/**"]
+tunnel_manager = [ "mcp_config.json", "agent_data/**"]
 
 [tool.setuptools]
 include-package-data = true

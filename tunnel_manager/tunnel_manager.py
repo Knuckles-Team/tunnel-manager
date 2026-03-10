@@ -842,7 +842,7 @@ class Tunnel:
 
 def tunnel_manager():
     print(f"tunnel_manager v{__version__}")
-    parser = argparse.ArgumentParser(add_help=False, description="Tunnel Manager CLI")
+    parser = argparse.ArgumentParser(description="Tunnel Manager CLI")
     parser.add_argument("--log-file", help="Log to this file (default: console output)")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -952,14 +952,10 @@ def tunnel_manager():
         "--max-threads", type=int, default=5, help="Max threads for parallel execution"
     )
 
-    parser.add_argument("--help", action="store_true", help="Show usage")
-
     args = parser.parse_args()
 
-    if hasattr(args, "help") and args.help:
-
+    if not args.command:
         parser.print_help()
-
         sys.exit(0)
 
     if args.log_file:
