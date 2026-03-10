@@ -2269,7 +2269,6 @@ def mcp_server():
     for mw in middlewares:
         mcp.add_middleware(mw)
 
-
     DEFAULT_MISCTOOL = to_boolean(os.getenv("MISCTOOL", "True"))
     if DEFAULT_MISCTOOL:
         register_misc_tools(mcp)
