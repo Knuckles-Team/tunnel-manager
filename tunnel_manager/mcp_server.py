@@ -21,7 +21,7 @@ from agent_utilities.mcp_utilities import (
     config,
 )
 
-__version__ = "1.1.43"
+__version__ = "1.1.44"
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
