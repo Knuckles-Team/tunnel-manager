@@ -5,8 +5,8 @@
 - Core Libraries: `agent-utilities`, `fastmcp`, `pydantic-ai`
 - Key principles: Functional patterns, Pydantic for data validation, asynchronous tool execution.
 - Architecture:
-    - `mcp.py`: Main MCP server entry point and tool registration.
-    - `agent.py`: Pydantic AI agent definition and logic.
+    - `mcp_server.py`: Main MCP server entry point and tool registration.
+    - `agent_server.py`: Pydantic AI agent definition and logic.
     - `skills/`: Directory containing modular agent skills (if applicable).
     - `agent/`: Internal agent logic and prompt templates.
 
@@ -51,14 +51,14 @@ pre-commit run --all-files
 # tunnel-manager\ntunnel_manager.tunnel_manager:tunnel_manager\n# tunnel-manager-mcp\ntunnel_manager.mcp:mcp_server\n# tunnel-manager-agent\ntunnel_manager.agent:agent_server
 
 ## Project Structure Quick Reference
-- MCP Entry Point → `mcp.py`
-- Agent Entry Point → `agent.py`
+- MCP Entry Point → `mcp_server.py`
+- Agent Entry Point → `agent_server.py`
 - Source Code → `tunnel_manager/`
 - Skills → `skills/` (if exists)
 
 ### File Tree
 ```text
-├── .bumpversion.cfg\n├── .dockerignore\n├── .env\n├── .gitattributes\n├── .github\n│   └── workflows\n│       └── pipeline.yml\n├── .gitignore\n├── .pre-commit-config.yaml\n├── AGENTS.md\n├── Dockerfile\n├── LICENSE\n├── MANIFEST.in\n├── README.md\n├── compose.yml\n├── debug.Dockerfile\n├── mcp.compose.yml\n├── pyproject.toml\n├── pytest.ini\n├── requirements.txt\n├── scripts\n│   ├── validate_a2a_agent.py\n│   └── validate_agent.py\n├── tests\n│   ├── downloaded_inventory.txt\n│   ├── downloaded_test.txt\n│   └── test_tunnel.py\n└── tunnel_manager\n    ├── __init__.py\n    ├── __main__.py\n    ├── agent\n    │   ├── AGENTS.md\n    │   ├── CRON.md\n    │   ├── CRON_LOG.md\n    │   ├── HEARTBEAT.md\n    │   ├── IDENTITY.md\n    │   ├── MEMORY.md\n    │   ├── USER.md\n    │   ├── mcp_config.json\n    │   └── templates.py\n    ├── agent.py\n    ├── mcp.py\n    └── tunnel_manager.py
+├── .bumpversion.cfg\n├── .dockerignore\n├── .env\n├── .gitattributes\n├── .github\n│   └── workflows\n│       └── pipeline.yml\n├── .gitignore\n├── .pre-commit-config.yaml\n├── AGENTS.md\n├── Dockerfile\n├── LICENSE\n├── MANIFEST.in\n├── README.md\n├── compose.yml\n├── debug.Dockerfile\n├── mcp.compose.yml\n├── pyproject.toml\n├── pytest.ini\n├── requirements.txt\n├── scripts\n│   ├── validate_a2a_agent_server.py\n│   └── validate_agent_server.py\n├── tests\n│   ├── downloaded_inventory.txt\n│   ├── downloaded_test.txt\n│   └── test_tunnel.py\n└── tunnel_manager\n    ├── __init__.py\n    ├── __main__.py\n    ├── agent\n    │   ├── AGENTS.md\n    │   ├── CRON.md\n    │   ├── CRON_LOG.md\n    │   ├── HEARTBEAT.md\n    │   ├── IDENTITY.md\n    │   ├── MEMORY.md\n    │   ├── USER.md\n    │   ├── mcp_config.json\n    │   └── templates.py\n    ├── agent_server.py\n    ├── mcp_server.py\n    └── tunnel_manager.py
 ```
 
 ## Code Style & Conventions
@@ -98,7 +98,7 @@ async def my_tool(param: str) -> str:
 - Use `agent-utilities` base classes.
 
 **Ask first:**
-- Major refactors of `mcp.py` or `agent.py`.
+- Major refactors of `mcp_server.py` or `agent_server.py`.
 - Deleting or renaming public tool functions.
 
 **Never do:**

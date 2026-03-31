@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# coding: utf-8
+
 from dotenv import load_dotenv, find_dotenv
 import os
 import sys
@@ -20,7 +20,7 @@ from agent_utilities.mcp_utilities import (
     create_mcp_server,
 )
 
-__version__ = "1.1.47"
+__version__ = "1.1.48"
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -114,7 +114,7 @@ def _resolve_host(
     host_config = host_manager.get_host(host_alias)
     if host_config:
         logger.debug(f"Resolved host alias '{host_alias}' to config: {host_config}")
-        # Override with provided params if they are not None
+
         final_config = host_config.copy()
         if user:
             final_config["user"] = user
@@ -128,8 +128,7 @@ def _resolve_host(
             final_config["certificate_file"] = certificate_file
         if proxy_command:
             final_config["proxy_command"] = proxy_command
-        # ssh_config_file is usually not in host config but passed to Tunnel
-        # We'll return it separately or just pass it through
+
     else:
         logger.debug(f"Host alias '{host_alias}' not found, using provided params.")
         final_config = {

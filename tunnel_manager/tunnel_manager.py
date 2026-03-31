@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# coding: utf-8
+
 
 import sys
 import argparse
@@ -9,7 +9,7 @@ import os
 import paramiko
 import yaml
 
-__version__ = "1.1.47"
+__version__ = "1.1.48"
 
 
 class HostManager:

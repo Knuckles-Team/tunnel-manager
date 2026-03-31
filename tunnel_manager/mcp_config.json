@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "tunnel": {
+      "command": "tunnel-mcp",
+      "args": ["--transport", "stdio"],
+      "env": {
+        "TUNNEL_URL": "${TUNNEL_URL:-http://localhost:8080}",
+        "TUNNEL_TOKEN": "${TUNNEL_TOKEN}"
+      }
+    }
+  }
+}
