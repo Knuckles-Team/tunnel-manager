@@ -32,7 +32,7 @@ all = [
     "agent-utilities[mcp,agent,logfire]>=0.2.31"]
 
 [project.scripts]
-tunnel-mcp = "tunnel_manager.mcp_server:mcp_server"
+tunnel-manager-mcp = "tunnel_manager.mcp_server:mcp_server"
 
 [tool.setuptools.packages.find]
 where = ["."]

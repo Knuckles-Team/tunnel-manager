@@ -1,17 +1,28 @@
 {
-    "mcpServers": {
-        "tunnel-manager-mcp": {
-            "command": "tunnel-manager-mcp",
-            "args": [
-                "--transport",
-                "stdio"
-            ],
-            "env": {
-                "TUNNEL_IDENTITY_FILE": "${TUNNEL_IDENTITY_FILE}",
-                "HOST_MANAGEMENTTOOL": "${ HOST_MANAGEMENTTOOL:-True }",
-                "MISCTOOL": "${ MISCTOOL:-True }",
-                "REMOTE_ACCESSTOOL": "${ REMOTE_ACCESSTOOL:-True }"
-            }
-        }
+  "mcpServers": {
+    "tunnel-manager-mcp": {
+      "command": "tunnel-manager-mcp",
+      "args": [
+        "--transport",
+        "stdio"
+      ],
+      "env": {
+        "TUNNEL_IDENTITY_FILE": "${TUNNEL_IDENTITY_FILE}",
+        "HOST_MANAGEMENTTOOL": "${ HOST_MANAGEMENTTOOL:-True }",
+        "MISCTOOL": "${ MISCTOOL:-True }",
+        "REMOTE_ACCESSTOOL": "${ REMOTE_ACCESSTOOL:-True }",
+        "TUNNEL_CERTIFICATE": "${TUNNEL_CERTIFICATE}",
+        "TUNNEL_INVENTORY": "${TUNNEL_INVENTORY}",
+        "TUNNEL_INVENTORY_GROUP": "${TUNNEL_INVENTORY_GROUP}",
+        "TUNNEL_LOG_FILE": "${TUNNEL_LOG_FILE}",
+        "TUNNEL_MAX_THREADS": "${TUNNEL_MAX_THREADS}",
+        "TUNNEL_PARALLEL": "${TUNNEL_PARALLEL}",
+        "TUNNEL_PASSWORD": "${TUNNEL_PASSWORD}",
+        "TUNNEL_PROXY_COMMAND": "${TUNNEL_PROXY_COMMAND}",
+        "TUNNEL_REMOTE_HOST": "${TUNNEL_REMOTE_HOST}",
+        "TUNNEL_REMOTE_PORT": "${TUNNEL_REMOTE_PORT}",
+        "TUNNEL_USERNAME": "${TUNNEL_USERNAME}"
+      }
     }
+  }
 }
