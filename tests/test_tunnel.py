@@ -22,13 +22,6 @@ def test_password_authentication():
             print(f"Command error: {err}")
 
         print(f"Command output: {out}")
-        tunnel.send_file(
-            "/home/genius/Development/inventory/inventory.yml",
-            "/home/genius/Downloads/remote_test.txt",
-        )
-        tunnel.receive_file(
-            "/home/genius/Downloads/remote_test.txt", "./tests/downloaded_inventory.txt"
-        )
 
         tunnel.close()
         print("Password-based authentication test completed successfully.")

@@ -6,6 +6,7 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     try:
         from requests.exceptions import RequestsDependencyWarning
+
         warnings.filterwarnings("ignore", category=RequestsDependencyWarning)
     except ImportError:
         pass
@@ -22,8 +23,6 @@ import concurrent.futures
 import yaml
 import asyncio
 from typing import Any, Optional, Dict, List
-from starlette.requests import Request
-from starlette.responses import JSONResponse
 from pydantic import Field
 from fastmcp import FastMCP
 from fastmcp import Context
@@ -34,7 +33,7 @@ from agent_utilities.mcp_utilities import (
     create_mcp_server,
 )
 
-__version__ = "1.1.53"
+__version__ = "1.1.54"
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -159,8 +158,8 @@ def _resolve_host(
 
 
 def register_misc_tools(mcp: FastMCP):
-    async def health_check(request: Request) -> JSONResponse:
-        return JSONResponse({"status": "OK"})
+    pass
+    pass
 
 
 def register_host_management_tools(mcp: FastMCP):
@@ -271,7 +270,7 @@ def register_remote_access_tools(mcp: FastMCP):
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        log: Optional[str] = Field(
+        _log_path: Optional[str] = Field(
             description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
         ),
         ctx: Context = Field(description="MCP context.", default=None),
@@ -377,7 +376,7 @@ def register_remote_access_tools(mcp: FastMCP):
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        log: Optional[str] = Field(
+        _log_path: Optional[str] = Field(
             description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
         ),
         ctx: Context = Field(description="MCP context.", default=None),
@@ -511,7 +510,7 @@ def register_remote_access_tools(mcp: FastMCP):
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        log: Optional[str] = Field(
+        _log_path: Optional[str] = Field(
             description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
         ),
         ctx: Context = Field(description="MCP context.", default=None),
@@ -619,7 +618,7 @@ def register_remote_access_tools(mcp: FastMCP):
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        log: Optional[str] = Field(
+        _log_path: Optional[str] = Field(
             description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
         ),
         ctx: Context = Field(description="MCP context.", default=None),
@@ -705,7 +704,7 @@ def register_remote_access_tools(mcp: FastMCP):
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        log: Optional[str] = Field(
+        _log_path: Optional[str] = Field(
             description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
         ),
         ctx: Context = Field(description="MCP context.", default=None),
@@ -788,7 +787,7 @@ def register_remote_access_tools(mcp: FastMCP):
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        log: Optional[str] = Field(
+        _log_path: Optional[str] = Field(
             description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
         ),
         ctx: Context = Field(description="MCP context.", default=None),
@@ -906,7 +905,7 @@ def register_remote_access_tools(mcp: FastMCP):
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        log: Optional[str] = Field(
+        _log_path: Optional[str] = Field(
             description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
         ),
         ctx: Context = Field(description="MCP context.", default=None),
@@ -1013,7 +1012,7 @@ def register_remote_access_tools(mcp: FastMCP):
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        log: Optional[str] = Field(
+        _log_path: Optional[str] = Field(
             description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
         ),
         ctx: Context = Field(description="MCP context.", default=None),
@@ -1116,7 +1115,7 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Known hosts path.",
             default=os.path.expanduser("~/.ssh/known_hosts"),
         ),
-        log: Optional[str] = Field(
+        _log_path: Optional[str] = Field(
             description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
         ),
         ctx: Context = Field(description="MCP context.", default=None),
@@ -1195,7 +1194,7 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
         ),
-        log: Optional[str] = Field(description="Log file.", default=None),
+        _log_path: Optional[str] = Field(description="Log file.", default=None),
         ctx: Context = Field(description="MCP context.", default=None),
     ) -> Dict:
         """Setup passwordless SSH for all hosts in group. Expected return object type: dict"""
@@ -1370,7 +1369,7 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
         ),
-        log: Optional[str] = Field(description="Log file.", default=None),
+        _log_path: Optional[str] = Field(description="Log file.", default=None),
         ctx: Context = Field(description="MCP context.", default=None),
     ) -> Dict:
         """Run command on all hosts in group. Expected return object type: dict"""
@@ -1522,7 +1521,7 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
         ),
-        log: Optional[str] = Field(
+        _log_path: Optional[str] = Field(
             description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
         ),
         ctx: Context = Field(description="MCP context.", default=None),
@@ -1709,7 +1708,7 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
         ),
-        log: Optional[str] = Field(
+        _log_path: Optional[str] = Field(
             description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
         ),
         ctx: Context = Field(description="MCP context.", default=None),
@@ -1900,7 +1899,7 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "5")),
         ),
-        log: Optional[str] = Field(
+        _log_path: Optional[str] = Field(
             description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
         ),
         ctx: Context = Field(description="MCP context.", default=None),
@@ -2098,7 +2097,7 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "5")),
         ),
-        log: Optional[str] = Field(
+        _log_path: Optional[str] = Field(
             description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
         ),
         ctx: Context = Field(description="MCP context.", default=None),
