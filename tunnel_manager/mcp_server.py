@@ -15,23 +15,24 @@ with warnings.catch_warnings():
 warnings.filterwarnings("ignore", message=".*urllib3.*or chardet.*")
 warnings.filterwarnings("ignore", message=".*urllib3.*or charset_normalizer.*")
 
-from dotenv import load_dotenv, find_dotenv
+import asyncio
+import concurrent.futures
+import logging
 import os
 import sys
-import logging
-import concurrent.futures
+from typing import Any
+
 import yaml
-import asyncio
-from typing import Any, Optional, Dict, List
-from pydantic import Field
-from fastmcp import FastMCP
-from fastmcp import Context
-from fastmcp.utilities.logging import get_logger
-from tunnel_manager.tunnel_manager import Tunnel, HostManager
 from agent_utilities.base_utilities import to_boolean, to_integer
 from agent_utilities.mcp_utilities import (
     create_mcp_server,
 )
+from dotenv import find_dotenv, load_dotenv
+from fastmcp import Context, FastMCP
+from fastmcp.utilities.logging import get_logger
+from pydantic import Field
+
+from tunnel_manager.tunnel_manager import HostManager, Tunnel
 
 __version__ = "1.1.54"
 
@@ -47,13 +48,13 @@ class ResponseBuilder:
     def build(
         status: int,
         msg: str,
-        details: Dict,
+        details: dict,
         error: str = "",
         stdout: str = "",
-        files: List = None,
-        locations: List = None,
-        errors: List = None,
-    ) -> Dict:
+        files: list | None = None,
+        locations: list | None = None,
+        errors: list | None = None,
+    ) -> dict:
         return {
             "status_code": status,
             "message": msg,
@@ -68,9 +69,9 @@ class ResponseBuilder:
 
 def load_inventory(
     inventory: str, group: str, logger: logging.Logger
-) -> tuple[List[Dict], Dict]:
+) -> tuple[list[dict], dict]:
     try:
-        with open(inventory, "r") as f:
+        with open(inventory) as f:
             inv = yaml.safe_load(f)
         hosts = []
         if group in inv and isinstance(inv[group], dict) and "hosts" in inv[group]:
@@ -112,14 +113,14 @@ def load_inventory(
 
 def _resolve_host(
     host_alias: str,
-    user: str = None,
-    password: str = None,
-    port: int = None,
-    identity_file: str = None,
-    certificate_file: str = None,
-    proxy_command: str = None,
-    ssh_config_file: str = None,
-) -> Dict:
+    user: str | None = None,
+    password: str | None = None,
+    port: int | None = None,
+    identity_file: str | None = None,
+    certificate_file: str | None = None,
+    proxy_command: str | None = None,
+    ssh_config_file: str | None = None,
+) -> tuple[dict, str | None]:
     """
     Resolve host details from HostManager if alias exists,
     otherwise return provided parameters as a config dict.
@@ -172,7 +173,7 @@ def register_host_management_tools(mcp: FastMCP):
         },
         tags={"host_management"},
     )
-    async def list_hosts() -> Dict:
+    async def list_hosts() -> dict:
         """List all managed hosts in the inventory."""
         return {"hosts": host_manager.list_hosts()}
 
@@ -190,16 +191,12 @@ def register_host_management_tools(mcp: FastMCP):
         hostname: str = Field(description="Real hostname or IP."),
         user: str = Field(description="Username."),
         port: int = Field(description="SSH Port.", default=22),
-        identity_file: Optional[str] = Field(
-            description="Path to private key.", default=None
+        identity_file: str | None = Field(
+            description="Path to private key.", default=""
         ),
-        password: Optional[str] = Field(
-            description="Password (if no key).", default=None
-        ),
-        proxy_command: Optional[str] = Field(
-            description="Proxy command.", default=None
-        ),
-    ) -> Dict:
+        password: str | None = Field(description="Password (if no key).", default=""),
+        proxy_command: str | None = Field(description="Proxy command.", default=""),
+    ) -> dict:
         """Add a new host to the managed inventory."""
         host_manager.add_host(
             alias=alias,
@@ -223,7 +220,7 @@ def register_host_management_tools(mcp: FastMCP):
     )
     async def remove_host(
         alias: str = Field(description="Alias of the host to remove."),
-    ) -> Dict:
+    ) -> dict:
         """Remove a host from the managed inventory."""
         host_manager.remove_host(alias)
         return {"status": "success", "message": f"Host '{alias}' removed."}
@@ -242,39 +239,39 @@ def register_remote_access_tools(mcp: FastMCP):
     async def run_command_on_remote_host(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
-        user: Optional[str] = Field(
-            description="Username.", default=os.environ.get("TUNNEL_USERNAME", None)
+        user: str | None = Field(
+            description="Username.", default=os.environ.get("TUNNEL_USERNAME", "")
         ),
-        password: Optional[str] = Field(
-            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
+        password: str | None = Field(
+            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", "")
         ),
         port: int = Field(
             description="Port.",
             default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
         ),
-        cmd: str = Field(description="Shell command.", default=None),
-        id_file: Optional[str] = Field(
+        cmd: str = Field(description="Shell command.", default=""),
+        id_file: str | None = Field(
             description="Private key path.",
-            default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
+            default=os.environ.get("TUNNEL_IDENTITY_FILE", ""),
         ),
-        certificate: Optional[str] = Field(
+        certificate: str | None = Field(
             description="Teleport certificate.",
-            default=os.environ.get("TUNNEL_CERTIFICATE", None),
+            default=os.environ.get("TUNNEL_CERTIFICATE", ""),
         ),
-        proxy: Optional[str] = Field(
+        proxy: str | None = Field(
             description="Teleport proxy.",
-            default=os.environ.get("TUNNEL_PROXY_COMMAND", None),
+            default=os.environ.get("TUNNEL_PROXY_COMMAND", ""),
         ),
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        _log_path: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Run shell command on remote host. Expected return object type: dict"""
         logger.debug(f"Run cmd: host={host}, cmd={cmd}")
         if not host or not cmd:
@@ -347,40 +344,40 @@ def register_remote_access_tools(mcp: FastMCP):
     async def send_file_to_remote_host(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
-        user: Optional[str] = Field(
-            description="Username.", default=os.environ.get("TUNNEL_USERNAME", None)
+        user: str | None = Field(
+            description="Username.", default=os.environ.get("TUNNEL_USERNAME", "")
         ),
-        password: Optional[str] = Field(
-            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
+        password: str | None = Field(
+            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", "")
         ),
         port: int = Field(
             description="Port.",
             default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
         ),
-        lpath: str = Field(description="Local file path.", default=None),
-        rpath: str = Field(description="Remote path.", default=None),
-        id_file: Optional[str] = Field(
+        lpath: str = Field(description="Local file path.", default=""),
+        rpath: str = Field(description="Remote path.", default=""),
+        id_file: str | None = Field(
             description="Private key path.",
-            default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
+            default=os.environ.get("TUNNEL_IDENTITY_FILE", ""),
         ),
-        certificate: Optional[str] = Field(
+        certificate: str | None = Field(
             description="Teleport certificate.",
-            default=os.environ.get("TUNNEL_CERTIFICATE", None),
+            default=os.environ.get("TUNNEL_CERTIFICATE", ""),
         ),
-        proxy: Optional[str] = Field(
+        proxy: str | None = Field(
             description="Teleport proxy.",
-            default=os.environ.get("TUNNEL_PROXY_COMMAND", None),
+            default=os.environ.get("TUNNEL_PROXY_COMMAND", ""),
         ),
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        _log_path: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Upload file to remote host. Expected return object type: dict"""
         logger = logging.getLogger("TunnelServer")
         logger.debug(f"Upload: host={host}, local={lpath}, remote={rpath}")
@@ -434,6 +431,7 @@ def register_remote_access_tools(mcp: FastMCP):
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
                 logger.debug("Progress: 0/100")
+            assert t.ssh_client is not None
             sftp = t.ssh_client.open_sftp()
             transferred = 0
 
@@ -481,40 +479,40 @@ def register_remote_access_tools(mcp: FastMCP):
     async def receive_file_from_remote_host(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
-        user: Optional[str] = Field(
-            description="Username.", default=os.environ.get("TUNNEL_USERNAME", None)
+        user: str | None = Field(
+            description="Username.", default=os.environ.get("TUNNEL_USERNAME", "")
         ),
-        password: Optional[str] = Field(
-            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
+        password: str | None = Field(
+            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", "")
         ),
         port: int = Field(
             description="Port.",
             default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
         ),
-        rpath: str = Field(description="Remote file path.", default=None),
-        lpath: str = Field(description="Local file path.", default=None),
-        id_file: Optional[str] = Field(
+        rpath: str = Field(description="Remote file path.", default=""),
+        lpath: str = Field(description="Local file path.", default=""),
+        id_file: str | None = Field(
             description="Private key path.",
-            default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
+            default=os.environ.get("TUNNEL_IDENTITY_FILE", ""),
         ),
-        certificate: Optional[str] = Field(
+        certificate: str | None = Field(
             description="Teleport certificate.",
-            default=os.environ.get("TUNNEL_CERTIFICATE", None),
+            default=os.environ.get("TUNNEL_CERTIFICATE", ""),
         ),
-        proxy: Optional[str] = Field(
+        proxy: str | None = Field(
             description="Teleport proxy.",
-            default=os.environ.get("TUNNEL_PROXY_COMMAND", None),
+            default=os.environ.get("TUNNEL_PROXY_COMMAND", ""),
         ),
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        _log_path: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Download file from remote host. Expected return object type: dict"""
         lpath = os.path.abspath(os.path.expanduser(lpath))
         logger.debug(f"Download: host={host}, remote={rpath}, local={lpath}")
@@ -541,6 +539,7 @@ def register_remote_access_tools(mcp: FastMCP):
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
                 logger.debug("Progress: 0/100")
+            assert t.ssh_client is not None
             sftp = t.ssh_client.open_sftp()
             sftp.stat(rpath)
             transferred = 0
@@ -591,38 +590,38 @@ def register_remote_access_tools(mcp: FastMCP):
     async def check_ssh_server(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
-        user: Optional[str] = Field(
-            description="Username.", default=os.environ.get("TUNNEL_USERNAME", None)
+        user: str | None = Field(
+            description="Username.", default=os.environ.get("TUNNEL_USERNAME", "")
         ),
-        password: Optional[str] = Field(
-            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
+        password: str | None = Field(
+            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", "")
         ),
         port: int = Field(
             description="Port.",
             default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
         ),
-        id_file: Optional[str] = Field(
+        id_file: str | None = Field(
             description="Private key path.",
-            default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
+            default=os.environ.get("TUNNEL_IDENTITY_FILE", ""),
         ),
-        certificate: Optional[str] = Field(
+        certificate: str | None = Field(
             description="Teleport certificate.",
-            default=os.environ.get("TUNNEL_CERTIFICATE", None),
+            default=os.environ.get("TUNNEL_CERTIFICATE", ""),
         ),
-        proxy: Optional[str] = Field(
+        proxy: str | None = Field(
             description="Teleport proxy.",
-            default=os.environ.get("TUNNEL_PROXY_COMMAND", None),
+            default=os.environ.get("TUNNEL_PROXY_COMMAND", ""),
         ),
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        _log_path: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Check SSH server status. Expected return object type: dict"""
         logger.debug(f"Check SSH: host={host}")
         if not host:
@@ -688,14 +687,14 @@ def register_remote_access_tools(mcp: FastMCP):
     async def test_key_auth(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
-        user: Optional[str] = Field(
-            description="Username.", default=os.environ.get("TUNNEL_USERNAME", None)
+        user: str | None = Field(
+            description="Username.", default=os.environ.get("TUNNEL_USERNAME", "")
         ),
         key: str = Field(
             description="Private key path.",
-            default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
+            default=os.environ.get("TUNNEL_IDENTITY_FILE", ""),
         ),
         port: int = Field(
             description="Port.",
@@ -704,11 +703,11 @@ def register_remote_access_tools(mcp: FastMCP):
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        _log_path: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Test key-based auth. Expected return object type: dict"""
         logger.debug(f"Test key: host={host}, key={key}")
         if not host or not key:
@@ -766,13 +765,13 @@ def register_remote_access_tools(mcp: FastMCP):
     async def setup_passwordless_ssh(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
-        user: Optional[str] = Field(
-            description="Username.", default=os.environ.get("TUNNEL_USERNAME", None)
+        user: str | None = Field(
+            description="Username.", default=os.environ.get("TUNNEL_USERNAME", "")
         ),
-        password: Optional[str] = Field(
-            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
+        password: str | None = Field(
+            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", "")
         ),
         port: int = Field(
             description="Port.",
@@ -787,11 +786,11 @@ def register_remote_access_tools(mcp: FastMCP):
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        _log_path: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Setup passwordless SSH. Expected return object type: dict"""
         logger.debug(f"Setup SSH: host={host}, key={key}, key_type={key_type}")
         if not host or not password:
@@ -873,43 +872,43 @@ def register_remote_access_tools(mcp: FastMCP):
     async def copy_ssh_config(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
-        user: Optional[str] = Field(
-            description="Username.", default=os.environ.get("TUNNEL_USERNAME", None)
+        user: str | None = Field(
+            description="Username.", default=os.environ.get("TUNNEL_USERNAME", "")
         ),
-        password: Optional[str] = Field(
-            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
+        password: str | None = Field(
+            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", "")
         ),
         port: int = Field(
             description="Port.",
             default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
         ),
-        lcfg: str = Field(description="Local SSH config.", default=None),
+        lcfg: str = Field(description="Local SSH config.", default=""),
         rcfg: str = Field(
             description="Remote SSH config.",
             default=os.path.expanduser("~/.ssh/config"),
         ),
-        id_file: Optional[str] = Field(
+        id_file: str | None = Field(
             description="Private key path.",
-            default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
+            default=os.environ.get("TUNNEL_IDENTITY_FILE", ""),
         ),
-        certificate: Optional[str] = Field(
+        certificate: str | None = Field(
             description="Teleport certificate.",
-            default=os.environ.get("TUNNEL_CERTIFICATE", None),
+            default=os.environ.get("TUNNEL_CERTIFICATE", ""),
         ),
-        proxy: Optional[str] = Field(
+        proxy: str | None = Field(
             description="Teleport proxy.",
-            default=os.environ.get("TUNNEL_PROXY_COMMAND", None),
+            default=os.environ.get("TUNNEL_PROXY_COMMAND", ""),
         ),
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        _log_path: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Copy SSH config to remote host. Expected return object type: dict"""
         logger.debug(f"Copy cfg: host={host}, local={lcfg}, remote={rcfg}")
         if not host or not lcfg:
@@ -981,42 +980,42 @@ def register_remote_access_tools(mcp: FastMCP):
     async def rotate_ssh_key(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
-        user: Optional[str] = Field(
-            description="Username.", default=os.environ.get("TUNNEL_USERNAME", None)
+        user: str | None = Field(
+            description="Username.", default=os.environ.get("TUNNEL_USERNAME", "")
         ),
-        password: Optional[str] = Field(
-            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
+        password: str | None = Field(
+            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", "")
         ),
         port: int = Field(
             description="Port.",
             default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
         ),
-        new_key: str = Field(description="New private key path.", default=None),
+        new_key: str = Field(description="New private key path.", default=""),
         key_type: str = Field(
             description="Key type to generate (rsa or ed25519).", default="ed25519"
         ),
-        id_file: Optional[str] = Field(
+        id_file: str | None = Field(
             description="Current key path.",
-            default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
+            default=os.environ.get("TUNNEL_IDENTITY_FILE", ""),
         ),
-        certificate: Optional[str] = Field(
+        certificate: str | None = Field(
             description="Teleport certificate.",
-            default=os.environ.get("TUNNEL_CERTIFICATE", None),
+            default=os.environ.get("TUNNEL_CERTIFICATE", ""),
         ),
-        proxy: Optional[str] = Field(
+        proxy: str | None = Field(
             description="Teleport proxy.",
-            default=os.environ.get("TUNNEL_PROXY_COMMAND", None),
+            default=os.environ.get("TUNNEL_PROXY_COMMAND", ""),
         ),
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        _log_path: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Rotate SSH key on remote host. Expected return object type: dict"""
         logger.debug(f"Rotate key: host={host}, new_key={new_key}, key_type={key_type}")
         if not host or not new_key:
@@ -1109,17 +1108,17 @@ def register_remote_access_tools(mcp: FastMCP):
     async def remove_host_key(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
         known_hosts: str = Field(
             description="Known hosts path.",
             default=os.path.expanduser("~/.ssh/known_hosts"),
         ),
-        _log_path: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Remove host key from known_hosts. Expected return object type: dict"""
         logger.debug(f"Remove key: host={host}, known_hosts={known_hosts}")
         if not host:
@@ -1171,7 +1170,7 @@ def register_remote_access_tools(mcp: FastMCP):
     async def configure_key_auth_on_inventory(
         inventory: str = Field(
             description="YAML inventory path.",
-            default=os.environ.get("TUNNEL_INVENTORY", None),
+            default=os.environ.get("TUNNEL_INVENTORY", ""),
         ),
         key: str = Field(
             description="Shared key path.",
@@ -1194,9 +1193,9 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
         ),
-        _log_path: Optional[str] = Field(description="Log file.", default=None),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        _log_path: str | None = Field(description="Log file.", default=""),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Setup passwordless SSH for all hosts in group. Expected return object type: dict"""
         logger.debug(
             f"Setup SSH all: inv={inventory}, group={group}, key_type={key_type}"
@@ -1226,7 +1225,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 else:
                     os.system(f"ssh-keygen -t ed25519 -f {key} -N ''")
                 logger.info(f"Generated {key_type} key: {key}, {pub_key}")
-            with open(pub_key, "r") as f:
+            with open(pub_key) as f:
                 pub = f.read().strip()
             hosts, error = load_inventory(inventory, group, logger)
             if error:
@@ -1236,7 +1235,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 await ctx.report_progress(progress=0, total=total)
                 logger.debug(f"Progress: 0/{total}")
 
-            async def setup_host(h: Dict, ctx: Context) -> Dict:
+            async def setup_host(h: dict, ctx: Context) -> dict:
                 host, user, password = h["hostname"], h["username"], h["password"]
                 kpath = h.get("key_path", key)
                 logger.info(f"Setup {user}@{host}")
@@ -1276,9 +1275,11 @@ def register_remote_access_tools(mcp: FastMCP):
                         ex.submit(lambda h: asyncio.run(setup_host(h, ctx)), h)
                         for h in hosts
                     ]
-                    for i, f in enumerate(concurrent.futures.as_completed(futures), 1):
+                    for i, future in enumerate(
+                        concurrent.futures.as_completed(futures), 1
+                    ):
                         try:
-                            r = f.result()
+                            r = future.result()
                             results.append(r)
                             if r["status"] == "success":
                                 files.append(pub_key)
@@ -1328,10 +1329,10 @@ def register_remote_access_tools(mcp: FastMCP):
                     "key_type": key_type,
                     "host_results": results,
                 },
-                "; ".join(errors),
-                files,
-                locations,
-                errors,
+                stdout="; ".join(errors),
+                files=files,
+                locations=locations,
+                errors=errors,
             )
         except Exception as e:
             logger.error(f"Setup all fail: {e}")
@@ -1354,9 +1355,9 @@ def register_remote_access_tools(mcp: FastMCP):
     async def run_command_on_inventory(
         inventory: str = Field(
             description="YAML inventory path.",
-            default=os.environ.get("TUNNEL_INVENTORY", None),
+            default=os.environ.get("TUNNEL_INVENTORY", ""),
         ),
-        cmd: str = Field(description="Shell command.", default=None),
+        cmd: str = Field(description="Shell command.", default=""),
         group: str = Field(
             description="Target group.",
             default=os.environ.get("TUNNEL_INVENTORY_GROUP", "all"),
@@ -1369,9 +1370,9 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
         ),
-        _log_path: Optional[str] = Field(description="Log file.", default=None),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        _log_path: str | None = Field(description="Log file.", default=""),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Run command on all hosts in group. Expected return object type: dict"""
         logger.debug(f"Run cmd all: inv={inventory}, group={group}, cmd={cmd}")
         if not inventory or not cmd:
@@ -1391,7 +1392,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 await ctx.report_progress(progress=0, total=total)
                 logger.debug(f"Progress: 0/{total}")
 
-            async def run_host(h: Dict, ctx: Context) -> Dict:
+            async def run_host(h: dict, ctx: Context) -> dict:
                 host = h["hostname"]
                 try:
                     t = Tunnel(
@@ -1433,9 +1434,11 @@ def register_remote_access_tools(mcp: FastMCP):
                         ex.submit(lambda h: asyncio.run(run_host(h, ctx)), h)
                         for h in hosts
                     ]
-                    for i, f in enumerate(concurrent.futures.as_completed(futures), 1):
+                    for i, future in enumerate(
+                        concurrent.futures.as_completed(futures), 1
+                    ):
                         try:
-                            r = f.result()
+                            r = future.result()
                             results.append(r)
                             errors.extend(r["errors"])
                             if ctx:
@@ -1477,10 +1480,10 @@ def register_remote_access_tools(mcp: FastMCP):
                     "cmd": cmd,
                     "host_results": results,
                 },
-                "; ".join(errors),
-                [],
-                [],
-                errors,
+                error="; ".join(errors),
+                files=[],
+                locations=[],
+                errors=errors,
             )
         except Exception as e:
             logger.error(f"Cmd all fail: {e}")
@@ -1503,9 +1506,9 @@ def register_remote_access_tools(mcp: FastMCP):
     async def copy_ssh_config_on_inventory(
         inventory: str = Field(
             description="YAML inventory path.",
-            default=os.environ.get("TUNNEL_INVENTORY", None),
+            default=os.environ.get("TUNNEL_INVENTORY", ""),
         ),
-        cfg: str = Field(description="Local SSH config path.", default=None),
+        cfg: str = Field(description="Local SSH config path.", default=""),
         rmt_cfg: str = Field(
             description="Remote path.", default=os.path.expanduser("~/.ssh/config")
         ),
@@ -1521,11 +1524,11 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
         ),
-        _log_path: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Copy SSH config to all hosts in YAML group. Expected return object type: dict"""
         logger.debug(f"Copy SSH config: inv={inventory}, group={group}")
 
@@ -1569,7 +1572,7 @@ def register_remote_access_tools(mcp: FastMCP):
 
             results, files, locations, errors = [], [], [], []
 
-            async def copy_host(h: Dict) -> Dict:
+            async def copy_host(h: dict) -> dict:
                 try:
                     t = Tunnel(
                         remote_host=h["hostname"],
@@ -1604,9 +1607,11 @@ def register_remote_access_tools(mcp: FastMCP):
                     futures = [
                         ex.submit(lambda h: asyncio.run(copy_host(h)), h) for h in hosts
                     ]
-                    for i, f in enumerate(concurrent.futures.as_completed(futures), 1):
+                    for i, future in enumerate(
+                        concurrent.futures.as_completed(futures), 1
+                    ):
                         try:
-                            r = f.result()
+                            r = future.result()
                             results.append(r)
                             if r["status"] == "success":
                                 files.append(cfg)
@@ -1656,10 +1661,10 @@ def register_remote_access_tools(mcp: FastMCP):
                     "rmt_cfg": rmt_cfg,
                     "host_results": results,
                 },
-                "; ".join(errors),
-                files,
-                locations,
-                errors,
+                error="; ".join(errors),
+                files=files,
+                locations=locations,
+                errors=errors,
             )
 
         except Exception as e:
@@ -1688,7 +1693,7 @@ def register_remote_access_tools(mcp: FastMCP):
     async def rotate_ssh_key_on_inventory(
         inventory: str = Field(
             description="YAML inventory path.",
-            default=os.environ.get("TUNNEL_INVENTORY", None),
+            default=os.environ.get("TUNNEL_INVENTORY", ""),
         ),
         key_pfx: str = Field(
             description="Prefix for new keys.", default=os.path.expanduser("~/.ssh/id_")
@@ -1708,11 +1713,11 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
         ),
-        _log_path: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Rotate SSH keys for all hosts in YAML group. Expected return object type: dict"""
         logger.debug(
             f"Rotate SSH keys: inv={inventory}, group={group}, key_type={key_type}"
@@ -1757,7 +1762,7 @@ def register_remote_access_tools(mcp: FastMCP):
 
             results, files, locations, errors = [], [], [], []
 
-            async def rotate_host(h: Dict) -> Dict:
+            async def rotate_host(h: dict) -> dict:
                 key = os.path.expanduser(key_pfx + h["hostname"])
                 try:
                     t = Tunnel(
@@ -1796,9 +1801,11 @@ def register_remote_access_tools(mcp: FastMCP):
                         ex.submit(lambda h: asyncio.run(rotate_host(h)), h)
                         for h in hosts
                     ]
-                    for i, f in enumerate(concurrent.fences.as_completed(futures), 1):
+                    for i, future in enumerate(
+                        concurrent.futures.as_completed(futures), 1
+                    ):
                         try:
-                            r = f.result()
+                            r = future.result()
                             results.append(r)
                             if r["status"] == "success":
                                 files.append(r["new_key_path"] + ".pub")
@@ -1847,14 +1854,14 @@ def register_remote_access_tools(mcp: FastMCP):
                 {
                     "inventory": inventory,
                     "group": group,
-                    "key_pfx": key_pfx,
+                    "key_prefix": key_pfx,
                     "key_type": key_type,
                     "host_results": results,
                 },
-                "; ".join(errors),
-                files,
-                locations,
-                errors,
+                error="; ".join(errors),
+                files=files,
+                locations=locations,
+                errors=errors,
             )
 
         except Exception as e:
@@ -1868,7 +1875,7 @@ def register_remote_access_tools(mcp: FastMCP):
                     "key_pfx": key_pfx,
                     "key_type": key_type,
                 },
-                str(e),
+                error=str(e),
             )
 
     @mcp.tool(
@@ -1883,10 +1890,10 @@ def register_remote_access_tools(mcp: FastMCP):
     async def send_file_to_inventory(
         inventory: str = Field(
             description="YAML inventory path.",
-            default=os.environ.get("TUNNEL_INVENTORY", None),
+            default=os.environ.get("TUNNEL_INVENTORY", ""),
         ),
-        lpath: str = Field(description="Local file path.", default=None),
-        rpath: str = Field(description="Remote destination path.", default=None),
+        lpath: str = Field(description="Local file path.", default=""),
+        rpath: str = Field(description="Remote destination path.", default=""),
         group: str = Field(
             description="Target group.",
             default=os.environ.get("TUNNEL_INVENTORY_GROUP", "all"),
@@ -1899,11 +1906,11 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "5")),
         ),
-        _log_path: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Upload a file to all hosts in the specified inventory group. Expected return object type: dict"""
         lpath = os.path.abspath(os.path.expanduser(lpath))
         rpath = os.path.expanduser(rpath)
@@ -1924,7 +1931,7 @@ def register_remote_access_tools(mcp: FastMCP):
                     "lpath": lpath,
                     "rpath": rpath,
                 },
-                errors=["Need inventory, lpath, rpath"],
+                error="Need inventory, lpath, rpath",
             )
         if not os.path.exists(lpath) or not os.path.isfile(lpath):
             logger.error(f"Invalid file: {lpath}")
@@ -1937,7 +1944,7 @@ def register_remote_access_tools(mcp: FastMCP):
                     "lpath": lpath,
                     "rpath": rpath,
                 },
-                errors=[f"Invalid file: {lpath}"],
+                error=f"Invalid file: {lpath}",
             )
         try:
             hosts, error = load_inventory(inventory, group, logger)
@@ -1948,7 +1955,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 await ctx.report_progress(progress=0, total=total)
                 logger.debug(f"Progress: 0/{total}")
 
-            async def send_host(h: Dict) -> Dict:
+            async def send_host(h: dict) -> dict:
                 host = h["hostname"]
                 try:
                     t = Tunnel(
@@ -1958,6 +1965,7 @@ def register_remote_access_tools(mcp: FastMCP):
                         identity_file=h.get("key_path"),
                     )
                     t.connect()
+                    assert t.ssh_client is not None
                     sftp = t.ssh_client.open_sftp()
                     transferred = 0
 
@@ -1998,9 +2006,11 @@ def register_remote_access_tools(mcp: FastMCP):
                     futures = [
                         ex.submit(lambda h: asyncio.run(send_host(h)), h) for h in hosts
                     ]
-                    for i, f in enumerate(concurrent.futures.as_completed(futures), 1):
+                    for i, future in enumerate(
+                        concurrent.futures.as_completed(futures), 1
+                    ):
                         try:
-                            r = f.result()
+                            r = future.result()
                             results.append(r)
                             if r["status"] == "success":
                                 locations.append(f"{rpath} on {r['hostname']}")
@@ -2044,14 +2054,14 @@ def register_remote_access_tools(mcp: FastMCP):
                 {
                     "inventory": inventory,
                     "group": group,
-                    "lpath": lpath,
-                    "rpath": rpath,
+                    "local_path": lpath,
+                    "remote_path": rpath,
                     "host_results": results,
                 },
-                "; ".join(errors),
-                files,
-                locations,
-                errors,
+                error="; ".join(errors),
+                files=files,
+                locations=locations,
+                errors=errors,
             )
         except Exception as e:
             logger.error(f"Upload all fail: {e}")
@@ -2079,11 +2089,11 @@ def register_remote_access_tools(mcp: FastMCP):
     async def receive_file_from_inventory(
         inventory: str = Field(
             description="YAML inventory path.",
-            default=os.environ.get("TUNNEL_INVENTORY", None),
+            default=os.environ.get("TUNNEL_INVENTORY", ""),
         ),
-        rpath: str = Field(description="Remote file path to download.", default=None),
+        rpath: str = Field(description="Remote file path to download.", default=""),
         lpath_prefix: str = Field(
-            description="Local directory path prefix to save files.", default=None
+            description="Local directory path prefix to save files.", default=""
         ),
         group: str = Field(
             description="Target group.",
@@ -2097,11 +2107,11 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "5")),
         ),
-        _log_path: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Download a file from all hosts in the specified inventory group. Expected return object type: dict"""
         logger.debug(
             f"Download file all: inv={inventory}, group={group}, remote={rpath}, local_prefix={lpath_prefix}"
@@ -2129,7 +2139,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 await ctx.report_progress(progress=0, total=total)
                 logger.debug(f"Progress: 0/{total}")
 
-            async def receive_host(h: Dict) -> Dict:
+            async def receive_host(h: dict) -> dict:
                 host = h["hostname"]
                 lpath = os.path.join(lpath_prefix, host, os.path.basename(rpath))
                 os.makedirs(os.path.dirname(lpath), exist_ok=True)
@@ -2141,6 +2151,7 @@ def register_remote_access_tools(mcp: FastMCP):
                         identity_file=h.get("key_path"),
                     )
                     t.connect()
+                    assert t.ssh_client is not None
                     sftp = t.ssh_client.open_sftp()
                     sftp.stat(rpath)
                     transferred = 0
@@ -2185,9 +2196,11 @@ def register_remote_access_tools(mcp: FastMCP):
                         ex.submit(lambda h: asyncio.run(receive_host(h)), h)
                         for h in hosts
                     ]
-                    for i, f in enumerate(concurrent.futures.as_completed(futures), 1):
+                    for i, future in enumerate(
+                        concurrent.futures.as_completed(futures), 1
+                    ):
                         try:
-                            r = f.result()
+                            r = future.result()
                             results.append(r)
                             if r["status"] == "success":
                                 files.append(rpath)
@@ -2238,10 +2251,10 @@ def register_remote_access_tools(mcp: FastMCP):
                     "lpath_prefix": lpath_prefix,
                     "host_results": results,
                 },
-                "; ".join(errors),
-                files,
-                locations,
-                errors,
+                error="; ".join(errors),
+                files=files,
+                locations=locations,
+                errors=errors,
             )
         except Exception as e:
             logger.error(f"Download all fail: {e}")
@@ -2293,7 +2306,7 @@ def get_mcp_instance() -> tuple[Any, Any, Any, Any]:
 
     for mw in middlewares:
         mcp.add_middleware(mw)
-    registered_tags = []
+    registered_tags: list[str] = []
     return mcp, args, middlewares, registered_tags
 
 

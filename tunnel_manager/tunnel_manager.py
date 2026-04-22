@@ -1,32 +1,34 @@
 #!/usr/bin/env python
 
 
-import sys
 import argparse
 import concurrent.futures
 import logging
 import os
-import paramiko
+import sys
+from typing import Any
+
+import paramiko  # type: ignore[import-untyped]
 import yaml
 
 __version__ = "1.1.54"
 
 
 class HostManager:
-    def __init__(self, config_file: str = None):
+    def __init__(self, config_file: str | None = None):
         if config_file:
             self.config_file = config_file
         else:
             self.config_file = os.path.expanduser("~/.tunnel_manager/hosts.yaml")
 
         self.logger = logging.getLogger(__name__)
-        self.hosts = {}
+        self.hosts: dict[str, Any] = {}
         self.load_inventory()
 
     def load_inventory(self):
         if os.path.exists(self.config_file):
             try:
-                with open(self.config_file, "r") as f:
+                with open(self.config_file) as f:
                     self.hosts = yaml.safe_load(f) or {}
                 self.logger.info(f"Loaded inventory from {self.config_file}")
             except Exception as e:
@@ -53,9 +55,9 @@ class HostManager:
         hostname: str,
         user: str,
         port: int = 22,
-        identity_file: str = None,
-        password: str = None,
-        proxy_command: str = None,
+        identity_file: str | None = None,
+        password: str | None = None,
+        proxy_command: str | None = None,
         **kwargs,
     ):
         self.hosts[alias] = {
@@ -89,13 +91,13 @@ class Tunnel:
     def __init__(
         self,
         remote_host: str,
-        username: str = None,
-        password: str = None,
+        username: str | None = None,
+        password: str | None = None,
         port: int = 22,
-        identity_file: str = None,
-        certificate_file: str = None,
-        proxy_command: str = None,
-        ssh_config_file: str = os.path.expanduser("~/.ssh/config"),
+        identity_file: str | None = None,
+        certificate_file: str | None = None,
+        proxy_command: str | None = None,
+        ssh_config_file: str | None = None,
     ):
         """
         Initialize the Tunnel class.
@@ -114,13 +116,15 @@ class Tunnel:
         self.username = username
         self.password = password
         self.port = port
-        self.ssh_client = None
-        self.sftp = None
+        self.ssh_client: paramiko.SSHClient | None = None
+        self.sftp: paramiko.SFTPClient | None = None
         self.logger = logging.getLogger(__name__)
 
         self.ssh_config = paramiko.SSHConfig()
+        if not ssh_config_file:
+            ssh_config_file = os.path.expanduser("~/.ssh/config")
         if os.path.exists(ssh_config_file) and os.path.isfile(ssh_config_file):
-            with open(ssh_config_file, "r") as f:
+            with open(ssh_config_file) as f:
                 self.ssh_config.parse(f)
             self.logger.info(f"Loaded SSH config from: {ssh_config_file}")
         else:
@@ -128,10 +132,9 @@ class Tunnel:
         host_config = self.ssh_config.lookup(remote_host) or {}
 
         self.username = username or host_config.get("user")
+        ident_file = host_config.get("identityfile")
         self.identity_file = identity_file or (
-            host_config.get("identityfile")[0]
-            if host_config.get("identityfile")
-            else None
+            ident_file[0] if ident_file and isinstance(ident_file, list) else None
         )
         self.certificate_file = certificate_file or host_config.get("certificatefile")
         self.proxy_command = proxy_command or host_config.get("proxycommand")
@@ -150,6 +153,7 @@ class Tunnel:
             return
 
         self.ssh_client = paramiko.SSHClient()
+        assert self.ssh_client is not None
         self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
         proxy = None
@@ -172,6 +176,7 @@ class Tunnel:
                 if self.certificate_file:
                     private_key.load_certificate(self.certificate_file)
                     self.logger.info(f"Loaded certificate: {self.certificate_file}")
+                assert self.ssh_client is not None
                 self.ssh_client.connect(
                     self.remote_host,
                     port=self.port,
@@ -183,6 +188,7 @@ class Tunnel:
                     allow_agent=False,
                 )
             else:
+                assert self.ssh_client is not None
                 self.ssh_client.connect(
                     self.remote_host,
                     port=self.port,
@@ -207,6 +213,7 @@ class Tunnel:
         """
         self.connect()
         try:
+            assert self.ssh_client is not None
             stdin, stdout, stderr = self.ssh_client.exec_command(command)
             out = stdout.read().decode("utf-8").strip()
             err = stderr.read().decode("utf-8").strip()
@@ -237,13 +244,13 @@ class Tunnel:
             if not os.path.exists(local_path):
                 err_msg = f"Local file does not exist: {local_path}"
                 self.logger.error(err_msg)
-                raise IOError(err_msg)
+                raise OSError(err_msg)
             if not os.path.isfile(local_path):
                 err_msg = (
                     f"Local path is not a regular file (dir/symlink?): {local_path}"
                 )
                 self.logger.error(err_msg)
-                raise IOError(err_msg)
+                raise OSError(err_msg)
             if not os.access(local_path, os.R_OK):
                 err_msg = f"No read permission for local file: {local_path}"
                 self.logger.error(err_msg)
@@ -258,11 +265,13 @@ class Tunnel:
             except Exception as open_err:
                 err_msg = f"Failed to open {local_path} in binary mode: {str(open_err)}"
                 self.logger.error(err_msg)
-                raise IOError(err_msg)
+                raise OSError(err_msg) from open_err
 
             if not self.sftp:
+                assert self.ssh_client is not None
                 self.sftp = self.ssh_client.open_sftp()
             self.logger.debug(f"Opening SFTP for put: {local_path} -> {remote_path}")
+            assert self.sftp is not None
             self.sftp.put(local_path, remote_path)
             self.logger.info(f"File sent: {local_path} -> {remote_path}")
         except Exception as e:
@@ -286,7 +295,9 @@ class Tunnel:
         self.connect()
         try:
             if not self.sftp:
+                assert self.ssh_client is not None
                 self.sftp = self.ssh_client.open_sftp()
+            assert self.sftp is not None
             self.sftp.get(remote_path, local_path)
             self.logger.info(f"File received: {remote_path} -> {local_path}")
         except Exception as e:
@@ -378,7 +389,7 @@ class Tunnel:
                 f"Generated {key_type} key pair: {local_key_path}, {pub_key_path}"
             )
 
-        with open(pub_key_path, "r") as f:
+        with open(pub_key_path) as f:
             pub_key = f.read().strip()
 
         try:
@@ -412,7 +423,7 @@ class Tunnel:
         print(f"Loading inventory '{inventory}' for group '{group}'...")
 
         try:
-            with open(inventory, "r") as f:
+            with open(inventory) as f:
                 inventory_data = yaml.safe_load(f)
             logger.debug(f"Loaded inventory data: {inventory_data}")
         except FileNotFoundError:
@@ -546,7 +557,7 @@ class Tunnel:
                 os.system(f"ssh-keygen -t ed25519 -f {new_key_path} -N ''")
             self.logger.info(f"Generated new {key_type} key pair: {new_key_path}")
 
-        with open(new_pub_path, "r") as f:
+        with open(new_pub_path) as f:
             new_pub = f.read().strip()
 
         old_pub = None
@@ -554,7 +565,7 @@ class Tunnel:
             old_key_path = os.path.expanduser(self.identity_file)
             old_pub_path = old_key_path + ".pub"
             if os.path.exists(old_pub_path):
-                with open(old_pub_path, "r") as f:
+                with open(old_pub_path) as f:
                     old_pub = f.read().strip()
 
         self.connect()
@@ -614,7 +625,7 @@ class Tunnel:
                 f"Generated shared {key_type} key pair: {shared_key_path}, {shared_pub_key_path}"
             )
 
-        with open(shared_pub_key_path, "r") as f:
+        with open(shared_pub_key_path) as f:
             shared_pub_key = f.read().strip()
 
         def setup_host(host):
