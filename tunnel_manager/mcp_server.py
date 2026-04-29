@@ -6,6 +6,7 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     try:
         from requests.exceptions import RequestsDependencyWarning
+
         warnings.filterwarnings("ignore", category=RequestsDependencyWarning)
     except ImportError:
         pass
@@ -14,25 +15,32 @@ with warnings.catch_warnings():
 warnings.filterwarnings("ignore", message=".*urllib3.*or chardet.*")
 warnings.filterwarnings("ignore", message=".*urllib3.*or charset_normalizer.*")
 
-from dotenv import load_dotenv, find_dotenv
-import os
-import sys
-import logging
-import concurrent.futures
-import yaml
 import asyncio
-from typing import Any, Optional, Dict, List
-from starlette.requests import Request
-from starlette.responses import JSONResponse
-from pydantic import Field
-from fastmcp import FastMCP
-from fastmcp import Context
-from fastmcp.utilities.logging import get_logger
-from tunnel_manager.tunnel_manager import Tunnel, HostManager
+import concurrent.futures
+import logging
+import os
+import subprocess
+import sys
+from typing import Any
+
+import yaml
 from agent_utilities.base_utilities import to_boolean, to_integer
 from agent_utilities.mcp_utilities import (
     create_mcp_server,
+    ctx_confirm_destructive,
+    ctx_progress,
+    ctx_log,
 )
+from dotenv import find_dotenv, load_dotenv
+from fastmcp import Context, FastMCP
+from fastmcp.utilities.logging import get_logger
+from pydantic import Field
+
+from tunnel_manager.advanced_file_manager import AdvancedFileManager
+from tunnel_manager.operation_manager import operation_manager
+from tunnel_manager.security_auditor import SecurityAuditor
+from tunnel_manager.system_intelligence import SystemIntelligence
+from tunnel_manager.tunnel_manager import HostManager, Tunnel
 
 __version__ = "1.1.53"
 
@@ -48,13 +56,13 @@ class ResponseBuilder:
     def build(
         status: int,
         msg: str,
-        details: Dict,
+        details: dict,
         error: str = "",
         stdout: str = "",
-        files: List = None,
-        locations: List = None,
-        errors: List = None,
-    ) -> Dict:
+        files: list | None = None,
+        locations: list | None = None,
+        errors: list | None = None,
+    ) -> dict:
         return {
             "status_code": status,
             "message": msg,
@@ -69,9 +77,9 @@ class ResponseBuilder:
 
 def load_inventory(
     inventory: str, group: str, logger: logging.Logger
-) -> tuple[List[Dict], Dict]:
+) -> tuple[list[dict], dict]:
     try:
-        with open(inventory, "r") as f:
+        with open(inventory) as f:
             inv = yaml.safe_load(f)
         hosts = []
         if group in inv and isinstance(inv[group], dict) and "hosts" in inv[group]:
@@ -113,14 +121,14 @@ def load_inventory(
 
 def _resolve_host(
     host_alias: str,
-    user: str = None,
-    password: str = None,
-    port: int = None,
-    identity_file: str = None,
-    certificate_file: str = None,
-    proxy_command: str = None,
-    ssh_config_file: str = None,
-) -> Dict:
+    user: str | None = None,
+    password: str | None = None,
+    port: int | None = None,
+    identity_file: str | None = None,
+    certificate_file: str | None = None,
+    proxy_command: str | None = None,
+    ssh_config_file: str | None = None,
+) -> tuple[dict, str | None]:
     """
     Resolve host details from HostManager if alias exists,
     otherwise return provided parameters as a config dict.
@@ -159,8 +167,8 @@ def _resolve_host(
 
 
 def register_misc_tools(mcp: FastMCP):
-    async def health_check(request: Request) -> JSONResponse:
-        return JSONResponse({"status": "OK"})
+    pass
+    pass
 
 
 def register_host_management_tools(mcp: FastMCP):
@@ -173,7 +181,11 @@ def register_host_management_tools(mcp: FastMCP):
         },
         tags={"host_management"},
     )
-    async def list_hosts() -> Dict:
+    async def list_hosts(
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
         """List all managed hosts in the inventory."""
         return {"hosts": host_manager.list_hosts()}
 
@@ -191,16 +203,15 @@ def register_host_management_tools(mcp: FastMCP):
         hostname: str = Field(description="Real hostname or IP."),
         user: str = Field(description="Username."),
         port: int = Field(description="SSH Port.", default=22),
-        identity_file: Optional[str] = Field(
-            description="Path to private key.", default=None
+        identity_file: str | None = Field(
+            description="Path to private key.", default=""
         ),
-        password: Optional[str] = Field(
-            description="Password (if no key).", default=None
+        password: str | None = Field(description="Password (if no key).", default=""),
+        proxy_command: str | None = Field(description="Proxy command.", default=""),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
         ),
-        proxy_command: Optional[str] = Field(
-            description="Proxy command.", default=None
-        ),
-    ) -> Dict:
+    ) -> dict:
         """Add a new host to the managed inventory."""
         host_manager.add_host(
             alias=alias,
@@ -224,8 +235,14 @@ def register_host_management_tools(mcp: FastMCP):
     )
     async def remove_host(
         alias: str = Field(description="Alias of the host to remove."),
-    ) -> Dict:
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
         """Remove a host from the managed inventory."""
+        if not await ctx_confirm_destructive(ctx, "remove host"):
+            return {"status": "cancelled", "message": "Operation cancelled by user"}
+        await ctx_progress(ctx, 0, 100)
         host_manager.remove_host(alias)
         return {"status": "success", "message": f"Host '{alias}' removed."}
 
@@ -243,43 +260,43 @@ def register_remote_access_tools(mcp: FastMCP):
     async def run_command_on_remote_host(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
-        user: Optional[str] = Field(
-            description="Username.", default=os.environ.get("TUNNEL_USERNAME", None)
+        user: str | None = Field(
+            description="Username.", default=os.environ.get("TUNNEL_USERNAME", "")
         ),
-        password: Optional[str] = Field(
-            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
+        password: str | None = Field(
+            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", "")
         ),
         port: int = Field(
             description="Port.",
             default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
         ),
-        cmd: str = Field(description="Shell command.", default=None),
-        id_file: Optional[str] = Field(
+        cmd: str = Field(description="Shell command.", default=""),
+        id_file: str | None = Field(
             description="Private key path.",
-            default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
+            default=os.environ.get("TUNNEL_IDENTITY_FILE", ""),
         ),
-        certificate: Optional[str] = Field(
+        certificate: str | None = Field(
             description="Teleport certificate.",
-            default=os.environ.get("TUNNEL_CERTIFICATE", None),
+            default=os.environ.get("TUNNEL_CERTIFICATE", ""),
         ),
-        proxy: Optional[str] = Field(
+        proxy: str | None = Field(
             description="Teleport proxy.",
-            default=os.environ.get("TUNNEL_PROXY_COMMAND", None),
+            default=os.environ.get("TUNNEL_PROXY_COMMAND", ""),
         ),
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        log: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Run shell command on remote host. Expected return object type: dict"""
-        logger.debug(f"Run cmd: host={host}, cmd={cmd}")
+        ctx_log(ctx, logger, "debug", f"Run cmd: host={host}, cmd={cmd}")
         if not host or not cmd:
-            logger.error("Need host, cmd")
+            ctx_log(ctx, logger, "error", "Need host, cmd")
             return ResponseBuilder.build(
                 400,
                 "Need host, cmd",
@@ -310,13 +327,13 @@ def register_remote_access_tools(mcp: FastMCP):
             )
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
-                logger.debug("Progress: 0/100")
+                ctx_log(ctx, logger, "debug", "Progress: 0/100")
             t.connect()
             out, error = t.run_command(cmd)
             if ctx:
                 await ctx.report_progress(progress=100, total=100)
-                logger.debug("Progress: 100/100")
-            logger.debug(f"Cmd out: {out}, error: {error}")
+                ctx_log(ctx, logger, "debug", "Progress: 100/100")
+            ctx_log(ctx, logger, "debug", f"Cmd out: {out}, error: {error}")
             return ResponseBuilder.build(
                 200,
                 f"Cmd '{cmd}' done on {host} ({conf['hostname']})",
@@ -328,7 +345,8 @@ def register_remote_access_tools(mcp: FastMCP):
                 errors=[],
             )
         except Exception as e:
-            logger.error(f"Cmd fail: {e}")
+            ctx_log(ctx, logger, "error", f"Cmd fail: {e}")
+            await ctx_progress(ctx, 100, 100)
             return ResponseBuilder.build(
                 500, f"Cmd fail: {e}", {"host": host, "cmd": cmd}, str(e)
             )
@@ -348,51 +366,58 @@ def register_remote_access_tools(mcp: FastMCP):
     async def send_file_to_remote_host(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
-        user: Optional[str] = Field(
-            description="Username.", default=os.environ.get("TUNNEL_USERNAME", None)
+        user: str | None = Field(
+            description="Username.", default=os.environ.get("TUNNEL_USERNAME", "")
         ),
-        password: Optional[str] = Field(
-            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
+        password: str | None = Field(
+            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", "")
         ),
         port: int = Field(
             description="Port.",
             default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
         ),
-        lpath: str = Field(description="Local file path.", default=None),
-        rpath: str = Field(description="Remote path.", default=None),
-        id_file: Optional[str] = Field(
+        lpath: str = Field(description="Local file path.", default=""),
+        rpath: str = Field(description="Remote path.", default=""),
+        id_file: str | None = Field(
             description="Private key path.",
-            default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
+            default=os.environ.get("TUNNEL_IDENTITY_FILE", ""),
         ),
-        certificate: Optional[str] = Field(
+        certificate: str | None = Field(
             description="Teleport certificate.",
-            default=os.environ.get("TUNNEL_CERTIFICATE", None),
+            default=os.environ.get("TUNNEL_CERTIFICATE", ""),
         ),
-        proxy: Optional[str] = Field(
+        proxy: str | None = Field(
             description="Teleport proxy.",
-            default=os.environ.get("TUNNEL_PROXY_COMMAND", None),
+            default=os.environ.get("TUNNEL_PROXY_COMMAND", ""),
         ),
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        log: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Upload file to remote host. Expected return object type: dict"""
         logger = logging.getLogger("TunnelServer")
-        logger.debug(f"Upload: host={host}, local={lpath}, remote={rpath}")
+        ctx_log(
+            ctx, logger, "debug", f"Upload: host={host}, local={lpath}, remote={rpath}"
+        )
         lpath = os.path.abspath(os.path.expanduser(lpath))
         rpath = os.path.expanduser(rpath)
-        logger.debug(
-            f"Normalized: lpath={lpath} (exists={os.path.exists(lpath)}, isfile={os.path.isfile(lpath)}), rpath={rpath}, CWD={os.getcwd()}"
+        ctx_log(
+            ctx,
+            logger,
+            "debug",
+            f"Normalized: lpath={lpath} (exists={os.path.exists(lpath)}, isfile={os.path.isfile(lpath)}), rpath={rpath}, CWD={os.getcwd()}",
         )
-        logger.debug(f"Upload: host={host}, local={lpath}, remote={rpath}")
+        ctx_log(
+            ctx, logger, "debug", f"Upload: host={host}, local={lpath}, remote={rpath}"
+        )
         if not host or not lpath or not rpath:
-            logger.error("Need host, lpath, rpath")
+            ctx_log(ctx, logger, "error", "Need host, lpath, rpath")
             return ResponseBuilder.build(
                 400,
                 "Need host, lpath, rpath",
@@ -400,8 +425,11 @@ def register_remote_access_tools(mcp: FastMCP):
                 errors=["Need host, lpath, rpath"],
             )
         if not os.path.exists(lpath) or not os.path.isfile(lpath):
-            logger.error(
-                f"Invalid file: {lpath} (exists={os.path.exists(lpath)}, isfile={os.path.isfile(lpath)})"
+            ctx_log(
+                ctx,
+                logger,
+                "error",
+                f"Invalid file: {lpath} (exists={os.path.exists(lpath)}, isfile={os.path.isfile(lpath)})",
             )
             return ResponseBuilder.build(
                 400,
@@ -434,7 +462,8 @@ def register_remote_access_tools(mcp: FastMCP):
             t.connect()
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
-                logger.debug("Progress: 0/100")
+                ctx_log(ctx, logger, "debug", "Progress: 0/100")
+            assert t.ssh_client is not None
             sftp = t.ssh_client.open_sftp()
             transferred = 0
 
@@ -448,7 +477,7 @@ def register_remote_access_tools(mcp: FastMCP):
 
             sftp.put(lpath, rpath, callback=progress_callback)
             sftp.close()
-            logger.debug(f"Uploaded: {lpath} -> {rpath}")
+            ctx_log(ctx, logger, "debug", f"Uploaded: {lpath} -> {rpath}")
             return ResponseBuilder.build(
                 200,
                 f"Uploaded to {rpath}",
@@ -458,7 +487,9 @@ def register_remote_access_tools(mcp: FastMCP):
                 errors=[],
             )
         except Exception as e:
-            logger.error(f"Unexpected error during file transfer: {str(e)}")
+            ctx_log(
+                ctx, logger, "error", f"Unexpected error during file transfer: {str(e)}"
+            )
             return ResponseBuilder.build(
                 500,
                 f"Upload fail: {str(e)}",
@@ -482,45 +513,50 @@ def register_remote_access_tools(mcp: FastMCP):
     async def receive_file_from_remote_host(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
-        user: Optional[str] = Field(
-            description="Username.", default=os.environ.get("TUNNEL_USERNAME", None)
+        user: str | None = Field(
+            description="Username.", default=os.environ.get("TUNNEL_USERNAME", "")
         ),
-        password: Optional[str] = Field(
-            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
+        password: str | None = Field(
+            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", "")
         ),
         port: int = Field(
             description="Port.",
             default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
         ),
-        rpath: str = Field(description="Remote file path.", default=None),
-        lpath: str = Field(description="Local file path.", default=None),
-        id_file: Optional[str] = Field(
+        rpath: str = Field(description="Remote file path.", default=""),
+        lpath: str = Field(description="Local file path.", default=""),
+        id_file: str | None = Field(
             description="Private key path.",
-            default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
+            default=os.environ.get("TUNNEL_IDENTITY_FILE", ""),
         ),
-        certificate: Optional[str] = Field(
+        certificate: str | None = Field(
             description="Teleport certificate.",
-            default=os.environ.get("TUNNEL_CERTIFICATE", None),
+            default=os.environ.get("TUNNEL_CERTIFICATE", ""),
         ),
-        proxy: Optional[str] = Field(
+        proxy: str | None = Field(
             description="Teleport proxy.",
-            default=os.environ.get("TUNNEL_PROXY_COMMAND", None),
+            default=os.environ.get("TUNNEL_PROXY_COMMAND", ""),
         ),
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        log: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Download file from remote host. Expected return object type: dict"""
         lpath = os.path.abspath(os.path.expanduser(lpath))
-        logger.debug(f"Download: host={host}, remote={rpath}, local={lpath}")
+        ctx_log(
+            ctx,
+            logger,
+            "debug",
+            f"Download: host={host}, remote={rpath}, local={lpath}",
+        )
         if not host or not rpath or not lpath:
-            logger.error("Need host, rpath, lpath")
+            ctx_log(ctx, logger, "error", "Need host, rpath, lpath")
             return ResponseBuilder.build(
                 400,
                 "Need host, rpath, lpath",
@@ -541,7 +577,8 @@ def register_remote_access_tools(mcp: FastMCP):
             t.connect()
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
-                logger.debug("Progress: 0/100")
+                ctx_log(ctx, logger, "debug", "Progress: 0/100")
+            assert t.ssh_client is not None
             sftp = t.ssh_client.open_sftp()
             sftp.stat(rpath)
             transferred = 0
@@ -557,9 +594,9 @@ def register_remote_access_tools(mcp: FastMCP):
             sftp.get(rpath, lpath, callback=progress_callback)
             if ctx:
                 await ctx.report_progress(progress=100, total=100)
-                logger.debug("Progress: 100/100")
+                ctx_log(ctx, logger, "debug", "Progress: 100/100")
             sftp.close()
-            logger.debug(f"Downloaded: {rpath} -> {lpath}")
+            ctx_log(ctx, logger, "debug", f"Downloaded: {rpath} -> {lpath}")
             return ResponseBuilder.build(
                 200,
                 f"Downloaded to {lpath}",
@@ -569,7 +606,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 errors=[],
             )
         except Exception as e:
-            logger.error(f"Download fail: {e}")
+            ctx_log(ctx, logger, "error", f"Download fail: {e}")
             return ResponseBuilder.build(
                 500,
                 f"Download fail: {e}",
@@ -592,42 +629,42 @@ def register_remote_access_tools(mcp: FastMCP):
     async def check_ssh_server(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
-        user: Optional[str] = Field(
-            description="Username.", default=os.environ.get("TUNNEL_USERNAME", None)
+        user: str | None = Field(
+            description="Username.", default=os.environ.get("TUNNEL_USERNAME", "")
         ),
-        password: Optional[str] = Field(
-            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
+        password: str | None = Field(
+            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", "")
         ),
         port: int = Field(
             description="Port.",
             default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
         ),
-        id_file: Optional[str] = Field(
+        id_file: str | None = Field(
             description="Private key path.",
-            default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
+            default=os.environ.get("TUNNEL_IDENTITY_FILE", ""),
         ),
-        certificate: Optional[str] = Field(
+        certificate: str | None = Field(
             description="Teleport certificate.",
-            default=os.environ.get("TUNNEL_CERTIFICATE", None),
+            default=os.environ.get("TUNNEL_CERTIFICATE", ""),
         ),
-        proxy: Optional[str] = Field(
+        proxy: str | None = Field(
             description="Teleport proxy.",
-            default=os.environ.get("TUNNEL_PROXY_COMMAND", None),
+            default=os.environ.get("TUNNEL_PROXY_COMMAND", ""),
         ),
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        log: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Check SSH server status. Expected return object type: dict"""
-        logger.debug(f"Check SSH: host={host}")
+        ctx_log(ctx, logger, "debug", f"Check SSH: host={host}")
         if not host:
-            logger.error("Need host")
+            ctx_log(ctx, logger, "error", "Need host")
             return ResponseBuilder.build(
                 400, "Need host", {"host": host}, errors=["Need host"]
             )
@@ -654,12 +691,12 @@ def register_remote_access_tools(mcp: FastMCP):
             )
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
-                logger.debug("Progress: 0/100")
+                ctx_log(ctx, logger, "debug", "Progress: 0/100")
             success, msg = t.check_ssh_server()
             if ctx:
                 await ctx.report_progress(progress=100, total=100)
-                logger.debug("Progress: 100/100")
-            logger.debug(f"SSH check: {msg}")
+                ctx_log(ctx, logger, "debug", "Progress: 100/100")
+            ctx_log(ctx, logger, "debug", f"SSH check: {msg}")
             return ResponseBuilder.build(
                 200 if success else 400,
                 f"SSH check: {msg}",
@@ -669,7 +706,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 errors=[] if success else [msg],
             )
         except Exception as e:
-            logger.error(f"Check fail: {e}")
+            ctx_log(ctx, logger, "error", f"Check fail: {e}")
             return ResponseBuilder.build(
                 500, f"Check fail: {e}", {"host": host}, str(e)
             )
@@ -689,14 +726,14 @@ def register_remote_access_tools(mcp: FastMCP):
     async def test_key_auth(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
-        user: Optional[str] = Field(
-            description="Username.", default=os.environ.get("TUNNEL_USERNAME", None)
+        user: str | None = Field(
+            description="Username.", default=os.environ.get("TUNNEL_USERNAME", "")
         ),
         key: str = Field(
             description="Private key path.",
-            default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
+            default=os.environ.get("TUNNEL_IDENTITY_FILE", ""),
         ),
         port: int = Field(
             description="Port.",
@@ -705,15 +742,15 @@ def register_remote_access_tools(mcp: FastMCP):
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        log: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Test key-based auth. Expected return object type: dict"""
-        logger.debug(f"Test key: host={host}, key={key}")
+        ctx_log(ctx, logger, "debug", f"Test key: host={host}, key={key}")
         if not host or not key:
-            logger.error("Need host, key")
+            ctx_log(ctx, logger, "error", "Need host, key")
             return ResponseBuilder.build(
                 400,
                 "Need host, key",
@@ -735,12 +772,12 @@ def register_remote_access_tools(mcp: FastMCP):
             )
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
-                logger.debug("Progress: 0/100")
+                ctx_log(ctx, logger, "debug", "Progress: 0/100")
             success, msg = t.test_key_auth(key)
             if ctx:
                 await ctx.report_progress(progress=100, total=100)
-                logger.debug("Progress: 100/100")
-            logger.debug(f"Key test: {msg}")
+                ctx_log(ctx, logger, "debug", "Progress: 100/100")
+            ctx_log(ctx, logger, "debug", f"Key test: {msg}")
             return ResponseBuilder.build(
                 200 if success else 400,
                 f"Key test: {msg}",
@@ -750,7 +787,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 errors=[] if success else [msg],
             )
         except Exception as e:
-            logger.error(f"Key test fail: {e}")
+            ctx_log(ctx, logger, "error", f"Key test fail: {e}")
             return ResponseBuilder.build(
                 500, f"Key test fail: {e}", {"host": host, "key": key}, str(e)
             )
@@ -767,13 +804,13 @@ def register_remote_access_tools(mcp: FastMCP):
     async def setup_passwordless_ssh(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
-        user: Optional[str] = Field(
-            description="Username.", default=os.environ.get("TUNNEL_USERNAME", None)
+        user: str | None = Field(
+            description="Username.", default=os.environ.get("TUNNEL_USERNAME", "")
         ),
-        password: Optional[str] = Field(
-            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
+        password: str | None = Field(
+            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", "")
         ),
         port: int = Field(
             description="Port.",
@@ -788,15 +825,20 @@ def register_remote_access_tools(mcp: FastMCP):
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        log: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Setup passwordless SSH. Expected return object type: dict"""
-        logger.debug(f"Setup SSH: host={host}, key={key}, key_type={key_type}")
+        ctx_log(
+            ctx,
+            logger,
+            "debug",
+            f"Setup SSH: host={host}, key={key}, key_type={key_type}",
+        )
         if not host or not password:
-            logger.error("Need host, password")
+            ctx_log(ctx, logger, "error", "Need host, password")
             return ResponseBuilder.build(
                 400,
                 "Need host, password",
@@ -804,7 +846,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 errors=["Need host, password"],
             )
         if key_type not in ["rsa", "ed25519"]:
-            logger.error(f"Invalid key_type: {key_type}")
+            ctx_log(ctx, logger, "error", f"Invalid key_type: {key_type}")
             return ResponseBuilder.build(
                 400,
                 f"Invalid key_type: {key_type}",
@@ -828,20 +870,38 @@ def register_remote_access_tools(mcp: FastMCP):
             )
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
-                logger.debug("Progress: 0/100")
+                ctx_log(ctx, logger, "debug", "Progress: 0/100")
             key = os.path.expanduser(key)
             pub_key = key + ".pub"
             if not os.path.exists(pub_key):
                 if key_type == "rsa":
-                    os.system(f"ssh-keygen -t rsa -b 4096 -f {key} -N ''")
+                    subprocess.run(
+                        [
+                            "/usr/bin/ssh-keygen",
+                            "-t",
+                            "rsa",
+                            "-b",
+                            "4096",
+                            "-f",
+                            key,
+                            "-N",
+                            "",
+                        ],
+                        check=True,
+                    )
                 else:
-                    os.system(f"ssh-keygen -t ed25519 -f {key} -N ''")
-                logger.info(f"Generated {key_type} key: {key}, {pub_key}")
+                    subprocess.run(
+                        ["/usr/bin/ssh-keygen", "-t", "ed25519", "-f", key, "-N", ""],
+                        check=True,
+                    )
+                ctx_log(
+                    ctx, logger, "info", f"Generated {key_type} key: {key}, {pub_key}"
+                )
             t.setup_passwordless_ssh(local_key_path=key, key_type=key_type)
             if ctx:
                 await ctx.report_progress(progress=100, total=100)
-                logger.debug("Progress: 100/100")
-            logger.debug(f"SSH setup for {user}@{host}")
+                ctx_log(ctx, logger, "debug", "Progress: 100/100")
+            ctx_log(ctx, logger, "debug", f"SSH setup for {user}@{host}")
             return ResponseBuilder.build(
                 200,
                 f"SSH setup for {user}@{host}",
@@ -851,7 +911,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 errors=[],
             )
         except Exception as e:
-            logger.error(f"SSH setup fail: {e}")
+            ctx_log(ctx, logger, "error", f"SSH setup fail: {e}")
             return ResponseBuilder.build(
                 500,
                 f"SSH setup fail: {e}",
@@ -874,47 +934,49 @@ def register_remote_access_tools(mcp: FastMCP):
     async def copy_ssh_config(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
-        user: Optional[str] = Field(
-            description="Username.", default=os.environ.get("TUNNEL_USERNAME", None)
+        user: str | None = Field(
+            description="Username.", default=os.environ.get("TUNNEL_USERNAME", "")
         ),
-        password: Optional[str] = Field(
-            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
+        password: str | None = Field(
+            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", "")
         ),
         port: int = Field(
             description="Port.",
             default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
         ),
-        lcfg: str = Field(description="Local SSH config.", default=None),
+        lcfg: str = Field(description="Local SSH config.", default=""),
         rcfg: str = Field(
             description="Remote SSH config.",
             default=os.path.expanduser("~/.ssh/config"),
         ),
-        id_file: Optional[str] = Field(
+        id_file: str | None = Field(
             description="Private key path.",
-            default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
+            default=os.environ.get("TUNNEL_IDENTITY_FILE", ""),
         ),
-        certificate: Optional[str] = Field(
+        certificate: str | None = Field(
             description="Teleport certificate.",
-            default=os.environ.get("TUNNEL_CERTIFICATE", None),
+            default=os.environ.get("TUNNEL_CERTIFICATE", ""),
         ),
-        proxy: Optional[str] = Field(
+        proxy: str | None = Field(
             description="Teleport proxy.",
-            default=os.environ.get("TUNNEL_PROXY_COMMAND", None),
+            default=os.environ.get("TUNNEL_PROXY_COMMAND", ""),
         ),
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        log: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Copy SSH config to remote host. Expected return object type: dict"""
-        logger.debug(f"Copy cfg: host={host}, local={lcfg}, remote={rcfg}")
+        ctx_log(
+            ctx, logger, "debug", f"Copy cfg: host={host}, local={lcfg}, remote={rcfg}"
+        )
         if not host or not lcfg:
-            logger.error("Need host, lcfg")
+            ctx_log(ctx, logger, "error", "Need host, lcfg")
             return ResponseBuilder.build(
                 400,
                 "Need host, lcfg",
@@ -944,12 +1006,12 @@ def register_remote_access_tools(mcp: FastMCP):
             )
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
-                logger.debug("Progress: 0/100")
+                ctx_log(ctx, logger, "debug", "Progress: 0/100")
             t.copy_ssh_config(lcfg, rcfg)
             if ctx:
                 await ctx.report_progress(progress=100, total=100)
-                logger.debug("Progress: 100/100")
-            logger.debug(f"Copied cfg to {rcfg} on {host}")
+                ctx_log(ctx, logger, "debug", "Progress: 100/100")
+            ctx_log(ctx, logger, "debug", f"Copied cfg to {rcfg} on {host}")
             return ResponseBuilder.build(
                 200,
                 f"Copied cfg to {rcfg} on {host}",
@@ -959,7 +1021,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 errors=[],
             )
         except Exception as e:
-            logger.error(f"Copy cfg fail: {e}")
+            ctx_log(ctx, logger, "error", f"Copy cfg fail: {e}")
             return ResponseBuilder.build(
                 500,
                 f"Copy cfg fail: {e}",
@@ -982,46 +1044,51 @@ def register_remote_access_tools(mcp: FastMCP):
     async def rotate_ssh_key(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
-        user: Optional[str] = Field(
-            description="Username.", default=os.environ.get("TUNNEL_USERNAME", None)
+        user: str | None = Field(
+            description="Username.", default=os.environ.get("TUNNEL_USERNAME", "")
         ),
-        password: Optional[str] = Field(
-            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", None)
+        password: str | None = Field(
+            description="Password.", default=os.environ.get("TUNNEL_PASSWORD", "")
         ),
         port: int = Field(
             description="Port.",
             default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
         ),
-        new_key: str = Field(description="New private key path.", default=None),
+        new_key: str = Field(description="New private key path.", default=""),
         key_type: str = Field(
             description="Key type to generate (rsa or ed25519).", default="ed25519"
         ),
-        id_file: Optional[str] = Field(
+        id_file: str | None = Field(
             description="Current key path.",
-            default=os.environ.get("TUNNEL_IDENTITY_FILE", None),
+            default=os.environ.get("TUNNEL_IDENTITY_FILE", ""),
         ),
-        certificate: Optional[str] = Field(
+        certificate: str | None = Field(
             description="Teleport certificate.",
-            default=os.environ.get("TUNNEL_CERTIFICATE", None),
+            default=os.environ.get("TUNNEL_CERTIFICATE", ""),
         ),
-        proxy: Optional[str] = Field(
+        proxy: str | None = Field(
             description="Teleport proxy.",
-            default=os.environ.get("TUNNEL_PROXY_COMMAND", None),
+            default=os.environ.get("TUNNEL_PROXY_COMMAND", ""),
         ),
         cfg: str = Field(
             description="SSH config path.", default=os.path.expanduser("~/.ssh/config")
         ),
-        log: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Rotate SSH key on remote host. Expected return object type: dict"""
-        logger.debug(f"Rotate key: host={host}, new_key={new_key}, key_type={key_type}")
+        ctx_log(
+            ctx,
+            logger,
+            "debug",
+            f"Rotate key: host={host}, new_key={new_key}, key_type={key_type}",
+        )
         if not host or not new_key:
-            logger.error("Need host, new_key")
+            ctx_log(ctx, logger, "error", "Need host, new_key")
             return ResponseBuilder.build(
                 400,
                 "Need host, new_key",
@@ -1029,7 +1096,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 errors=["Need host, new_key"],
             )
         if key_type not in ["rsa", "ed25519"]:
-            logger.error(f"Invalid key_type: {key_type}")
+            ctx_log(ctx, logger, "error", f"Invalid key_type: {key_type}")
             return ResponseBuilder.build(
                 400,
                 f"Invalid key_type: {key_type}",
@@ -1059,20 +1126,46 @@ def register_remote_access_tools(mcp: FastMCP):
             )
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
-                logger.debug("Progress: 0/100")
+                ctx_log(ctx, logger, "debug", "Progress: 0/100")
             new_key = os.path.expanduser(new_key)
             new_public_key = new_key + ".pub"
             if not os.path.exists(new_key):
                 if key_type == "rsa":
-                    os.system(f"ssh-keygen -t rsa -b 4096 -f {new_key} -N ''")
+                    subprocess.run(
+                        [
+                            "/usr/bin/ssh-keygen",
+                            "-t",
+                            "rsa",
+                            "-b",
+                            "4096",
+                            "-f",
+                            new_key,
+                            "-N",
+                            "",
+                        ],
+                        check=True,
+                    )
                 else:
-                    os.system(f"ssh-keygen -t ed25519 -f {new_key} -N ''")
-                logger.info(f"Generated {key_type} key: {new_key}")
+                    subprocess.run(
+                        [
+                            "/usr/bin/ssh-keygen",
+                            "-t",
+                            "ed25519",
+                            "-f",
+                            new_key,
+                            "-N",
+                            "",
+                        ],
+                        check=True,
+                    )
+                ctx_log(ctx, logger, "info", f"Generated {key_type} key: {new_key}")
             t.rotate_ssh_key(new_key, key_type=key_type)
             if ctx:
                 await ctx.report_progress(progress=100, total=100)
-                logger.debug("Progress: 100/100")
-            logger.debug(f"Rotated {key_type} key to {new_key} on {host}")
+                ctx_log(ctx, logger, "debug", "Progress: 100/100")
+            ctx_log(
+                ctx, logger, "debug", f"Rotated {key_type} key to {new_key} on {host}"
+            )
             return ResponseBuilder.build(
                 200,
                 f"Rotated {key_type} key to {new_key} on {host}",
@@ -1087,7 +1180,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 errors=[],
             )
         except Exception as e:
-            logger.error(f"Rotate fail: {e}")
+            ctx_log(ctx, logger, "error", f"Rotate fail: {e}")
             return ResponseBuilder.build(
                 500,
                 f"Rotate fail: {e}",
@@ -1110,21 +1203,25 @@ def register_remote_access_tools(mcp: FastMCP):
     async def remove_host_key(
         host: str = Field(
             description="Remote host.",
-            default=os.environ.get("TUNNEL_REMOTE_HOST", None),
+            default=os.environ.get("TUNNEL_REMOTE_HOST", ""),
         ),
         known_hosts: str = Field(
             description="Known hosts path.",
             default=os.path.expanduser("~/.ssh/known_hosts"),
         ),
-        log: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Remove host key from known_hosts. Expected return object type: dict"""
-        logger.debug(f"Remove key: host={host}, known_hosts={known_hosts}")
+        if not await ctx_confirm_destructive(ctx, "remove host key"):
+            return {"status": "cancelled", "message": "Operation cancelled by user"}
+        ctx_log(
+            ctx, logger, "debug", f"Remove key: host={host}, known_hosts={known_hosts}"
+        )
         if not host:
-            logger.error("Need host")
+            ctx_log(ctx, logger, "error", "Need host")
             return ResponseBuilder.build(
                 400,
                 "Need host",
@@ -1136,13 +1233,13 @@ def register_remote_access_tools(mcp: FastMCP):
             t = Tunnel(remote_host=conf["hostname"])
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
-                logger.debug("Progress: 0/100")
+                ctx_log(ctx, logger, "debug", "Progress: 0/100")
             known_hosts = os.path.expanduser(known_hosts)
             msg = t.remove_host_key(known_hosts_path=known_hosts)
             if ctx:
                 await ctx.report_progress(progress=100, total=100)
-                logger.debug("Progress: 100/100")
-            logger.debug(f"Remove result: {msg}")
+                ctx_log(ctx, logger, "debug", "Progress: 100/100")
+            ctx_log(ctx, logger, "debug", f"Remove result: {msg}")
             return ResponseBuilder.build(
                 200 if "Removed" in msg else 400,
                 msg,
@@ -1152,7 +1249,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 errors=[] if "Removed" in msg else [msg],
             )
         except Exception as e:
-            logger.error(f"Remove fail: {e}")
+            ctx_log(ctx, logger, "error", f"Remove fail: {e}")
             return ResponseBuilder.build(
                 500,
                 f"Remove fail: {e}",
@@ -1172,7 +1269,7 @@ def register_remote_access_tools(mcp: FastMCP):
     async def configure_key_auth_on_inventory(
         inventory: str = Field(
             description="YAML inventory path.",
-            default=os.environ.get("TUNNEL_INVENTORY", None),
+            default=os.environ.get("TUNNEL_INVENTORY", ""),
         ),
         key: str = Field(
             description="Shared key path.",
@@ -1195,15 +1292,18 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
         ),
-        log: Optional[str] = Field(description="Log file.", default=None),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        _log_path: str | None = Field(description="Log file.", default=""),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Setup passwordless SSH for all hosts in group. Expected return object type: dict"""
-        logger.debug(
-            f"Setup SSH all: inv={inventory}, group={group}, key_type={key_type}"
+        ctx_log(
+            ctx,
+            logger,
+            "debug",
+            f"Setup SSH all: inv={inventory}, group={group}, key_type={key_type}",
         )
         if not inventory:
-            logger.error("Need inventory")
+            ctx_log(ctx, logger, "error", "Need inventory")
             return ResponseBuilder.build(
                 400,
                 "Need inventory",
@@ -1211,7 +1311,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 errors=["Need inventory"],
             )
         if key_type not in ["rsa", "ed25519"]:
-            logger.error(f"Invalid key_type: {key_type}")
+            ctx_log(ctx, logger, "error", f"Invalid key_type: {key_type}")
             return ResponseBuilder.build(
                 400,
                 f"Invalid key_type: {key_type}",
@@ -1223,11 +1323,29 @@ def register_remote_access_tools(mcp: FastMCP):
             pub_key = key + ".pub"
             if not os.path.exists(key):
                 if key_type == "rsa":
-                    os.system(f"ssh-keygen -t rsa -b 4096 -f {key} -N ''")
+                    subprocess.run(
+                        [
+                            "/usr/bin/ssh-keygen",
+                            "-t",
+                            "rsa",
+                            "-b",
+                            "4096",
+                            "-f",
+                            key,
+                            "-N",
+                            "",
+                        ],
+                        check=True,
+                    )
                 else:
-                    os.system(f"ssh-keygen -t ed25519 -f {key} -N ''")
-                logger.info(f"Generated {key_type} key: {key}, {pub_key}")
-            with open(pub_key, "r") as f:
+                    subprocess.run(
+                        ["/usr/bin/ssh-keygen", "-t", "ed25519", "-f", key, "-N", ""],
+                        check=True,
+                    )
+                ctx_log(
+                    ctx, logger, "info", f"Generated {key_type} key: {key}, {pub_key}"
+                )
+            with open(pub_key) as f:
                 pub = f.read().strip()
             hosts, error = load_inventory(inventory, group, logger)
             if error:
@@ -1235,12 +1353,12 @@ def register_remote_access_tools(mcp: FastMCP):
             total = len(hosts)
             if ctx:
                 await ctx.report_progress(progress=0, total=total)
-                logger.debug(f"Progress: 0/{total}")
+                ctx_log(ctx, logger, "debug", f"Progress: 0/{total}")
 
-            async def setup_host(h: Dict, ctx: Context) -> Dict:
+            async def setup_host(h: dict, ctx: Context) -> dict:
                 host, user, password = h["hostname"], h["username"], h["password"]
                 kpath = h.get("key_path", key)
-                logger.info(f"Setup {user}@{host}")
+                ctx_log(ctx, logger, "info", f"Setup {user}@{host}")
                 try:
                     t = Tunnel(remote_host=host, username=user, password=password)
                     t.remove_host_key()
@@ -1248,7 +1366,9 @@ def register_remote_access_tools(mcp: FastMCP):
                     t.connect()
                     t.run_command(f"echo '{pub}' >> ~/.ssh/authorized_keys")
                     t.run_command("chmod 600 ~/.ssh/authorized_keys")
-                    logger.info(f"Added {key_type} key to {user}@{host}")
+                    ctx_log(
+                        ctx, logger, "info", f"Added {key_type} key to {user}@{host}"
+                    )
                     res, msg = t.test_key_auth(kpath)
                     return {
                         "hostname": host,
@@ -1257,7 +1377,7 @@ def register_remote_access_tools(mcp: FastMCP):
                         "errors": [] if res else [msg],
                     }
                 except Exception as e:
-                    logger.error(f"Setup fail {user}@{host}: {e}")
+                    ctx_log(ctx, logger, "error", f"Setup fail {user}@{host}: {e}")
                     return {
                         "hostname": host,
                         "status": "failed",
@@ -1277,9 +1397,11 @@ def register_remote_access_tools(mcp: FastMCP):
                         ex.submit(lambda h: asyncio.run(setup_host(h, ctx)), h)
                         for h in hosts
                     ]
-                    for i, f in enumerate(concurrent.futures.as_completed(futures), 1):
+                    for i, future in enumerate(
+                        concurrent.futures.as_completed(futures), 1
+                    ):
                         try:
-                            r = f.result()
+                            r = future.result()
                             results.append(r)
                             if r["status"] == "success":
                                 files.append(pub_key)
@@ -1290,9 +1412,9 @@ def register_remote_access_tools(mcp: FastMCP):
                                 errors.extend(r["errors"])
                             if ctx:
                                 await ctx.report_progress(progress=i, total=total)
-                                logger.debug(f"Progress: {i}/{total}")
+                                ctx_log(ctx, logger, "debug", f"Progress: {i}/{total}")
                         except Exception as e:
-                            logger.error(f"Parallel error: {e}")
+                            ctx_log(ctx, logger, "error", f"Parallel error: {e}")
                             results.append(
                                 {
                                     "hostname": "unknown",
@@ -1313,8 +1435,8 @@ def register_remote_access_tools(mcp: FastMCP):
                         errors.extend(r["errors"])
                     if ctx:
                         await ctx.report_progress(progress=i, total=total)
-                        logger.debug(f"Progress: {i}/{total}")
-            logger.debug(f"Done SSH setup for {group}")
+                        ctx_log(ctx, logger, "debug", f"Progress: {i}/{total}")
+            ctx_log(ctx, logger, "debug", f"Done SSH setup for {group}")
             msg = (
                 f"SSH setup done for {group}"
                 if not errors
@@ -1329,13 +1451,13 @@ def register_remote_access_tools(mcp: FastMCP):
                     "key_type": key_type,
                     "host_results": results,
                 },
-                "; ".join(errors),
-                files,
-                locations,
-                errors,
+                stdout="; ".join(errors),
+                files=files,
+                locations=locations,
+                errors=errors,
             )
         except Exception as e:
-            logger.error(f"Setup all fail: {e}")
+            ctx_log(ctx, logger, "error", f"Setup all fail: {e}")
             return ResponseBuilder.build(
                 500,
                 f"Setup all fail: {e}",
@@ -1355,9 +1477,9 @@ def register_remote_access_tools(mcp: FastMCP):
     async def run_command_on_inventory(
         inventory: str = Field(
             description="YAML inventory path.",
-            default=os.environ.get("TUNNEL_INVENTORY", None),
+            default=os.environ.get("TUNNEL_INVENTORY", ""),
         ),
-        cmd: str = Field(description="Shell command.", default=None),
+        cmd: str = Field(description="Shell command.", default=""),
         group: str = Field(
             description="Target group.",
             default=os.environ.get("TUNNEL_INVENTORY_GROUP", "all"),
@@ -1370,13 +1492,18 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
         ),
-        log: Optional[str] = Field(description="Log file.", default=None),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        _log_path: str | None = Field(description="Log file.", default=""),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Run command on all hosts in group. Expected return object type: dict"""
-        logger.debug(f"Run cmd all: inv={inventory}, group={group}, cmd={cmd}")
+        ctx_log(
+            ctx,
+            logger,
+            "debug",
+            f"Run cmd all: inv={inventory}, group={group}, cmd={cmd}",
+        )
         if not inventory or not cmd:
-            logger.error("Need inventory, cmd")
+            ctx_log(ctx, logger, "error", "Need inventory, cmd")
             return ResponseBuilder.build(
                 400,
                 "Need inventory, cmd",
@@ -1390,9 +1517,10 @@ def register_remote_access_tools(mcp: FastMCP):
             total = len(hosts)
             if ctx:
                 await ctx.report_progress(progress=0, total=total)
-                logger.debug(f"Progress: 0/{total}")
+                ctx_log(ctx, logger, "debug", f"Progress: 0/{total}")
 
-            async def run_host(h: Dict, ctx: Context) -> Dict:
+            async def run_host(h: dict, ctx: Context) -> dict:
+                await ctx_progress(ctx, 0, 100)
                 host = h["hostname"]
                 try:
                     t = Tunnel(
@@ -1402,7 +1530,9 @@ def register_remote_access_tools(mcp: FastMCP):
                         identity_file=h.get("key_path"),
                     )
                     out, error = t.run_command(cmd)
-                    logger.info(f"Host {host}: Out: {out}, Err: {error}")
+                    ctx_log(
+                        ctx, logger, "info", f"Host {host}: Out: {out}, Err: {error}"
+                    )
                     return {
                         "hostname": host,
                         "status": "success",
@@ -1412,7 +1542,7 @@ def register_remote_access_tools(mcp: FastMCP):
                         "errors": [],
                     }
                 except Exception as e:
-                    logger.error(f"Cmd fail {host}: {e}")
+                    ctx_log(ctx, logger, "error", f"Cmd fail {host}: {e}")
                     return {
                         "hostname": host,
                         "status": "failed",
@@ -1434,16 +1564,18 @@ def register_remote_access_tools(mcp: FastMCP):
                         ex.submit(lambda h: asyncio.run(run_host(h, ctx)), h)
                         for h in hosts
                     ]
-                    for i, f in enumerate(concurrent.futures.as_completed(futures), 1):
+                    for i, future in enumerate(
+                        concurrent.futures.as_completed(futures), 1
+                    ):
                         try:
-                            r = f.result()
+                            r = future.result()
                             results.append(r)
                             errors.extend(r["errors"])
                             if ctx:
                                 await ctx.report_progress(progress=i, total=total)
-                                logger.debug(f"Progress: {i}/{total}")
+                                ctx_log(ctx, logger, "debug", f"Progress: {i}/{total}")
                         except Exception as e:
-                            logger.error(f"Parallel error: {e}")
+                            ctx_log(ctx, logger, "error", f"Parallel error: {e}")
                             results.append(
                                 {
                                     "hostname": "unknown",
@@ -1462,8 +1594,8 @@ def register_remote_access_tools(mcp: FastMCP):
                     errors.extend(r["errors"])
                     if ctx:
                         await ctx.report_progress(progress=i, total=total)
-                        logger.debug(f"Progress: {i}/{total}")
-            logger.debug(f"Done cmd for {group}")
+                        ctx_log(ctx, logger, "debug", f"Progress: {i}/{total}")
+            ctx_log(ctx, logger, "debug", f"Done cmd for {group}")
             msg = (
                 f"Cmd '{cmd}' done on {group}"
                 if not errors
@@ -1478,13 +1610,14 @@ def register_remote_access_tools(mcp: FastMCP):
                     "cmd": cmd,
                     "host_results": results,
                 },
-                "; ".join(errors),
-                [],
-                [],
-                errors,
+                error="; ".join(errors),
+                files=[],
+                locations=[],
+                errors=errors,
             )
         except Exception as e:
-            logger.error(f"Cmd all fail: {e}")
+            ctx_log(ctx, logger, "error", f"Cmd all fail: {e}")
+            await ctx_progress(ctx, 100, 100)
             return ResponseBuilder.build(
                 500,
                 f"Cmd all fail: {e}",
@@ -1504,9 +1637,9 @@ def register_remote_access_tools(mcp: FastMCP):
     async def copy_ssh_config_on_inventory(
         inventory: str = Field(
             description="YAML inventory path.",
-            default=os.environ.get("TUNNEL_INVENTORY", None),
+            default=os.environ.get("TUNNEL_INVENTORY", ""),
         ),
-        cfg: str = Field(description="Local SSH config path.", default=None),
+        cfg: str = Field(description="Local SSH config path.", default=""),
         rmt_cfg: str = Field(
             description="Remote path.", default=os.path.expanduser("~/.ssh/config")
         ),
@@ -1522,16 +1655,18 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
         ),
-        log: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Copy SSH config to all hosts in YAML group. Expected return object type: dict"""
-        logger.debug(f"Copy SSH config: inv={inventory}, group={group}")
+        ctx_log(
+            ctx, logger, "debug", f"Copy SSH config: inv={inventory}, group={group}"
+        )
 
         if not inventory or not cfg:
-            logger.error("Need inventory, cfg")
+            ctx_log(ctx, logger, "error", "Need inventory, cfg")
             return ResponseBuilder.build(
                 400,
                 "Need inventory, cfg",
@@ -1545,7 +1680,7 @@ def register_remote_access_tools(mcp: FastMCP):
             )
 
         if not os.path.exists(cfg):
-            logger.error(f"No cfg file: {cfg}")
+            ctx_log(ctx, logger, "error", f"No cfg file: {cfg}")
             return ResponseBuilder.build(
                 400,
                 f"No cfg file: {cfg}",
@@ -1566,11 +1701,11 @@ def register_remote_access_tools(mcp: FastMCP):
             total = len(hosts)
             if ctx:
                 await ctx.report_progress(progress=0, total=total)
-                logger.debug(f"Progress: 0/{total}")
+                ctx_log(ctx, logger, "debug", f"Progress: 0/{total}")
 
             results, files, locations, errors = [], [], [], []
 
-            async def copy_host(h: Dict) -> Dict:
+            async def copy_host(h: dict) -> dict:
                 try:
                     t = Tunnel(
                         remote_host=h["hostname"],
@@ -1579,7 +1714,12 @@ def register_remote_access_tools(mcp: FastMCP):
                         identity_file=h.get("key_path"),
                     )
                     t.copy_ssh_config(cfg, rmt_cfg)
-                    logger.info(f"Copied cfg to {rmt_cfg} on {h['hostname']}")
+                    ctx_log(
+                        ctx,
+                        logger,
+                        "info",
+                        f"Copied cfg to {rmt_cfg} on {h['hostname']}",
+                    )
                     return {
                         "hostname": h["hostname"],
                         "status": "success",
@@ -1587,7 +1727,7 @@ def register_remote_access_tools(mcp: FastMCP):
                         "errors": [],
                     }
                 except Exception as e:
-                    logger.error(f"Copy fail {h['hostname']}: {e}")
+                    ctx_log(ctx, logger, "error", f"Copy fail {h['hostname']}: {e}")
                     return {
                         "hostname": h["hostname"],
                         "status": "failed",
@@ -1605,9 +1745,11 @@ def register_remote_access_tools(mcp: FastMCP):
                     futures = [
                         ex.submit(lambda h: asyncio.run(copy_host(h)), h) for h in hosts
                     ]
-                    for i, f in enumerate(concurrent.futures.as_completed(futures), 1):
+                    for i, future in enumerate(
+                        concurrent.futures.as_completed(futures), 1
+                    ):
                         try:
-                            r = f.result()
+                            r = future.result()
                             results.append(r)
                             if r["status"] == "success":
                                 files.append(cfg)
@@ -1616,9 +1758,9 @@ def register_remote_access_tools(mcp: FastMCP):
                                 errors.extend(r["errors"])
                             if ctx:
                                 await ctx.report_progress(progress=i, total=total)
-                                logger.debug(f"Progress: {i}/{total}")
+                                ctx_log(ctx, logger, "debug", f"Progress: {i}/{total}")
                         except Exception as e:
-                            logger.error(f"Parallel error: {e}")
+                            ctx_log(ctx, logger, "error", f"Parallel error: {e}")
                             results.append(
                                 {
                                     "hostname": "unknown",
@@ -1639,9 +1781,9 @@ def register_remote_access_tools(mcp: FastMCP):
                         errors.extend(r["errors"])
                     if ctx:
                         await ctx.report_progress(progress=i, total=total)
-                        logger.debug(f"Progress: {i}/{total}")
+                        ctx_log(ctx, logger, "debug", f"Progress: {i}/{total}")
 
-            logger.debug(f"Done SSH config copy for {group}")
+            ctx_log(ctx, logger, "debug", f"Done SSH config copy for {group}")
             msg = (
                 f"Copied cfg to {group}"
                 if not errors
@@ -1657,14 +1799,14 @@ def register_remote_access_tools(mcp: FastMCP):
                     "rmt_cfg": rmt_cfg,
                     "host_results": results,
                 },
-                "; ".join(errors),
-                files,
-                locations,
-                errors,
+                error="; ".join(errors),
+                files=files,
+                locations=locations,
+                errors=errors,
             )
 
         except Exception as e:
-            logger.error(f"Copy all fail: {e}")
+            ctx_log(ctx, logger, "error", f"Copy all fail: {e}")
             return ResponseBuilder.build(
                 500,
                 f"Copy all fail: {e}",
@@ -1689,7 +1831,7 @@ def register_remote_access_tools(mcp: FastMCP):
     async def rotate_ssh_key_on_inventory(
         inventory: str = Field(
             description="YAML inventory path.",
-            default=os.environ.get("TUNNEL_INVENTORY", None),
+            default=os.environ.get("TUNNEL_INVENTORY", ""),
         ),
         key_pfx: str = Field(
             description="Prefix for new keys.", default=os.path.expanduser("~/.ssh/id_")
@@ -1709,18 +1851,21 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
         ),
-        log: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Rotate SSH keys for all hosts in YAML group. Expected return object type: dict"""
-        logger.debug(
-            f"Rotate SSH keys: inv={inventory}, group={group}, key_type={key_type}"
+        ctx_log(
+            ctx,
+            logger,
+            "debug",
+            f"Rotate SSH keys: inv={inventory}, group={group}, key_type={key_type}",
         )
 
         if not inventory:
-            logger.error("Need inventory")
+            ctx_log(ctx, logger, "error", "Need inventory")
             return ResponseBuilder.build(
                 400,
                 "Need inventory",
@@ -1733,7 +1878,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 errors=["Need inventory"],
             )
         if key_type not in ["rsa", "ed25519"]:
-            logger.error(f"Invalid key_type: {key_type}")
+            ctx_log(ctx, logger, "error", f"Invalid key_type: {key_type}")
             return ResponseBuilder.build(
                 400,
                 f"Invalid key_type: {key_type}",
@@ -1754,11 +1899,11 @@ def register_remote_access_tools(mcp: FastMCP):
             total = len(hosts)
             if ctx:
                 await ctx.report_progress(progress=0, total=total)
-                logger.debug(f"Progress: 0/{total}")
+                ctx_log(ctx, logger, "debug", f"Progress: 0/{total}")
 
             results, files, locations, errors = [], [], [], []
 
-            async def rotate_host(h: Dict) -> Dict:
+            async def rotate_host(h: dict) -> dict:
                 key = os.path.expanduser(key_pfx + h["hostname"])
                 try:
                     t = Tunnel(
@@ -1768,7 +1913,12 @@ def register_remote_access_tools(mcp: FastMCP):
                         identity_file=h.get("key_path"),
                     )
                     t.rotate_ssh_key(key, key_type=key_type)
-                    logger.info(f"Rotated {key_type} key for {h['hostname']}: {key}")
+                    ctx_log(
+                        ctx,
+                        logger,
+                        "info",
+                        f"Rotated {key_type} key for {h['hostname']}: {key}",
+                    )
                     return {
                         "hostname": h["hostname"],
                         "status": "success",
@@ -1777,7 +1927,7 @@ def register_remote_access_tools(mcp: FastMCP):
                         "new_key_path": key,
                     }
                 except Exception as e:
-                    logger.error(f"Rotate fail {h['hostname']}: {e}")
+                    ctx_log(ctx, logger, "error", f"Rotate fail {h['hostname']}: {e}")
                     return {
                         "hostname": h["hostname"],
                         "status": "failed",
@@ -1797,9 +1947,11 @@ def register_remote_access_tools(mcp: FastMCP):
                         ex.submit(lambda h: asyncio.run(rotate_host(h)), h)
                         for h in hosts
                     ]
-                    for i, f in enumerate(concurrent.fences.as_completed(futures), 1):
+                    for i, future in enumerate(
+                        concurrent.futures.as_completed(futures), 1
+                    ):
                         try:
-                            r = f.result()
+                            r = future.result()
                             results.append(r)
                             if r["status"] == "success":
                                 files.append(r["new_key_path"] + ".pub")
@@ -1810,9 +1962,9 @@ def register_remote_access_tools(mcp: FastMCP):
                                 errors.extend(r["errors"])
                             if ctx:
                                 await ctx.report_progress(progress=i, total=total)
-                                logger.debug(f"Progress: {i}/{total}")
+                                ctx_log(ctx, logger, "debug", f"Progress: {i}/{total}")
                         except Exception as e:
-                            logger.error(f"Parallel error: {e}")
+                            ctx_log(ctx, logger, "error", f"Parallel error: {e}")
                             results.append(
                                 {
                                     "hostname": "unknown",
@@ -1834,9 +1986,9 @@ def register_remote_access_tools(mcp: FastMCP):
                         errors.extend(r["errors"])
                     if ctx:
                         await ctx.report_progress(progress=i, total=total)
-                        logger.debug(f"Progress: {i}/{total}")
+                        ctx_log(ctx, logger, "debug", f"Progress: {i}/{total}")
 
-            logger.debug(f"Done SSH key rotate for {group}")
+            ctx_log(ctx, logger, "debug", f"Done SSH key rotate for {group}")
             msg = (
                 f"Rotated {key_type} keys for {group}"
                 if not errors
@@ -1848,18 +2000,18 @@ def register_remote_access_tools(mcp: FastMCP):
                 {
                     "inventory": inventory,
                     "group": group,
-                    "key_pfx": key_pfx,
+                    "key_prefix": key_pfx,
                     "key_type": key_type,
                     "host_results": results,
                 },
-                "; ".join(errors),
-                files,
-                locations,
-                errors,
+                error="; ".join(errors),
+                files=files,
+                locations=locations,
+                errors=errors,
             )
 
         except Exception as e:
-            logger.error(f"Rotate all fail: {e}")
+            ctx_log(ctx, logger, "error", f"Rotate all fail: {e}")
             return ResponseBuilder.build(
                 500,
                 f"Rotate all fail: {e}",
@@ -1869,7 +2021,7 @@ def register_remote_access_tools(mcp: FastMCP):
                     "key_pfx": key_pfx,
                     "key_type": key_type,
                 },
-                str(e),
+                error=str(e),
             )
 
     @mcp.tool(
@@ -1884,10 +2036,10 @@ def register_remote_access_tools(mcp: FastMCP):
     async def send_file_to_inventory(
         inventory: str = Field(
             description="YAML inventory path.",
-            default=os.environ.get("TUNNEL_INVENTORY", None),
+            default=os.environ.get("TUNNEL_INVENTORY", ""),
         ),
-        lpath: str = Field(description="Local file path.", default=None),
-        rpath: str = Field(description="Remote destination path.", default=None),
+        lpath: str = Field(description="Local file path.", default=""),
+        rpath: str = Field(description="Remote destination path.", default=""),
         group: str = Field(
             description="Target group.",
             default=os.environ.get("TUNNEL_INVENTORY_GROUP", "all"),
@@ -1900,22 +2052,28 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "5")),
         ),
-        log: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Upload a file to all hosts in the specified inventory group. Expected return object type: dict"""
         lpath = os.path.abspath(os.path.expanduser(lpath))
         rpath = os.path.expanduser(rpath)
-        logger.debug(
-            f"Normalized: lpath={lpath} (exists={os.path.exists(lpath)}, isfile={os.path.isfile(lpath)}), rpath={rpath}, CWD={os.getcwd()}"
+        ctx_log(
+            ctx,
+            logger,
+            "debug",
+            f"Normalized: lpath={lpath} (exists={os.path.exists(lpath)}, isfile={os.path.isfile(lpath)}), rpath={rpath}, CWD={os.getcwd()}",
         )
-        logger.debug(
-            f"Upload file all: inv={inventory}, group={group}, local={lpath}, remote={rpath}"
+        ctx_log(
+            ctx,
+            logger,
+            "debug",
+            f"Upload file all: inv={inventory}, group={group}, local={lpath}, remote={rpath}",
         )
         if not inventory or not lpath or not rpath:
-            logger.error("Need inventory, lpath, rpath")
+            ctx_log(ctx, logger, "error", "Need inventory, lpath, rpath")
             return ResponseBuilder.build(
                 400,
                 "Need inventory, lpath, rpath",
@@ -1925,10 +2083,10 @@ def register_remote_access_tools(mcp: FastMCP):
                     "lpath": lpath,
                     "rpath": rpath,
                 },
-                errors=["Need inventory, lpath, rpath"],
+                error="Need inventory, lpath, rpath",
             )
         if not os.path.exists(lpath) or not os.path.isfile(lpath):
-            logger.error(f"Invalid file: {lpath}")
+            ctx_log(ctx, logger, "error", f"Invalid file: {lpath}")
             return ResponseBuilder.build(
                 400,
                 f"Invalid file: {lpath}",
@@ -1938,7 +2096,7 @@ def register_remote_access_tools(mcp: FastMCP):
                     "lpath": lpath,
                     "rpath": rpath,
                 },
-                errors=[f"Invalid file: {lpath}"],
+                error=f"Invalid file: {lpath}",
             )
         try:
             hosts, error = load_inventory(inventory, group, logger)
@@ -1947,9 +2105,9 @@ def register_remote_access_tools(mcp: FastMCP):
             total = len(hosts)
             if ctx:
                 await ctx.report_progress(progress=0, total=total)
-                logger.debug(f"Progress: 0/{total}")
+                ctx_log(ctx, logger, "debug", f"Progress: 0/{total}")
 
-            async def send_host(h: Dict) -> Dict:
+            async def send_host(h: dict) -> dict:
                 host = h["hostname"]
                 try:
                     t = Tunnel(
@@ -1959,6 +2117,7 @@ def register_remote_access_tools(mcp: FastMCP):
                         identity_file=h.get("key_path"),
                     )
                     t.connect()
+                    assert t.ssh_client is not None
                     sftp = t.ssh_client.open_sftp()
                     transferred = 0
 
@@ -1972,7 +2131,9 @@ def register_remote_access_tools(mcp: FastMCP):
 
                     sftp.put(lpath, rpath, callback=progress_callback)
                     sftp.close()
-                    logger.info(f"Host {host}: Uploaded {lpath} to {rpath}")
+                    ctx_log(
+                        ctx, logger, "info", f"Host {host}: Uploaded {lpath} to {rpath}"
+                    )
                     return {
                         "hostname": host,
                         "status": "success",
@@ -1980,7 +2141,7 @@ def register_remote_access_tools(mcp: FastMCP):
                         "errors": [],
                     }
                 except Exception as e:
-                    logger.error(f"Upload fail {host}: {e}")
+                    ctx_log(ctx, logger, "error", f"Upload fail {host}: {e}")
                     return {
                         "hostname": host,
                         "status": "failed",
@@ -1999,9 +2160,11 @@ def register_remote_access_tools(mcp: FastMCP):
                     futures = [
                         ex.submit(lambda h: asyncio.run(send_host(h)), h) for h in hosts
                     ]
-                    for i, f in enumerate(concurrent.futures.as_completed(futures), 1):
+                    for i, future in enumerate(
+                        concurrent.futures.as_completed(futures), 1
+                    ):
                         try:
-                            r = f.result()
+                            r = future.result()
                             results.append(r)
                             if r["status"] == "success":
                                 locations.append(f"{rpath} on {r['hostname']}")
@@ -2009,9 +2172,9 @@ def register_remote_access_tools(mcp: FastMCP):
                                 errors.extend(r["errors"])
                             if ctx:
                                 await ctx.report_progress(progress=i, total=total)
-                                logger.debug(f"Progress: {i}/{total}")
+                                ctx_log(ctx, logger, "debug", f"Progress: {i}/{total}")
                         except Exception as e:
-                            logger.error(f"Parallel error: {e}")
+                            ctx_log(ctx, logger, "error", f"Parallel error: {e}")
                             results.append(
                                 {
                                     "hostname": "unknown",
@@ -2031,9 +2194,9 @@ def register_remote_access_tools(mcp: FastMCP):
                         errors.extend(r["errors"])
                     if ctx:
                         await ctx.report_progress(progress=i, total=total)
-                        logger.debug(f"Progress: {i}/{total}")
+                        ctx_log(ctx, logger, "debug", f"Progress: {i}/{total}")
 
-            logger.debug(f"Done file upload for {group}")
+            ctx_log(ctx, logger, "debug", f"Done file upload for {group}")
             msg = (
                 f"Uploaded {lpath} to {group}"
                 if not errors
@@ -2045,17 +2208,17 @@ def register_remote_access_tools(mcp: FastMCP):
                 {
                     "inventory": inventory,
                     "group": group,
-                    "lpath": lpath,
-                    "rpath": rpath,
+                    "local_path": lpath,
+                    "remote_path": rpath,
                     "host_results": results,
                 },
-                "; ".join(errors),
-                files,
-                locations,
-                errors,
+                error="; ".join(errors),
+                files=files,
+                locations=locations,
+                errors=errors,
             )
         except Exception as e:
-            logger.error(f"Upload all fail: {e}")
+            ctx_log(ctx, logger, "error", f"Upload all fail: {e}")
             return ResponseBuilder.build(
                 500,
                 f"Upload all fail: {e}",
@@ -2080,11 +2243,11 @@ def register_remote_access_tools(mcp: FastMCP):
     async def receive_file_from_inventory(
         inventory: str = Field(
             description="YAML inventory path.",
-            default=os.environ.get("TUNNEL_INVENTORY", None),
+            default=os.environ.get("TUNNEL_INVENTORY", ""),
         ),
-        rpath: str = Field(description="Remote file path to download.", default=None),
+        rpath: str = Field(description="Remote file path to download.", default=""),
         lpath_prefix: str = Field(
-            description="Local directory path prefix to save files.", default=None
+            description="Local directory path prefix to save files.", default=""
         ),
         group: str = Field(
             description="Target group.",
@@ -2098,17 +2261,20 @@ def register_remote_access_tools(mcp: FastMCP):
             description="Max threads.",
             default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "5")),
         ),
-        log: Optional[str] = Field(
-            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", None)
+        _log_path: str | None = Field(
+            description="Log file.", default=os.environ.get("TUNNEL_LOG_FILE", "")
         ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> Dict:
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
         """Download a file from all hosts in the specified inventory group. Expected return object type: dict"""
-        logger.debug(
-            f"Download file all: inv={inventory}, group={group}, remote={rpath}, local_prefix={lpath_prefix}"
+        ctx_log(
+            ctx,
+            logger,
+            "debug",
+            f"Download file all: inv={inventory}, group={group}, remote={rpath}, local_prefix={lpath_prefix}",
         )
         if not inventory or not rpath or not lpath_prefix:
-            logger.error("Need inventory, rpath, lpath_prefix")
+            ctx_log(ctx, logger, "error", "Need inventory, rpath, lpath_prefix")
             return ResponseBuilder.build(
                 400,
                 "Need inventory, rpath, lpath_prefix",
@@ -2128,9 +2294,9 @@ def register_remote_access_tools(mcp: FastMCP):
             total = len(hosts)
             if ctx:
                 await ctx.report_progress(progress=0, total=total)
-                logger.debug(f"Progress: 0/{total}")
+                ctx_log(ctx, logger, "debug", f"Progress: 0/{total}")
 
-            async def receive_host(h: Dict) -> Dict:
+            async def receive_host(h: dict) -> dict:
                 host = h["hostname"]
                 lpath = os.path.join(lpath_prefix, host, os.path.basename(rpath))
                 os.makedirs(os.path.dirname(lpath), exist_ok=True)
@@ -2142,6 +2308,7 @@ def register_remote_access_tools(mcp: FastMCP):
                         identity_file=h.get("key_path"),
                     )
                     t.connect()
+                    assert t.ssh_client is not None
                     sftp = t.ssh_client.open_sftp()
                     sftp.stat(rpath)
                     transferred = 0
@@ -2156,7 +2323,12 @@ def register_remote_access_tools(mcp: FastMCP):
 
                     sftp.get(rpath, lpath, callback=progress_callback)
                     sftp.close()
-                    logger.info(f"Host {host}: Downloaded {rpath} to {lpath}")
+                    ctx_log(
+                        ctx,
+                        logger,
+                        "info",
+                        f"Host {host}: Downloaded {rpath} to {lpath}",
+                    )
                     return {
                         "hostname": host,
                         "status": "success",
@@ -2165,7 +2337,7 @@ def register_remote_access_tools(mcp: FastMCP):
                         "local_path": lpath,
                     }
                 except Exception as e:
-                    logger.error(f"Download fail {host}: {e}")
+                    ctx_log(ctx, logger, "error", f"Download fail {host}: {e}")
                     return {
                         "hostname": host,
                         "status": "failed",
@@ -2186,9 +2358,11 @@ def register_remote_access_tools(mcp: FastMCP):
                         ex.submit(lambda h: asyncio.run(receive_host(h)), h)
                         for h in hosts
                     ]
-                    for i, f in enumerate(concurrent.futures.as_completed(futures), 1):
+                    for i, future in enumerate(
+                        concurrent.futures.as_completed(futures), 1
+                    ):
                         try:
-                            r = f.result()
+                            r = future.result()
                             results.append(r)
                             if r["status"] == "success":
                                 files.append(rpath)
@@ -2197,9 +2371,9 @@ def register_remote_access_tools(mcp: FastMCP):
                                 errors.extend(r["errors"])
                             if ctx:
                                 await ctx.report_progress(progress=i, total=total)
-                                logger.debug(f"Progress: {i}/{total}")
+                                ctx_log(ctx, logger, "debug", f"Progress: {i}/{total}")
                         except Exception as e:
-                            logger.error(f"Parallel error: {e}")
+                            ctx_log(ctx, logger, "error", f"Parallel error: {e}")
                             results.append(
                                 {
                                     "hostname": "unknown",
@@ -2221,9 +2395,9 @@ def register_remote_access_tools(mcp: FastMCP):
                         errors.extend(r["errors"])
                     if ctx:
                         await ctx.report_progress(progress=i, total=total)
-                        logger.debug(f"Progress: {i}/{total}")
+                        ctx_log(ctx, logger, "debug", f"Progress: {i}/{total}")
 
-            logger.debug(f"Done file download for {group}")
+            ctx_log(ctx, logger, "debug", f"Done file download for {group}")
             msg = (
                 f"Downloaded {rpath} from {group}"
                 if not errors
@@ -2239,13 +2413,13 @@ def register_remote_access_tools(mcp: FastMCP):
                     "lpath_prefix": lpath_prefix,
                     "host_results": results,
                 },
-                "; ".join(errors),
-                files,
-                locations,
-                errors,
+                error="; ".join(errors),
+                files=files,
+                locations=locations,
+                errors=errors,
             )
         except Exception as e:
-            logger.error(f"Download all fail: {e}")
+            ctx_log(ctx, logger, "error", f"Download all fail: {e}")
             return ResponseBuilder.build(
                 500,
                 f"Download all fail: {e}",
@@ -2255,6 +2429,870 @@ def register_remote_access_tools(mcp: FastMCP):
                     "rpath": rpath,
                     "lpath_prefix": lpath_prefix,
                 },
+                str(e),
+            )
+
+
+def register_operation_management_tools(mcp: FastMCP):
+    """Register operation management tools for enhanced MCP capabilities."""
+
+    @mcp.tool(
+        annotations={
+            "title": "Start Operation",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+        },
+        tags={"operation_management"},
+    )
+    async def start_operation(
+        operation_type: str = Field(description="Type of operation to start"),
+        total_steps: int = Field(
+            description="Total number of steps in the operation", default=0
+        ),
+        details: dict = Field(
+            description="Additional operation details", default_factory=dict
+        ),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Start a new operation with progress tracking."""
+        try:
+            operation_id = operation_manager.create_operation(
+                operation_type=operation_type,
+                total_steps=total_steps,
+                details=details,
+            )
+            return ResponseBuilder.build(
+                200,
+                "Operation started successfully",
+                {"operation_id": operation_id, "operation_type": operation_type},
+            )
+        except Exception as e:
+            ctx_log(ctx, logger, "error", f"Failed to start operation: {e}")
+            return ResponseBuilder.build(
+                500,
+                "Failed to start operation",
+                {"operation_type": operation_type},
+                str(e),
+            )
+
+    @mcp.tool(
+        annotations={
+            "title": "Get Operation Progress",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+        tags={"operation_management"},
+    )
+    async def get_operation_progress(
+        operation_id: str = Field(description="Operation ID to get progress for"),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Get current progress of an ongoing operation."""
+        try:
+            status = operation_manager.get_operation_status(operation_id)
+            if status is None:
+                return ResponseBuilder.build(
+                    404,
+                    "Operation not found",
+                    {"operation_id": operation_id},
+                    errors=["Operation not found"],
+                )
+            return ResponseBuilder.build(
+                200,
+                "Operation progress retrieved",
+                {"operation_id": operation_id, "status": status},
+            )
+        except Exception as e:
+            ctx_log(ctx, logger, "error", f"Failed to get operation progress: {e}")
+            return ResponseBuilder.build(
+                500,
+                "Failed to get operation progress",
+                {"operation_id": operation_id},
+                str(e),
+            )
+
+    @mcp.tool(
+        annotations={
+            "title": "Cancel Operation",
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": False,
+        },
+        tags={"operation_management"},
+    )
+    async def cancel_operation(
+        operation_id: str = Field(description="Operation ID to cancel"),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Cancel an ongoing operation gracefully."""
+        if not await ctx_confirm_destructive(ctx, "cancel operation"):
+            return {"status": "cancelled", "message": "Operation cancelled by user"}
+        await ctx_progress(ctx, 0, 100)
+        try:
+            success = operation_manager.request_cancellation(operation_id)
+            if success:
+                return ResponseBuilder.build(
+                    200,
+                    "Operation cancellation requested",
+                    {"operation_id": operation_id},
+                )
+            else:
+                return ResponseBuilder.build(
+                    400,
+                    "Failed to cancel operation",
+                    {"operation_id": operation_id},
+                    errors=["Operation not found or already completed"],
+                )
+        except Exception as e:
+            ctx_log(ctx, logger, "error", f"Failed to cancel operation: {e}")
+            return ResponseBuilder.build(
+                500,
+                "Failed to cancel operation",
+                {"operation_id": operation_id},
+                str(e),
+            )
+
+    @mcp.tool(
+        annotations={
+            "title": "Get Resource Metrics",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+        tags={"operation_management"},
+    )
+    async def get_resource_metrics(
+        operation_id: str = Field(description="Operation ID to get metrics for"),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Get resource usage metrics for an operation."""
+        try:
+            metrics = operation_manager.get_resource_metrics(operation_id)
+            return ResponseBuilder.build(
+                200,
+                "Resource metrics retrieved",
+                {
+                    "operation_id": operation_id,
+                    "metrics": metrics,
+                    "metric_count": len(metrics),
+                },
+            )
+        except Exception as e:
+            ctx_log(ctx, logger, "error", f"Failed to get resource metrics: {e}")
+            return ResponseBuilder.build(
+                500,
+                "Failed to get resource metrics",
+                {"operation_id": operation_id},
+                str(e),
+            )
+
+    @mcp.tool(
+        annotations={
+            "title": "List Active Sessions",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+        tags={"operation_management"},
+    )
+    async def list_active_sessions(
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """List all active SSH sessions."""
+        try:
+            sessions = operation_manager.list_active_sessions()
+            return ResponseBuilder.build(
+                200,
+                "Active sessions listed",
+                {
+                    "sessions": sessions["sessions"],
+                    "total_sessions": sessions["total_sessions"],
+                },
+            )
+        except Exception as e:
+            ctx_log(ctx, logger, "error", f"Failed to list active sessions: {e}")
+            return ResponseBuilder.build(
+                500,
+                "Failed to list active sessions",
+                {},
+                str(e),
+            )
+
+
+def register_system_intelligence_tools(mcp: FastMCP):
+    """Register system intelligence and discovery tools."""
+
+    @mcp.tool(
+        annotations={
+            "title": "Get System Info",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+        tags={"system_intelligence"},
+    )
+    async def get_system_info(
+        remote_host: str = Field(description="Remote host to get system info from"),
+        username: str = Field(default="", description="SSH username"),
+        password: str = Field(default="", description="SSH password"),
+        identity_file: str = Field(default="", description="SSH identity file path"),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Get comprehensive system information including OS, hardware, and packages."""
+        try:
+            tunnel = Tunnel(
+                remote_host=remote_host,
+                username=username or None,
+                password=password or None,
+                identity_file=identity_file or None,
+            )
+            intelligence = SystemIntelligence(tunnel)
+            system_info = intelligence.get_system_info()
+
+            return ResponseBuilder.build(
+                200,
+                "System information retrieved successfully",
+                {"host": remote_host, "system_info": system_info},
+            )
+        except Exception as e:
+            ctx_log(ctx, logger, "error", f"Failed to get system info: {e}")
+            return ResponseBuilder.build(
+                500,
+                "Failed to get system information",
+                {"host": remote_host},
+                str(e),
+            )
+
+    @mcp.tool(
+        annotations={
+            "title": "Discover Services",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+        tags={"system_intelligence"},
+    )
+    async def discover_services(
+        remote_host: str = Field(description="Remote host to discover services on"),
+        username: str = Field(default="", description="SSH username"),
+        password: str = Field(default="", description="SSH password"),
+        identity_file: str = Field(default="", description="SSH identity file path"),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Discover running services, open ports, and processes."""
+        try:
+            tunnel = Tunnel(
+                remote_host=remote_host,
+                username=username or None,
+                password=password or None,
+                identity_file=identity_file or None,
+            )
+            intelligence = SystemIntelligence(tunnel)
+            services = intelligence.discover_services()
+
+            return ResponseBuilder.build(
+                200,
+                "Services discovered successfully",
+                {"host": remote_host, "services": services},
+            )
+        except Exception as e:
+            ctx_log(ctx, logger, "error", f"Failed to discover services: {e}")
+            return ResponseBuilder.build(
+                500,
+                "Failed to discover services",
+                {"host": remote_host},
+                str(e),
+            )
+
+    @mcp.tool(
+        annotations={
+            "title": "Analyze Logs",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+        tags={"system_intelligence"},
+    )
+    async def analyze_logs(
+        remote_host: str = Field(description="Remote host to analyze logs on"),
+        log_paths: list[str] = Field(description="List of log file paths to analyze"),
+        patterns: list[str] = Field(description="List of patterns to search for"),
+        username: str = Field(default="", description="SSH username"),
+        password: str = Field(default="", description="SSH password"),
+        identity_file: str = Field(default="", description="SSH identity file path"),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Analyze log files for specified patterns and return statistics."""
+        try:
+            tunnel = Tunnel(
+                remote_host=remote_host,
+                username=username or None,
+                password=password or None,
+                identity_file=identity_file or None,
+            )
+            intelligence = SystemIntelligence(tunnel)
+            analysis = intelligence.analyze_logs(log_paths, patterns)
+
+            return ResponseBuilder.build(
+                200,
+                "Log analysis completed successfully",
+                {"host": remote_host, "analysis": analysis},
+            )
+        except Exception as e:
+            ctx_log(ctx, logger, "error", f"Failed to analyze logs: {e}")
+            return ResponseBuilder.build(
+                500,
+                "Failed to analyze logs",
+                {"host": remote_host},
+                str(e),
+            )
+
+    @mcp.tool(
+        annotations={
+            "title": "Network Topology",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+        tags={"system_intelligence"},
+    )
+    async def network_topology(
+        remote_host: str = Field(description="Remote host to map network topology for"),
+        username: str = Field(default="", description="SSH username"),
+        password: str = Field(default="", description="SSH password"),
+        identity_file: str = Field(default="", description="SSH identity file path"),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Map network interfaces, routes, and active connections."""
+        try:
+            tunnel = Tunnel(
+                remote_host=remote_host,
+                username=username or None,
+                password=password or None,
+                identity_file=identity_file or None,
+            )
+            intelligence = SystemIntelligence(tunnel)
+            topology = intelligence.network_topology()
+
+            return ResponseBuilder.build(
+                200,
+                "Network topology mapped successfully",
+                {"host": remote_host, "topology": topology},
+            )
+        except Exception as e:
+            ctx_log(ctx, logger, "error", f"Failed to map network topology: {e}")
+            return ResponseBuilder.build(
+                500,
+                "Failed to map network topology",
+                {"host": remote_host},
+                str(e),
+            )
+
+
+def register_advanced_file_operations_tools(mcp: FastMCP):
+    """Register advanced file operations tools."""
+
+    @mcp.tool(
+        annotations={
+            "title": "Recursive File Operations",
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": False,
+        },
+        tags={"advanced_file_operations"},
+    )
+    async def recursive_file_operations(
+        remote_host: str = Field(description="Remote host to perform operations on"),
+        operation: str = Field(
+            description="Operation type (copy, move, delete, list, chmod, chown)"
+        ),
+        source: str = Field(description="Source path"),
+        destination: str = Field(
+            default="", description="Destination path (for copy/move)"
+        ),
+        mode: str = Field(default="755", description="Permission mode (for chmod)"),
+        owner: str = Field(default="", description="Owner (for chown)"),
+        group: str = Field(default="", description="Group (for chown)"),
+        username: str = Field(default="", description="SSH username"),
+        password: str = Field(default="", description="SSH password"),
+        identity_file: str = Field(default="", description="SSH identity file path"),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Perform recursive directory-level operations."""
+        try:
+            tunnel = Tunnel(
+                remote_host=remote_host,
+                username=username or None,
+                password=password or None,
+                identity_file=identity_file or None,
+            )
+            file_manager = AdvancedFileManager(tunnel)
+
+            options = {}
+            if operation == "chmod":
+                options["mode"] = mode
+            elif operation == "chown":
+                options["owner"] = owner
+                options["group"] = group
+
+            result = file_manager.recursive_file_operations(
+                operation, source, destination, options
+            )
+
+            return ResponseBuilder.build(
+                200 if result["success"] else 500,
+                f"Recursive {operation} operation completed",
+                {"host": remote_host, "operation": operation, "result": result},
+                error=result.get("error", ""),
+                errors=result.get("errors", []),
+            )
+        except Exception as e:
+            ctx_log(
+                ctx,
+                logger,
+                "error",
+                f"Failed to perform recursive file operations: {e}",
+            )
+            return ResponseBuilder.build(
+                500,
+                "Failed to perform recursive file operations",
+                {"host": remote_host, "operation": operation},
+                str(e),
+            )
+
+    @mcp.tool(
+        annotations={
+            "title": "File Content Search",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+        tags={"advanced_file_operations"},
+    )
+    async def file_content_search(
+        remote_host: str = Field(description="Remote host to search on"),
+        search_paths: list[str] = Field(description="List of directories to search"),
+        pattern: str = Field(description="Pattern to search for"),
+        case_sensitive: bool = Field(
+            default=False, description="Case-sensitive search"
+        ),
+        recursive: bool = Field(default=True, description="Recursive search"),
+        max_results: int = Field(default=1000, description="Maximum results to return"),
+        username: str = Field(default="", description="SSH username"),
+        password: str = Field(default="", description="SSH password"),
+        identity_file: str = Field(default="", description="SSH identity file path"),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Search for file content across directories."""
+        try:
+            tunnel = Tunnel(
+                remote_host=remote_host,
+                username=username or None,
+                password=password or None,
+                identity_file=identity_file or None,
+            )
+            file_manager = AdvancedFileManager(tunnel)
+
+            options = {
+                "case_sensitive": case_sensitive,
+                "recursive": recursive,
+                "max_results": max_results,
+            }
+
+            result = file_manager.file_content_search(search_paths, pattern, options)
+
+            return ResponseBuilder.build(
+                200 if result["success"] else 500,
+                "File content search completed",
+                {"host": remote_host, "pattern": pattern, "result": result},
+                error=result.get("error", ""),
+            )
+        except Exception as e:
+            ctx_log(ctx, logger, "error", f"Failed to search file content: {e}")
+            return ResponseBuilder.build(
+                500,
+                "Failed to search file content",
+                {"host": remote_host, "pattern": pattern},
+                str(e),
+            )
+
+    @mcp.tool(
+        annotations={
+            "title": "File Watch Monitor",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+        tags={"advanced_file_operations"},
+    )
+    async def file_watch_monitor(
+        remote_host: str = Field(description="Remote host to monitor files on"),
+        watch_paths: list[str] = Field(description="List of paths to monitor"),
+        duration: int = Field(default=60, description="Duration to monitor in seconds"),
+        username: str = Field(default="", description="SSH username"),
+        password: str = Field(default="", description="SSH password"),
+        identity_file: str = Field(default="", description="SSH identity file path"),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Monitor files/directories for real-time changes."""
+        try:
+            tunnel = Tunnel(
+                remote_host=remote_host,
+                username=username or None,
+                password=password or None,
+                identity_file=identity_file or None,
+            )
+            file_manager = AdvancedFileManager(tunnel)
+
+            result = file_manager.file_watch_monitor(watch_paths, duration)
+
+            return ResponseBuilder.build(
+                200 if result["success"] else 500,
+                "File monitoring completed",
+                {"host": remote_host, "watch_paths": watch_paths, "result": result},
+                error=result.get("error", ""),
+            )
+        except Exception as e:
+            ctx_log(ctx, logger, "error", f"Failed to monitor files: {e}")
+            return ResponseBuilder.build(
+                500,
+                "Failed to monitor files",
+                {"host": remote_host, "watch_paths": watch_paths},
+                str(e),
+            )
+
+    @mcp.tool(
+        annotations={
+            "title": "File Diff Compare",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+        tags={"advanced_file_operations"},
+    )
+    async def file_diff_compare(
+        file_path: str = Field(description="File path to compare"),
+        host1: str = Field(description="First host"),
+        host2: str = Field(description="Second host"),
+        username1: str = Field(default="", description="SSH username for host1"),
+        password1: str = Field(default="", description="SSH password for host1"),
+        identity_file1: str = Field(
+            default="", description="SSH identity file for host1"
+        ),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Compare files across two different hosts."""
+        try:
+            tunnel1 = Tunnel(
+                remote_host=host1,
+                username=username1 or None,
+                password=password1 or None,
+                identity_file=identity_file1 or None,
+            )
+            file_manager = AdvancedFileManager(tunnel1)
+
+            result = file_manager.file_diff_compare(host1, host2, file_path)
+
+            return ResponseBuilder.build(
+                200 if result["success"] else 500,
+                "File comparison completed",
+                {"file": file_path, "host1": host1, "host2": host2, "result": result},
+                error=result.get("error", ""),
+            )
+        except Exception as e:
+            ctx_log(ctx, logger, "error", f"Failed to compare files: {e}")
+            return ResponseBuilder.build(
+                500,
+                "Failed to compare files",
+                {"file": file_path, "host1": host1, "host2": host2},
+                str(e),
+            )
+
+    @mcp.tool(
+        annotations={
+            "title": "Smart Backup",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+        },
+        tags={"advanced_file_operations"},
+    )
+    async def smart_backup(
+        remote_host: str = Field(description="Remote host to backup"),
+        backup_paths: list[str] = Field(description="List of paths to backup"),
+        backup_dest: str = Field(description="Backup destination directory"),
+        compression: bool = Field(default=True, description="Enable compression"),
+        incremental: bool = Field(
+            default=False, description="Enable incremental backup"
+        ),
+        username: str = Field(default="", description="SSH username"),
+        password: str = Field(default="", description="SSH password"),
+        identity_file: str = Field(default="", description="SSH identity file path"),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Create automated backups with versioning and compression."""
+        try:
+            tunnel = Tunnel(
+                remote_host=remote_host,
+                username=username or None,
+                password=password or None,
+                identity_file=identity_file or None,
+            )
+            file_manager = AdvancedFileManager(tunnel)
+
+            options = {
+                "compression": compression,
+                "incremental": incremental,
+            }
+
+            result = file_manager.smart_backup(backup_paths, backup_dest, options)
+
+            return ResponseBuilder.build(
+                200 if result["success"] else 500,
+                "Backup completed",
+                {"host": remote_host, "backup_paths": backup_paths, "result": result},
+                error=result.get("error", ""),
+            )
+        except Exception as e:
+            ctx_log(ctx, logger, "error", f"Failed to create backup: {e}")
+            return ResponseBuilder.build(
+                500,
+                "Failed to create backup",
+                {"host": remote_host, "backup_paths": backup_paths},
+                str(e),
+            )
+
+
+def register_security_auditing_tools(mcp: FastMCP):
+    """Register security and compliance auditing tools."""
+
+    @mcp.tool(
+        annotations={
+            "title": "Security Audit",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+        tags={"security_auditing"},
+    )
+    async def security_audit(
+        remote_host: str = Field(description="Remote host to audit"),
+        scope: list[str] = Field(
+            default=[], description="Security areas to audit (default: all)"
+        ),
+        username: str = Field(default="", description="SSH username"),
+        password: str = Field(default="", description="SSH password"),
+        identity_file: str = Field(default="", description="SSH identity file path"),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Perform comprehensive security assessment."""
+        try:
+            tunnel = Tunnel(
+                remote_host=remote_host,
+                username=username or None,
+                password=password or None,
+                identity_file=identity_file or None,
+            )
+            auditor = SecurityAuditor(tunnel)
+
+            result = auditor.security_audit(scope if scope else None)
+
+            return ResponseBuilder.build(
+                200 if result["success"] else 500,
+                f"Security audit completed with score: {result['score']}/100",
+                {"host": remote_host, "audit_result": result},
+                error=result.get("error", ""),
+                errors=result.get("audit_errors", []),
+            )
+        except Exception as e:
+            ctx_log(ctx, logger, "error", f"Failed to perform security audit: {e}")
+            return ResponseBuilder.build(
+                500,
+                "Failed to perform security audit",
+                {"host": remote_host},
+                str(e),
+            )
+
+    @mcp.tool(
+        annotations={
+            "title": "Compliance Check",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+        tags={"security_auditing"},
+    )
+    async def compliance_check(
+        remote_host: str = Field(description="Remote host to check compliance on"),
+        standard: str = Field(
+            default="cis_benchmark",
+            description="Compliance standard (cis_benchmark, pci_dss, hipaa)",
+        ),
+        username: str = Field(default="", description="SSH username"),
+        password: str = Field(default="", description="SSH password"),
+        identity_file: str = Field(default="", description="SSH identity file path"),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Check compliance against security standards."""
+        try:
+            tunnel = Tunnel(
+                remote_host=remote_host,
+                username=username or None,
+                password=password or None,
+                identity_file=identity_file or None,
+            )
+            auditor = SecurityAuditor(tunnel)
+
+            result = auditor.compliance_check(standard)
+
+            return ResponseBuilder.build(
+                200 if result["success"] else 500,
+                f"Compliance check completed: {result['compliance_percentage']:.1f}% compliant",
+                {
+                    "host": remote_host,
+                    "standard": standard,
+                    "compliance_result": result,
+                },
+                error=result.get("error", ""),
+                errors=result.get("check_errors", []),
+            )
+        except Exception as e:
+            ctx_log(ctx, logger, "error", f"Failed to perform compliance check: {e}")
+            return ResponseBuilder.build(
+                500,
+                "Failed to perform compliance check",
+                {"host": remote_host, "standard": standard},
+                str(e),
+            )
+
+    @mcp.tool(
+        annotations={
+            "title": "Vulnerability Scan",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+        tags={"security_auditing"},
+    )
+    async def vulnerability_scan(
+        remote_host: str = Field(description="Remote host to scan"),
+        scan_type: str = Field(
+            default="basic", description="Scan type (basic, package, config)"
+        ),
+        username: str = Field(default="", description="SSH username"),
+        password: str = Field(default="", description="SSH password"),
+        identity_file: str = Field(default="", description="SSH identity file path"),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Scan for known vulnerabilities."""
+        try:
+            tunnel = Tunnel(
+                remote_host=remote_host,
+                username=username or None,
+                password=password or None,
+                identity_file=identity_file or None,
+            )
+            auditor = SecurityAuditor(tunnel)
+
+            result = auditor.vulnerability_scan(scan_type)
+
+            return ResponseBuilder.build(
+                200 if result["success"] else 500,
+                f"Vulnerability scan completed: {len(result['vulnerabilities'])} vulnerabilities found",
+                {"host": remote_host, "scan_type": scan_type, "scan_result": result},
+                error=result.get("error", ""),
+                errors=result.get("scan_errors", []),
+            )
+        except Exception as e:
+            ctx_log(ctx, logger, "error", f"Failed to perform vulnerability scan: {e}")
+            return ResponseBuilder.build(
+                500,
+                "Failed to perform vulnerability scan",
+                {"host": remote_host, "scan_type": scan_type},
+                str(e),
+            )
+
+    @mcp.tool(
+        annotations={
+            "title": "Access Control Audit",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+        tags={"security_auditing"},
+    )
+    async def access_control_audit(
+        remote_host: str = Field(description="Remote host to audit"),
+        username: str = Field(default="", description="SSH username"),
+        password: str = Field(default="", description="SSH password"),
+        identity_file: str = Field(default="", description="SSH identity file path"),
+        ctx: Context = Field(
+            description="MCP context for progress reporting", default=None
+        ),
+    ) -> dict:
+        """Audit access controls and permissions."""
+        try:
+            tunnel = Tunnel(
+                remote_host=remote_host,
+                username=username or None,
+                password=password or None,
+                identity_file=identity_file or None,
+            )
+            auditor = SecurityAuditor(tunnel)
+
+            result = auditor.access_control_audit()
+
+            return ResponseBuilder.build(
+                200 if result["success"] else 500,
+                f"Access control audit completed: {result['users_audited']} users audited",
+                {"host": remote_host, "audit_result": result},
+                error=result.get("error", ""),
+                errors=result.get("audit_errors", []),
+            )
+        except Exception as e:
+            ctx_log(
+                ctx, logger, "error", f"Failed to perform access control audit: {e}"
+            )
+            return ResponseBuilder.build(
+                500,
+                "Failed to perform access control audit",
+                {"host": remote_host},
                 str(e),
             )
 
@@ -2278,6 +3316,26 @@ def get_mcp_instance() -> tuple[Any, Any, Any, Any]:
     DEFAULT_REMOTE_ACCESSTOOL = to_boolean(os.getenv("REMOTE_ACCESSTOOL", "True"))
     if DEFAULT_REMOTE_ACCESSTOOL:
         register_remote_access_tools(mcp)
+    DEFAULT_OPERATION_MANAGEMENTTOOL = to_boolean(
+        os.getenv("OPERATION_MANAGEMENTTOOL", "True")
+    )
+    if DEFAULT_OPERATION_MANAGEMENTTOOL:
+        register_operation_management_tools(mcp)
+    DEFAULT_SYSTEM_INTELLIGENCETOOL = to_boolean(
+        os.getenv("SYSTEM_INTELLIGENCETOOL", "True")
+    )
+    if DEFAULT_SYSTEM_INTELLIGENCETOOL:
+        register_system_intelligence_tools(mcp)
+    DEFAULT_ADVANCED_FILE_OPERATIONSTOOL = to_boolean(
+        os.getenv("ADVANCED_FILE_OPERATIONSTOOL", "True")
+    )
+    if DEFAULT_ADVANCED_FILE_OPERATIONSTOOL:
+        register_advanced_file_operations_tools(mcp)
+    DEFAULT_SECURITY_AUDITINGTOOL = to_boolean(
+        os.getenv("SECURITY_AUDITINGTOOL", "True")
+    )
+    if DEFAULT_SECURITY_AUDITINGTOOL:
+        register_security_auditing_tools(mcp)
 
     for mw in middlewares:
         mcp.add_middleware(mw)
@@ -2291,10 +3349,30 @@ def get_mcp_instance() -> tuple[Any, Any, Any, Any]:
     DEFAULT_REMOTE_ACCESSTOOL = to_boolean(os.getenv("REMOTE_ACCESSTOOL", "True"))
     if DEFAULT_REMOTE_ACCESSTOOL:
         register_remote_access_tools(mcp)
+    DEFAULT_OPERATION_MANAGEMENTTOOL = to_boolean(
+        os.getenv("OPERATION_MANAGEMENTTOOL", "True")
+    )
+    if DEFAULT_OPERATION_MANAGEMENTTOOL:
+        register_operation_management_tools(mcp)
+    DEFAULT_SYSTEM_INTELLIGENCETOOL = to_boolean(
+        os.getenv("SYSTEM_INTELLIGENCETOOL", "True")
+    )
+    if DEFAULT_SYSTEM_INTELLIGENCETOOL:
+        register_system_intelligence_tools(mcp)
+    DEFAULT_ADVANCED_FILE_OPERATIONSTOOL = to_boolean(
+        os.getenv("ADVANCED_FILE_OPERATIONSTOOL", "True")
+    )
+    if DEFAULT_ADVANCED_FILE_OPERATIONSTOOL:
+        register_advanced_file_operations_tools(mcp)
+    DEFAULT_SECURITY_AUDITINGTOOL = to_boolean(
+        os.getenv("SECURITY_AUDITINGTOOL", "True")
+    )
+    if DEFAULT_SECURITY_AUDITINGTOOL:
+        register_security_auditing_tools(mcp)
 
     for mw in middlewares:
         mcp.add_middleware(mw)
-    registered_tags = []
+    registered_tags: list[str] = []
     return mcp, args, middlewares, registered_tags
 
 

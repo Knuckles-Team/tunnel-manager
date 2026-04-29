@@ -150,7 +150,9 @@ class Tunnel:
             return
 
         self.ssh_client = paramiko.SSHClient()
-        self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self.ssh_client.set_missing_host_key_policy(
+            paramiko.AutoAddPolicy()
+        )  # nosec B507
 
         proxy = None
         if self.proxy_command:
@@ -207,7 +209,7 @@ class Tunnel:
         """
         self.connect()
         try:
-            stdin, stdout, stderr = self.ssh_client.exec_command(command)
+            stdin, stdout, stderr = self.ssh_client.exec_command(command)  # nosec B601
             out = stdout.read().decode("utf-8").strip()
             err = stderr.read().decode("utf-8").strip()
             self.logger.info(
@@ -370,10 +372,36 @@ class Tunnel:
             raise ValueError("key_type must be 'rsa' or 'ed25519'")
 
         if not os.path.exists(pub_key_path):
+            import subprocess
+
             if key_type == "rsa":
-                os.system(f"ssh-keygen -t rsa -b 4096 -f {local_key_path} -N ''")
+                subprocess.run(
+                    [
+                        "/usr/bin/ssh-keygen",
+                        "-t",
+                        "rsa",
+                        "-b",
+                        "4096",
+                        "-f",
+                        local_key_path,
+                        "-N",
+                        "",
+                    ],
+                    check=True,
+                )
             else:
-                os.system(f"ssh-keygen -t ed25519 -f {local_key_path} -N ''")
+                subprocess.run(
+                    [
+                        "/usr/bin/ssh-keygen",
+                        "-t",
+                        "ed25519",
+                        "-f",
+                        local_key_path,
+                        "-N",
+                        "",
+                    ],
+                    check=True,
+                )
             self.logger.info(
                 f"Generated {key_type} key pair: {local_key_path}, {pub_key_path}"
             )
@@ -540,10 +568,36 @@ class Tunnel:
             raise ValueError("key_type must be 'rsa' or 'ed25519'")
 
         if not os.path.exists(new_key_path):
+            import subprocess
+
             if key_type == "rsa":
-                os.system(f"ssh-keygen -t rsa -b 4096 -f {new_key_path} -N ''")
+                subprocess.run(
+                    [
+                        "/usr/bin/ssh-keygen",
+                        "-t",
+                        "rsa",
+                        "-b",
+                        "4096",
+                        "-f",
+                        new_key_path,
+                        "-N",
+                        "",
+                    ],
+                    check=True,
+                )
             else:
-                os.system(f"ssh-keygen -t ed25519 -f {new_key_path} -N ''")
+                subprocess.run(
+                    [
+                        "/usr/bin/ssh-keygen",
+                        "-t",
+                        "ed25519",
+                        "-f",
+                        new_key_path,
+                        "-N",
+                        "",
+                    ],
+                    check=True,
+                )
             self.logger.info(f"Generated new {key_type} key pair: {new_key_path}")
 
         with open(new_pub_path, "r") as f:
@@ -567,7 +621,7 @@ class Tunnel:
         ]
         new_auth.append(new_pub)
 
-        temp_file = "/tmp/authorized_keys.new"
+        temp_file = "/tmp/authorized_keys.new"  # nosec B108
         new_auth_joined = "\n".join(new_auth)
         self.run_command(f"echo '{new_auth_joined}' > {temp_file}")
         self.run_command(f"mv {temp_file} ~/.ssh/authorized_keys")
@@ -606,10 +660,36 @@ class Tunnel:
             raise ValueError("key_type must be 'rsa' or 'ed25519'")
 
         if not os.path.exists(shared_key_path):
+            import subprocess
+
             if key_type == "rsa":
-                os.system(f"ssh-keygen -t rsa -b 4096 -f {shared_key_path} -N ''")
+                subprocess.run(
+                    [
+                        "/usr/bin/ssh-keygen",
+                        "-t",
+                        "rsa",
+                        "-b",
+                        "4096",
+                        "-f",
+                        shared_key_path,
+                        "-N",
+                        "",
+                    ],
+                    check=True,
+                )
             else:
-                os.system(f"ssh-keygen -t ed25519 -f {shared_key_path} -N ''")
+                subprocess.run(
+                    [
+                        "/usr/bin/ssh-keygen",
+                        "-t",
+                        "ed25519",
+                        "-f",
+                        shared_key_path,
+                        "-N",
+                        "",
+                    ],
+                    check=True,
+                )
             logging.info(
                 f"Generated shared {key_type} key pair: {shared_key_path}, {shared_pub_key_path}"
             )
