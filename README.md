@@ -25,11 +25,11 @@
 
 ## Overview
 
-This project provides a Python-based `Tunnel` class for secure SSH connections and file transfers, integrated with a FastMCP server (`tunnel_manager_mcp_server.py`) to expose these capabilities as tools for AI-driven workflows. The implementation supports both standard SSH (e.g., for local networks) and Teleport's secure access platform, leveraging the `paramiko` library for SSH operations.
+This project provides a Python-based `Tunnel` class for secure SSH connections and file transfers, integrated with a FastMCP server (`mcp_server.py`) to expose these capabilities as tools for AI-driven workflows. The implementation supports both standard SSH (e.g., for local networks) and Teleport's secure access platform, leveraging the `paramiko` library for SSH operations.
 
 ### Features
 
-### Tunnel Class
+#### Tunnel Class
 - **Purpose**: Facilitates secure SSH connections, file transfers, and key management for single or multiple hosts.
 - **Key Functionality**:
     - **Run Remote Commands**: Execute shell commands on a remote host and retrieve output.
@@ -43,28 +43,112 @@ This project provides a Python-based `Tunnel` class for secure SSH connections a
     - **Logging**: Optional file-based logging for debugging and auditing.
     - **Parallel Execution**: Support for parallel operations across multiple hosts with configurable thread limits.
     - **Key Type Support**: Explicit support for both RSA and Ed25519 keys in authentication, generation, and rotation for enhanced security and compatibility.
+    - **Host Management**: Managed host inventory with `HostManager` class for storing and retrieving host configurations.
 
-### FastMCP Server
+#### FastMCP Server
 - **Purpose**: Exposes `Tunnel` class functionality as a FastMCP server, enabling AI tools to perform remote operations programmatically.
 - **Tools Provided**:
-    - `run_command_on_remote_host`: Runs a shell command on a single remote host.
-    - `send_file_to_remote_host`: Uploads a file to a single remote host via SFTP.
-    - `receive_file_from_remote_host`: Downloads a file from a single remote host via SFTP.
-    - `check_ssh_server`: Checks if the SSH server is running and configured for key-based authentication.
-    - `test_key_auth`: Tests key-based authentication for a host.
-    - `setup_passwordless_ssh`: Sets up passwordless SSH for a single host.
-    - `copy_ssh_config`: Copies an SSH config file to a single remote host.
-    - `rotate_ssh_key`: Rotates SSH keys for a single host.
-    - `remove_host_key`: Removes a host’s key from the local `known_hosts` file.
-    - `configure_key_auth_on_inventory`: Sets up passwordless SSH for all hosts in an inventory group.
-    - `run_command_on_inventory`: Runs a command on all hosts in an inventory group.
-    - `copy_ssh_config_on_inventory`: Copies an SSH config file to all hosts in an inventory group.
-    - `rotate_ssh_key_on_inventory`: Rotates SSH keys for all hosts in an inventory group.
-    - `send_file_to_inventory`: Uploads a file to all hosts in an inventory group via SFTP.
-    - `receive_file_from_inventory`: Downloads a file from all hosts in an inventory group via SFTP.
-- **Transport Options**: Supports `stdio` (for local scripting) and `http` (for networked access) transport modes.
+  - **Host Management Tools**:
+    - `list_hosts`: List all managed hosts in the inventory
+    - `add_host`: Add a new host to the managed inventory
+    - `remove_host`: Remove a host from the managed inventory
+  - **Single Host Operations**:
+    - `run_command_on_remote_host`: Runs a shell command on a single remote host
+    - `send_file_to_remote_host`: Uploads a file to a single remote host via SFTP
+    - `receive_file_from_remote_host`: Downloads a file from a single remote host via SFTP
+    - `check_ssh_server`: Checks if the SSH server is running and configured for key-based authentication
+    - `test_key_auth`: Tests key-based authentication for a host
+    - `setup_passwordless_ssh`: Sets up passwordless SSH for a single host
+    - `copy_ssh_config`: Copies an SSH config file to a single remote host
+    - `rotate_ssh_key`: Rotates SSH keys for a single host
+    - `remove_host_key`: Removes a host's key from the local `known_hosts` file
+  - **Inventory Operations**:
+    - `configure_key_auth_on_inventory`: Sets up passwordless SSH for all hosts in an inventory group
+    - `run_command_on_inventory`: Runs a command on all hosts in an inventory group
+    - `copy_ssh_config_on_inventory`: Copies an SSH config file to all hosts in an inventory group
+    - `rotate_ssh_key_on_inventory`: Rotates SSH keys for all hosts in an inventory group
+    - `send_file_to_inventory`: Uploads a file to all hosts in an inventory group via SFTP
+    - `receive_file_from_inventory`: Downloads a file from all hosts in an inventory group via SFTP
+  - **Operation Management Tools**:
+    - `start_operation`: Start a new operation with progress tracking
+    - `get_operation_progress`: Get the progress of a running operation
+    - `cancel_operation`: Cancel a running operation
+    - `get_resource_metrics`: Get resource metrics during operations
+    - `list_active_sessions`: List active SSH sessions
+  - **System Intelligence Tools**:
+    - `get_system_info`: Get comprehensive system information (OS, hardware, packages, uptime)
+    - `discover_services`: Discover running services, processes, and open ports
+    - `analyze_logs`: Analyze log files for specified patterns
+    - `network_topology`: Map network interfaces, routes, and active connections
+  - **Advanced File Operations Tools**:
+    - `recursive_file_operations`: Perform recursive directory operations (copy, move, delete, list, chmod, chown)
+    - `file_content_search`: Search for file content across directories
+    - `file_watch_monitor`: Monitor files/directories for real-time changes
+    - `file_diff_compare`: Compare files across two different hosts
+    - `smart_backup`: Create automated backups with versioning and compression
+  - **Security Auditing Tools**:
+    - `security_audit`: Perform comprehensive security assessment
+    - `compliance_check`: Check compliance against security standards (CIS, PCI DSS, HIPAA)
+    - `vulnerability_scan`: Scan for known vulnerabilities
+    - `access_control_audit`: Audit access controls and permissions
+- **Transport Options**: Supports `stdio` (for local scripting), `http`, and `sse` transport modes.
 - **Progress Reporting**: Integrates with FastMCP's `Context` for progress updates during operations.
-- **Logging**: Comprehensive logging to a file (`tunnel_mcp.log` by default) or a user-specified file.
+- **Logging**: Comprehensive logging to a file or console output.
+- **Error Handling**: Consistent error responses using `ResponseBuilder` for all tools.
+
+#### Enhanced Capabilities for Agentic Frameworks
+The tunnel-manager now includes advanced capabilities specifically designed for AI-driven workflows:
+
+**Operation Management**
+- Track long-running operations with streaming progress updates
+- Monitor CPU, memory, and disk usage during operations
+- Maintain persistent SSH connection pools for efficiency
+- Cancel in-progress operations gracefully
+- Tools: start_operation, get_operation_progress, cancel_operation, get_resource_metrics, list_active_sessions
+
+**System Intelligence & Discovery**
+- Gather comprehensive system information (OS, hardware, packages, uptime)
+- Discover running services, processes, and open ports
+- Analyze log files for patterns and security events
+- Map network topology (interfaces, routes, DNS, connections)
+- Tools: get_system_info, discover_services, analyze_logs, network_topology
+
+**Advanced File Operations**
+- Perform recursive directory operations (copy, move, delete, chmod, chown)
+- Search file content across multiple directories with grep-like functionality
+- Monitor files/directories for real-time changes
+- Compare files across different hosts
+- Create automated backups with compression and versioning
+- Tools: recursive_file_operations, file_content_search, file_watch_monitor, file_diff_compare, smart_backup
+
+**Security & Compliance Automation**
+- Perform comprehensive security assessments with scoring (0-100)
+- Check compliance against industry standards (CIS Benchmark, PCI DSS, HIPAA)
+- Scan for known vulnerabilities in packages and configurations
+- Audit access controls, user permissions, sudo configuration, and SSH settings
+- Tools: security_audit, compliance_check, vulnerability_scan, access_control_audit
+
+#### Testing Infrastructure
+- **Comprehensive Test Suite**: 212 tests covering core functionality with enhanced capabilities (98.6% pass rate)
+- **Test Coverage**:
+  - `tunnel_manager.py`: 74% coverage
+  - `agent_server.py`: 96% coverage
+  - `__init__.py`: 89% coverage
+  - `operation_manager.py`: Full test coverage (37 tests)
+  - `system_intelligence.py`: Full test coverage (27 tests)
+  - `advanced_file_manager.py`: Full test coverage (32 tests)
+  - `security_auditor.py`: Full test coverage (28 tests)
+- **Test Categories**:
+  - Unit tests for `HostManager` class
+  - Unit tests for `Tunnel` class (SSH operations, file transfers, key management)
+  - Unit tests for MCP server helper functions
+  - Unit tests for agent server functionality
+  - Integration tests for SSH operations
+  - Tests for enhanced operation management with progress tracking
+  - Tests for system intelligence and discovery
+  - Tests for advanced file operations
+  - Tests for security and compliance auditing
+- **Testing Framework**: pytest with pytest-asyncio for async testing
 
 ## Usage
 

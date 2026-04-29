@@ -1,0 +1,286 @@
+F841 Local variable `t` is assigned to but never used
+   --> tests/test_mcp_server.py:328:13
+    |
+326 |             local_path = f.name
+327 |         try:
+328 |             t = mock_tunnel_instance
+    |             ^
+329 |             # Simulate the file send logic
+330 |             mock_sftp.put(local_path, "/remote/path")
+    |
+help: Remove assignment to unused variable `t`
+
+F841 Local variable `t` is assigned to but never used
+   --> tests/test_mcp_server.py:349:13
+    |
+347 |             local_path = f.name
+348 |         try:
+349 |             t = mock_tunnel_instance
+    |             ^
+350 |             # Simulate the file receive logic
+351 |             mock_sftp.get("/remote/file", local_path)
+    |
+help: Remove assignment to unused variable `t`
+
+E741 Ambiguous variable name: `l`
+   --> tunnel_manager/advanced_file_manager.py:700:36
+    |
+699 |             # Count differences
+700 |             additions = len([l for l in lines2 if l not in lines1])
+    |                                    ^
+701 |             deletions = len([l for l in lines1 if l not in lines2])
+702 |             modifications = len(differences)
+    |
+
+E741 Ambiguous variable name: `l`
+   --> tunnel_manager/advanced_file_manager.py:701:36
+    |
+699 |             # Count differences
+700 |             additions = len([l for l in lines2 if l not in lines1])
+701 |             deletions = len([l for l in lines1 if l not in lines2])
+    |                                    ^
+702 |             modifications = len(differences)
+    |
+
+F841 Local variable `encryption` is assigned to but never used
+   --> tunnel_manager/advanced_file_manager.py:760:13
+    |
+758 |             compression = options.get("compression", True)
+759 |             incremental = options.get("incremental", False)
+760 |             encryption = options.get("encryption", False)
+    |             ^^^^^^^^^^
+761 |
+762 |             # Create backup directory
+    |
+help: Remove assignment to unused variable `encryption`
+
+E722 Do not use bare `except`
+   --> tunnel_manager/advanced_file_manager.py:839:21
+    |
+837 |                         if size_uncompressed_num > 0:
+838 |                             compression_ratio = f"{(1 - size_compressed_num / size_uncompressed_num) * 100:.1f}%"
+839 |                     except:
+    |                     ^^^^^^
+840 |                         compression_ratio = "unknown"
+    |
+
+E722 Do not use bare `except`
+   --> tunnel_manager/advanced_file_manager.py:893:9
+    |
+891 |             else:
+892 |                 return float(size_str)
+893 |         except:
+    |         ^^^^^^
+894 |             return 0.0
+    |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:18:1
+   |
+16 | warnings.filterwarnings("ignore", message=".*urllib3.*or charset_normalizer.*")
+17 |
+18 | import asyncio
+   | ^^^^^^^^^^^^^^
+19 | import concurrent.futures
+20 | import logging
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:19:1
+   |
+18 | import asyncio
+19 | import concurrent.futures
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^
+20 | import logging
+21 | import os
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:20:1
+   |
+18 | import asyncio
+19 | import concurrent.futures
+20 | import logging
+   | ^^^^^^^^^^^^^^
+21 | import os
+22 | import subprocess
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:21:1
+   |
+19 | import concurrent.futures
+20 | import logging
+21 | import os
+   | ^^^^^^^^^
+22 | import subprocess
+23 | import sys
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:22:1
+   |
+20 | import logging
+21 | import os
+22 | import subprocess
+   | ^^^^^^^^^^^^^^^^^
+23 | import sys
+24 | from typing import Any
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:23:1
+   |
+21 | import os
+22 | import subprocess
+23 | import sys
+   | ^^^^^^^^^^
+24 | from typing import Any
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:24:1
+   |
+22 | import subprocess
+23 | import sys
+24 | from typing import Any
+   | ^^^^^^^^^^^^^^^^^^^^^^
+25 |
+26 | import yaml
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:26:1
+   |
+24 | from typing import Any
+25 |
+26 | import yaml
+   | ^^^^^^^^^^^
+27 | from agent_utilities.base_utilities import to_boolean, to_integer
+28 | from agent_utilities.mcp_utilities import (
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:27:1
+   |
+26 | import yaml
+27 | from agent_utilities.base_utilities import to_boolean, to_integer
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+28 | from agent_utilities.mcp_utilities import (
+29 |     create_mcp_server,
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:28:1
+   |
+26 |   import yaml
+27 |   from agent_utilities.base_utilities import to_boolean, to_integer
+28 | / from agent_utilities.mcp_utilities import (
+29 | |     create_mcp_server,
+30 | |     ctx_confirm_destructive,
+31 | |     ctx_progress,
+32 | |     ctx_log,
+33 | | )
+   | |_^
+34 |   from dotenv import find_dotenv, load_dotenv
+35 |   from fastmcp import Context, FastMCP
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:34:1
+   |
+32 |     ctx_log,
+33 | )
+34 | from dotenv import find_dotenv, load_dotenv
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+35 | from fastmcp import Context, FastMCP
+36 | from fastmcp.utilities.logging import get_logger
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:35:1
+   |
+33 | )
+34 | from dotenv import find_dotenv, load_dotenv
+35 | from fastmcp import Context, FastMCP
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+36 | from fastmcp.utilities.logging import get_logger
+37 | from pydantic import Field
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:36:1
+   |
+34 | from dotenv import find_dotenv, load_dotenv
+35 | from fastmcp import Context, FastMCP
+36 | from fastmcp.utilities.logging import get_logger
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+37 | from pydantic import Field
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:37:1
+   |
+35 | from fastmcp import Context, FastMCP
+36 | from fastmcp.utilities.logging import get_logger
+37 | from pydantic import Field
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+38 |
+39 | from tunnel_manager.advanced_file_manager import AdvancedFileManager
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:39:1
+   |
+37 | from pydantic import Field
+38 |
+39 | from tunnel_manager.advanced_file_manager import AdvancedFileManager
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+40 | from tunnel_manager.operation_manager import operation_manager
+41 | from tunnel_manager.security_auditor import SecurityAuditor
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:40:1
+   |
+39 | from tunnel_manager.advanced_file_manager import AdvancedFileManager
+40 | from tunnel_manager.operation_manager import operation_manager
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+41 | from tunnel_manager.security_auditor import SecurityAuditor
+42 | from tunnel_manager.system_intelligence import SystemIntelligence
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:41:1
+   |
+39 | from tunnel_manager.advanced_file_manager import AdvancedFileManager
+40 | from tunnel_manager.operation_manager import operation_manager
+41 | from tunnel_manager.security_auditor import SecurityAuditor
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+42 | from tunnel_manager.system_intelligence import SystemIntelligence
+43 | from tunnel_manager.tunnel_manager import HostManager, Tunnel
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:42:1
+   |
+40 | from tunnel_manager.operation_manager import operation_manager
+41 | from tunnel_manager.security_auditor import SecurityAuditor
+42 | from tunnel_manager.system_intelligence import SystemIntelligence
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+43 | from tunnel_manager.tunnel_manager import HostManager, Tunnel
+   |
+
+E402 Module level import not at top of file
+  --> tunnel_manager/mcp_server.py:43:1
+   |
+41 | from tunnel_manager.security_auditor import SecurityAuditor
+42 | from tunnel_manager.system_intelligence import SystemIntelligence
+43 | from tunnel_manager.tunnel_manager import HostManager, Tunnel
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+44 |
+45 | __version__ = "1.1.54"
+   |
+
+Found 26 errors.
+No fixes available (3 hidden fixes can be enabled with the `--unsafe-fixes` option).
