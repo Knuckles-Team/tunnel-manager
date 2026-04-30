@@ -4,13 +4,14 @@ Tests for AdvancedFileManager class.
 """
 
 from unittest.mock import Mock
+
 from tunnel_manager.advanced_file_manager import (
     AdvancedFileManager,
+    BackupResult,
+    FileDiffResult,
     FileOperationResult,
     FileSearchResult,
     FileWatchEvent,
-    FileDiffResult,
-    BackupResult,
 )
 from tunnel_manager.tunnel_manager import Tunnel
 

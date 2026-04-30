@@ -2,9 +2,10 @@
 
 import os
 import tempfile
-import yaml
-from unittest.mock import Mock, patch, mock_open
+from unittest.mock import Mock, mock_open, patch
+
 import pytest
+import yaml
 
 from tunnel_manager.tunnel_manager import HostManager, Tunnel
 

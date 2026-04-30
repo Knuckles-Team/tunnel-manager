@@ -2,17 +2,18 @@
 
 import os
 import tempfile
-import yaml
 from unittest.mock import Mock, patch
+
 import pytest
+import yaml
 
 from tunnel_manager.mcp_server import (
     ResponseBuilder,
-    load_inventory,
     _resolve_host,
-    register_misc_tools,
-    register_host_management_tools,
     host_manager,
+    load_inventory,
+    register_host_management_tools,
+    register_misc_tools,
 )
 
 

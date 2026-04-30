@@ -12,9 +12,10 @@ This module provides advanced operation management including:
 import asyncio
 import logging
 import uuid
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator, Callable, Optional
 from datetime import datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,8 @@ class OperationState:
     estimated_remaining_seconds: int = 0
     details: dict = field(default_factory=dict)
     error: str = ""
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
 
 
 @dataclass
@@ -54,7 +55,7 @@ class SessionInfo:
     session_id: str
     host: str
     status: str = "active"
-    last_used: Optional[datetime] = None
+    last_used: datetime | None = None
     age_seconds: int = 0
     connection: Any = None
 

@@ -12,9 +12,9 @@ This module provides advanced file management capabilities including:
 
 import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
-from dataclasses import dataclass
 
 from tunnel_manager.tunnel_manager import Tunnel
 

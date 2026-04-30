@@ -4,12 +4,13 @@ Tests for SystemIntelligence class.
 """
 
 from unittest.mock import Mock
+
 from tunnel_manager.system_intelligence import (
-    SystemIntelligence,
-    SystemInfo,
-    ServiceInfo,
     LogAnalysis,
     NetworkTopology,
+    ServiceInfo,
+    SystemInfo,
+    SystemIntelligence,
 )
 from tunnel_manager.tunnel_manager import Tunnel
 

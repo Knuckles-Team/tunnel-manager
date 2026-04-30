@@ -4,8 +4,10 @@ Tests for OperationManager class.
 """
 
 import asyncio
-import pytest
 from datetime import datetime, timedelta
+
+import pytest
+
 from tunnel_manager.operation_manager import (
     OperationManager,
     OperationState,

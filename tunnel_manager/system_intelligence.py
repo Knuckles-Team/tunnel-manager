@@ -11,8 +11,8 @@ This module provides capabilities for:
 
 import logging
 import re
-from typing import Any
 from dataclasses import dataclass
+from typing import Any
 
 from tunnel_manager.tunnel_manager import Tunnel
 
