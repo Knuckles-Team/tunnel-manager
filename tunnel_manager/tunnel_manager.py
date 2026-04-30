@@ -10,7 +10,7 @@ import sys
 import paramiko
 import yaml
 
-__version__ = "1.1.54"
+__version__ = "1.2.0"
 
 
 class HostManager:
