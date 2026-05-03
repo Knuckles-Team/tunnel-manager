@@ -50,7 +50,7 @@ from tunnel_manager.tunnel_manager import HostManager, Tunnel
 
 from tunnel_manager.tunnel_manager import HostManager, Tunnel
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
