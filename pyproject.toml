@@ -8,7 +8,7 @@ version = "1.2.0"
 description = "Create SSH Tunnels to your remote hosts and host as an MCP Server for Agentic AI!"
 readme = "README.md"
 classifiers = [ "Development Status :: 5 - Production/Stable", "License :: Public Domain", "Environment :: Console", "Operating System :: POSIX :: Linux", "Programming Language :: Python :: 3",]
-requires-python = ">=3.10"
+requires-python = ">=3.11, <3.14"
 dependencies = [ "agent-utilities>=0.2.31", "fastmcp>=3.0.0b1", "paramiko>=4.0.0",]
 [[project.authors]]
 name = "Audel Rouhi"
