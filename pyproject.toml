@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tunnel-manager"
-version = "1.4.0"
+version = "1.5.0"
 description = "Create SSH Tunnels to your remote hosts and host as an MCP Server for Agentic AI!"
 readme = "README.md"
 classifiers = [ "Development Status :: 5 - Production/Stable", "License :: Public Domain", "Environment :: Console", "Operating System :: POSIX :: Linux", "Programming Language :: Python :: 3",]
@@ -39,6 +39,11 @@ target-version = "py310"
 python_version = "3.10"
 ignore_missing_imports = true
 check_untyped_defs = true
+
+[dependency-groups]
+dev = [
+    "pytest-timeout>=2.4.0",
+]
 
 [tool.setuptools.package-data]
 tunnel_manager = [ "mcp_config.json", "agent_data/**",]

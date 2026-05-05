@@ -129,20 +129,26 @@ class TestHostManager:
 
     def test_list_hosts(self):
         """Test listing all hosts."""
+        from tunnel_manager.models import HostConfig
+
         hm = HostManager()
         hm.hosts = {
             "host1": {"hostname": "example1.com"},
             "host2": {"hostname": "example2.com"},
         }
         result = hm.list_hosts()
-        assert result == hm.hosts
+        assert result == {
+            "host1": HostConfig(hostname="example1.com"),
+            "host2": HostConfig(hostname="example2.com"),
+        }
 
     def test_get_host_existing(self):
         """Test getting an existing host."""
+
         hm = HostManager()
         hm.hosts = {"test": {"hostname": "example.com"}}
         result = hm.get_host("test")
-        assert result == {"hostname": "example.com"}
+        assert result.hostname == "example.com"
 
     def test_get_host_nonexistent(self):
         """Test getting a nonexistent host."""

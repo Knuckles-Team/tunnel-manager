@@ -686,7 +686,7 @@ class AdvancedFileManager:
             lines2 = content2.split("\n")
 
             # Simple line-by-line comparison
-            for i, (line1, line2) in enumerate(zip(lines1, lines2)):
+            for i, (line1, line2) in enumerate(zip(lines1, lines2, strict=False)):
                 if line1 != line2:
                     differences.append(
                         {

@@ -10,7 +10,9 @@ import sys
 import paramiko
 import yaml
 
-__version__ = "1.4.0"
+from .models import CommandResult, HostConfig
+
+__version__ = "1.5.0"
 
 
 class HostManager:
@@ -59,15 +61,16 @@ class HostManager:
         proxy_command: str = None,
         **kwargs,
     ):
-        self.hosts[alias] = {
-            "hostname": hostname,
-            "user": user,
-            "port": port,
-            "identity_file": identity_file,
-            "password": password,
-            "proxy_command": proxy_command,
+        host_config = HostConfig(
+            hostname=hostname,
+            user=user,
+            port=port,
+            identity_file=identity_file,
+            password=password,
+            proxy_command=proxy_command,
             **kwargs,
-        }
+        )
+        self.hosts[alias] = host_config.model_dump(exclude_unset=True)
         self.save_inventory()
         self.logger.info(f"Added host: {alias}")
 
@@ -79,17 +82,19 @@ class HostManager:
         else:
             self.logger.warning(f"Host not found: {alias}")
 
-    def list_hosts(self):
-        return self.hosts
+    def list_hosts(self) -> dict[str, HostConfig]:
+        return {k: HostConfig(**v) for k, v in self.hosts.items()}
 
-    def get_host(self, alias: str):
-        return self.hosts.get(alias)
+    def get_host(self, alias: str) -> HostConfig | None:
+        data = self.hosts.get(alias)
+        return HostConfig(**data) if data else None
 
 
 class Tunnel:
     def __init__(
         self,
-        remote_host: str,
+        config: HostConfig = None,
+        remote_host: str = None,
         username: str = None,
         password: str = None,
         port: int = 22,
@@ -99,22 +104,28 @@ class Tunnel:
         ssh_config_file: str = os.path.expanduser("~/.ssh/config"),
     ):
         """
-        Initialize the Tunnel class.
+        Initialize the Tunnel class using either a Pydantic HostConfig model or legacy kwargs.
 
-        :param remote_host: The hostname or IP of the remote host.
-        :param username: The username for authentication (overrides config).
-        :param password: The password for authentication (if no identity_file).
-        :param port: The SSH port (default: 22).
-        :param identity_file: Optional path to the private key file (overrides config).
-        :param certificate_file: Optional path to the certificate file (overrides config).
-        :param proxy_command: Optional proxy command string (overrides config).
-        :param log_file: Optional path to a log file for recording operations.
+        :param config: HostConfig object containing connection details.
         :param ssh_config_file: Optional path to a custom SSH config file (defaults to ~/.ssh/config).
         """
-        self.remote_host = remote_host
-        self.username = username
-        self.password = password
-        self.port = port
+        if config:
+            self.remote_host = config.hostname
+            self.username = config.user
+            self.password = config.password
+            self.port = config.port
+            self.identity_file = config.identity_file or config.key_path
+            self.proxy_command = config.proxy_command
+            self.certificate_file = config.extra_config.get("certificate_file")
+        else:
+            self.remote_host = remote_host
+            self.username = username
+            self.password = password
+            self.port = port
+            self.identity_file = identity_file
+            self.proxy_command = proxy_command
+            self.certificate_file = certificate_file
+
         self.ssh_client = None
         self.sftp = None
         self.logger = logging.getLogger(__name__)
@@ -126,16 +137,19 @@ class Tunnel:
             self.logger.info(f"Loaded SSH config from: {ssh_config_file}")
         else:
             self.logger.warning(f"No SSH config found at: {ssh_config_file}")
-        host_config = self.ssh_config.lookup(remote_host) or {}
 
-        self.username = username or host_config.get("user")
-        self.identity_file = identity_file or (
-            host_config.get("identityfile")[0]
-            if host_config.get("identityfile")
+        host_config_ssh = self.ssh_config.lookup(self.remote_host) or {}
+
+        self.username = self.username or host_config_ssh.get("user")
+        self.identity_file = self.identity_file or (
+            host_config_ssh.get("identityfile")[0]
+            if host_config_ssh.get("identityfile")
             else None
         )
-        self.certificate_file = certificate_file or host_config.get("certificatefile")
-        self.proxy_command = proxy_command or host_config.get("proxycommand")
+        self.certificate_file = self.certificate_file or host_config_ssh.get(
+            "certificatefile"
+        )
+        self.proxy_command = self.proxy_command or host_config_ssh.get("proxycommand")
 
         if not self.username:
             raise ValueError("Username must be provided via parameter or SSH config.")
@@ -201,25 +215,28 @@ class Tunnel:
             self.logger.error(f"Connection failed: {str(e)}")
             raise
 
-    def run_command(self, command):
+    def run_command(self, command) -> CommandResult:
         """
         Run a shell command on the remote host.
 
         :param command: The command to execute.
-        :return: Tuple of (stdout, stderr) as strings.
+        :return: CommandResult object.
         """
         self.connect()
         try:
             stdin, stdout, stderr = self.ssh_client.exec_command(command)  # nosec B601
             out = stdout.read().decode("utf-8").strip()
             err = stderr.read().decode("utf-8").strip()
+            exit_status = stdout.channel.recv_exit_status()
             self.logger.info(
                 f"Command executed: {command}\nOutput: {out}\nError: {err}"
             )
-            return out, err
+            return CommandResult(
+                success=(exit_status == 0), stdout=out, stderr=err, command=command
+            )
         except Exception as e:
             self.logger.error(f"Command execution failed: {str(e)}")
-            raise
+            return CommandResult(success=False, error_message=str(e), command=command)
 
     def send_file(self, local_path, remote_path):
         """
@@ -261,7 +278,7 @@ class Tunnel:
             except Exception as open_err:
                 err_msg = f"Failed to open {local_path} in binary mode: {str(open_err)}"
                 self.logger.error(err_msg)
-                raise OSError(err_msg)
+                raise OSError(err_msg) from open_err
 
             if not self.sftp:
                 self.sftp = self.ssh_client.open_sftp()
@@ -333,9 +350,11 @@ class Tunnel:
         local_key_path = os.path.expanduser(local_key_path)
         try:
             temp_tunnel = Tunnel(
-                remote_host=self.remote_host,
-                username=self.username,
-                identity_file=local_key_path,
+                config=HostConfig(
+                    hostname=self.remote_host,
+                    user=self.username,
+                    key_path=local_key_path,
+                )
             )
             temp_tunnel.connect()
             temp_tunnel.close()
@@ -750,10 +769,12 @@ class Tunnel:
         def run_host(host):
             try:
                 tunnel = Tunnel(
-                    remote_host=host["hostname"],
-                    username=host["username"],
-                    password=host.get("password"),
-                    identity_file=host.get("key_path"),
+                    config=HostConfig(
+                        hostname=host["hostname"],
+                        user=host["username"],
+                        password=host.get("password"),
+                        key_path=host.get("key_path"),
+                    )
                 )
                 out, err = tunnel.run_command(command)
                 logger.info(
@@ -800,10 +821,12 @@ class Tunnel:
 
         def copy_host(host):
             tunnel = Tunnel(
-                remote_host=host["hostname"],
-                username=host["username"],
-                password=host.get("password"),
-                identity_file=host.get("key_path"),
+                config=HostConfig(
+                    hostname=host["hostname"],
+                    user=host["username"],
+                    password=host.get("password"),
+                    key_path=host.get("key_path"),
+                )
             )
             tunnel.copy_ssh_config(local_config_path, remote_config_path)
             tunnel.close()
@@ -832,10 +855,12 @@ class Tunnel:
         def rotate_host(host):
             new_key_path = os.path.expanduser(key_prefix + host["hostname"])
             tunnel = Tunnel(
-                remote_host=host["hostname"],
-                username=host["username"],
-                password=host.get("password"),
-                identity_file=host.get("key_path"),
+                config=HostConfig(
+                    hostname=host["hostname"],
+                    user=host["username"],
+                    password=host.get("password"),
+                    key_path=host.get("key_path"),
+                )
             )
             tunnel.rotate_ssh_key(new_key_path, key_type=key_type)
             logging.info(
@@ -868,10 +893,12 @@ class Tunnel:
 
         def send_host(host):
             tunnel = Tunnel(
-                remote_host=host["hostname"],
-                username=host["username"],
-                password=host.get("password"),
-                identity_file=host.get("key_path"),
+                config=HostConfig(
+                    hostname=host["hostname"],
+                    user=host["username"],
+                    password=host.get("password"),
+                    key_path=host.get("key_path"),
+                )
             )
             tunnel.send_file(local_path, remote_path)
             logging.info(f"Host {host['hostname']}: File uploaded to {remote_path}")
@@ -906,10 +933,12 @@ class Tunnel:
             os.makedirs(host_dir, exist_ok=True)
             local_path = os.path.join(f"{host_dir}", os.path.basename(remote_path))
             tunnel = Tunnel(
-                remote_host=host["hostname"],
-                username=host["username"],
-                password=host.get("password"),
-                identity_file=host.get("key_path"),
+                config=HostConfig(
+                    hostname=host["hostname"],
+                    user=host["username"],
+                    password=host.get("password"),
+                    key_path=host.get("key_path"),
+                )
             )
             tunnel.receive_file(remote_path, local_path)
             logging.info(f"Host {host['hostname']}: File downloaded to {local_path}")

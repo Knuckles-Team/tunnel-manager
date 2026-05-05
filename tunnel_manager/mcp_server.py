@@ -19,10 +19,7 @@ import asyncio
 import concurrent.futures
 import logging
 import os
-<<<<<<< HEAD
-=======
 import subprocess
->>>>>>> d85c5b4 (chore: manual fixes)
 import sys
 from typing import Any
 
@@ -31,26 +28,21 @@ from agent_utilities.base_utilities import to_boolean, to_integer
 from agent_utilities.mcp_utilities import (
     create_mcp_server,
     ctx_confirm_destructive,
-    ctx_progress,
     ctx_log,
+    ctx_progress,
 )
 from dotenv import find_dotenv, load_dotenv
 from fastmcp import Context, FastMCP
 from fastmcp.utilities.logging import get_logger
 from pydantic import Field
-<<<<<<< HEAD
-=======
 
 from tunnel_manager.advanced_file_manager import AdvancedFileManager
 from tunnel_manager.operation_manager import operation_manager
 from tunnel_manager.security_auditor import SecurityAuditor
 from tunnel_manager.system_intelligence import SystemIntelligence
 from tunnel_manager.tunnel_manager import HostManager, Tunnel
->>>>>>> d85c5b4 (chore: manual fixes)
 
-from tunnel_manager.tunnel_manager import HostManager, Tunnel
-
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -145,7 +137,7 @@ def _resolve_host(
     if host_config:
         logger.debug(f"Resolved host alias '{host_alias}' to config: {host_config}")
 
-        final_config = host_config.copy()
+        final_config = host_config.model_dump()
         if user:
             final_config["user"] = user
         if password:
@@ -189,15 +181,11 @@ def register_host_management_tools(mcp: FastMCP):
         },
         tags={"host_management"},
     )
-<<<<<<< HEAD
-    async def list_hosts() -> dict:
-=======
     async def list_hosts(
         ctx: Context = Field(
             description="MCP context for progress reporting", default=None
         ),
     ) -> dict:
->>>>>>> d85c5b4 (chore: manual fixes)
         """List all managed hosts in the inventory."""
         return {"hosts": host_manager.list_hosts()}
 
@@ -220,12 +208,9 @@ def register_host_management_tools(mcp: FastMCP):
         ),
         password: str | None = Field(description="Password (if no key).", default=""),
         proxy_command: str | None = Field(description="Proxy command.", default=""),
-<<<<<<< HEAD
-=======
         ctx: Context = Field(
             description="MCP context for progress reporting", default=None
         ),
->>>>>>> d85c5b4 (chore: manual fixes)
     ) -> dict:
         """Add a new host to the managed inventory."""
         host_manager.add_host(
@@ -250,12 +235,9 @@ def register_host_management_tools(mcp: FastMCP):
     )
     async def remove_host(
         alias: str = Field(description="Alias of the host to remove."),
-<<<<<<< HEAD
-=======
         ctx: Context = Field(
             description="MCP context for progress reporting", default=None
         ),
->>>>>>> d85c5b4 (chore: manual fixes)
     ) -> dict:
         """Remove a host from the managed inventory."""
         if not await ctx_confirm_destructive(ctx, "remove host"):
@@ -480,11 +462,7 @@ def register_remote_access_tools(mcp: FastMCP):
             t.connect()
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
-<<<<<<< HEAD
-                logger.debug("Progress: 0/100")
-=======
                 ctx_log(ctx, logger, "debug", "Progress: 0/100")
->>>>>>> d85c5b4 (chore: manual fixes)
             assert t.ssh_client is not None
             sftp = t.ssh_client.open_sftp()
             transferred = 0
@@ -599,11 +577,7 @@ def register_remote_access_tools(mcp: FastMCP):
             t.connect()
             if ctx:
                 await ctx.report_progress(progress=0, total=100)
-<<<<<<< HEAD
-                logger.debug("Progress: 0/100")
-=======
                 ctx_log(ctx, logger, "debug", "Progress: 0/100")
->>>>>>> d85c5b4 (chore: manual fixes)
             assert t.ssh_client is not None
             sftp = t.ssh_client.open_sftp()
             sftp.stat(rpath)
@@ -1364,10 +1338,6 @@ def register_remote_access_tools(mcp: FastMCP):
                         check=True,
                     )
                 else:
-<<<<<<< HEAD
-                    os.system(f"ssh-keygen -t ed25519 -f {key} -N ''")
-                logger.info(f"Generated {key_type} key: {key}, {pub_key}")
-=======
                     subprocess.run(
                         ["/usr/bin/ssh-keygen", "-t", "ed25519", "-f", key, "-N", ""],
                         check=True,
@@ -1375,7 +1345,6 @@ def register_remote_access_tools(mcp: FastMCP):
                 ctx_log(
                     ctx, logger, "info", f"Generated {key_type} key: {key}, {pub_key}"
                 )
->>>>>>> d85c5b4 (chore: manual fixes)
             with open(pub_key) as f:
                 pub = f.read().strip()
             hosts, error = load_inventory(inventory, group, logger)
@@ -1551,10 +1520,7 @@ def register_remote_access_tools(mcp: FastMCP):
                 ctx_log(ctx, logger, "debug", f"Progress: 0/{total}")
 
             async def run_host(h: dict, ctx: Context) -> dict:
-<<<<<<< HEAD
-=======
                 await ctx_progress(ctx, 0, 100)
->>>>>>> d85c5b4 (chore: manual fixes)
                 host = h["hostname"]
                 try:
                     t = Tunnel(
