@@ -21,7 +21,7 @@
 ![PyPI - Wheel](https://img.shields.io/pypi/wheel/tunnel-manager)
 ![PyPI - Implementation](https://img.shields.io/pypi/implementation/tunnel-manager)
 
-*Version: 1.5.0*
+*Version: 1.6.0*
 
 ## Overview
 
@@ -618,3 +618,100 @@ uv pip install --upgrade tunnel-manager
 
 ![GitHub followers](https://img.shields.io/github/followers/Knucklessg1)
 ![GitHub User's stars](https://img.shields.io/github/stars/Knucklessg1)
+
+
+## MCP Configuration Examples
+
+### 1. Standard IO (stdio) Deployment
+
+```json
+{
+  "mcpServers": {
+    "tunnel-manager": {
+      "command": "uv",
+      "args": [
+        "run",
+        "tunnel-manager-mcp"
+      ],
+      "env": {
+        "ADVANCED_FILE_OPERATIONSTOOL": "True",
+        "AGENT_DESCRIPTION": "<YOUR_AGENT_DESCRIPTION>",
+        "AGENT_SYSTEM_PROMPT": "<YOUR_AGENT_SYSTEM_PROMPT>",
+        "DEFAULT_AGENT_NAME": "<YOUR_DEFAULT_AGENT_NAME>",
+        "HOST_MANAGEMENTTOOL": "True",
+        "LLM_API_KEY": "<YOUR_LLM_API_KEY>",
+        "LLM_BASE_URL": "<YOUR_LLM_BASE_URL>",
+        "MCP_URL": "<YOUR_MCP_URL>",
+        "MISCTOOL": "True",
+        "MODEL_ID": "<YOUR_MODEL_ID>",
+        "OPERATION_MANAGEMENTTOOL": "True",
+        "REMOTE_ACCESSTOOL": "True",
+        "SECURITY_AUDITINGTOOL": "True",
+        "SYSTEM_INTELLIGENCETOOL": "True",
+        "TUNNEL_CERTIFICATE": "<YOUR_TUNNEL_CERTIFICATE>",
+        "TUNNEL_IDENTITY_FILE": "<YOUR_TUNNEL_IDENTITY_FILE>",
+        "TUNNEL_INVENTORY": "<YOUR_TUNNEL_INVENTORY>",
+        "TUNNEL_INVENTORY_GROUP": "<YOUR_TUNNEL_INVENTORY_GROUP>",
+        "TUNNEL_LOG_FILE": "<YOUR_TUNNEL_LOG_FILE>",
+        "TUNNEL_MAX_THREADS": "<YOUR_TUNNEL_MAX_THREADS>",
+        "TUNNEL_PARALLEL": "<YOUR_TUNNEL_PARALLEL>",
+        "TUNNEL_PASSWORD": "<YOUR_TUNNEL_PASSWORD>",
+        "TUNNEL_PROXY_COMMAND": "<YOUR_TUNNEL_PROXY_COMMAND>",
+        "TUNNEL_REMOTE_HOST": "<YOUR_TUNNEL_REMOTE_HOST>",
+        "TUNNEL_REMOTE_PORT": "<YOUR_TUNNEL_REMOTE_PORT>",
+        "TUNNEL_USERNAME": "<YOUR_TUNNEL_USERNAME>"
+      }
+    }
+  }
+}
+```
+
+### 2. Streamable HTTP (SSE) Deployment
+
+```json
+{
+  "mcpServers": {
+    "tunnel-manager": {
+      "command": "uv",
+      "args": [
+        "run",
+        "tunnel-manager-mcp",
+        "--transport",
+        "http",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000"
+      ],
+      "env": {
+        "ADVANCED_FILE_OPERATIONSTOOL": "True",
+        "AGENT_DESCRIPTION": "<YOUR_AGENT_DESCRIPTION>",
+        "AGENT_SYSTEM_PROMPT": "<YOUR_AGENT_SYSTEM_PROMPT>",
+        "DEFAULT_AGENT_NAME": "<YOUR_DEFAULT_AGENT_NAME>",
+        "HOST_MANAGEMENTTOOL": "True",
+        "LLM_API_KEY": "<YOUR_LLM_API_KEY>",
+        "LLM_BASE_URL": "<YOUR_LLM_BASE_URL>",
+        "MCP_URL": "<YOUR_MCP_URL>",
+        "MISCTOOL": "True",
+        "MODEL_ID": "<YOUR_MODEL_ID>",
+        "OPERATION_MANAGEMENTTOOL": "True",
+        "REMOTE_ACCESSTOOL": "True",
+        "SECURITY_AUDITINGTOOL": "True",
+        "SYSTEM_INTELLIGENCETOOL": "True",
+        "TUNNEL_CERTIFICATE": "<YOUR_TUNNEL_CERTIFICATE>",
+        "TUNNEL_IDENTITY_FILE": "<YOUR_TUNNEL_IDENTITY_FILE>",
+        "TUNNEL_INVENTORY": "<YOUR_TUNNEL_INVENTORY>",
+        "TUNNEL_INVENTORY_GROUP": "<YOUR_TUNNEL_INVENTORY_GROUP>",
+        "TUNNEL_LOG_FILE": "<YOUR_TUNNEL_LOG_FILE>",
+        "TUNNEL_MAX_THREADS": "<YOUR_TUNNEL_MAX_THREADS>",
+        "TUNNEL_PARALLEL": "<YOUR_TUNNEL_PARALLEL>",
+        "TUNNEL_PASSWORD": "<YOUR_TUNNEL_PASSWORD>",
+        "TUNNEL_PROXY_COMMAND": "<YOUR_TUNNEL_PROXY_COMMAND>",
+        "TUNNEL_REMOTE_HOST": "<YOUR_TUNNEL_REMOTE_HOST>",
+        "TUNNEL_REMOTE_PORT": "<YOUR_TUNNEL_REMOTE_PORT>",
+        "TUNNEL_USERNAME": "<YOUR_TUNNEL_USERNAME>"
+      }
+    }
+  }
+}
+```
