@@ -42,7 +42,7 @@ from tunnel_manager.security_auditor import SecurityAuditor
 from tunnel_manager.system_intelligence import SystemIntelligence
 from tunnel_manager.tunnel_manager import HostManager, Tunnel
 
-__version__ = "1.7.0"
+__version__ = "1.7.1"
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
