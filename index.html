@@ -1,0 +1,2264 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+      
+        <link rel="next" href="overview/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>tunnel-manager</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#tunnel-manager-a2a-ag-ui-mcp" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="." title="tunnel-manager" class="md-header__button md-logo" aria-label="tunnel-manager" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            tunnel-manager
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Home
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Knuckles-Team/tunnel-manager" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Knuckles-Team/tunnel-manager
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="." title="tunnel-manager" class="md-nav__button md-logo" aria-label="tunnel-manager" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    tunnel-manager
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Knuckles-Team/tunnel-manager" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Knuckles-Team/tunnel-manager
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="." class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Features">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tunnel-class" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tunnel Class
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fastmcp-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FastMCP Server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enhanced-capabilities-for-agentic-frameworks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enhanced Capabilities for Agentic Frameworks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#testing-infrastructure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing Infrastructure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usage
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Usage">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#additional-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Additional Notes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Additional Notes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-setup-passwordless-ssh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Setup Passwordless SSH
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-run-a-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Run a Command
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-copy-ssh-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Copy SSH Config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-rotate-ssh-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Rotate SSH Keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-upload-a-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Upload a File
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-download-a-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Download a File
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tunnel-manager-inventory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tunnel Manager Inventory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mcp-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCP CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#using-as-an-mcp-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using as an MCP Server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a2a-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A2A CLI
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="A2A CLI">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#run-in-stdio-mode-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run in stdio mode (default):
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#run-in-http-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run in HTTP mode:
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tunnel-class_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tunnel Class
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tunnel Class">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#using-rsa-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using RSA Keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#using-ed25519-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Ed25519 Keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deploy-mcp-server-as-a-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deploy MCP Server as a Service
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Deploy MCP Server as a Service">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#using-docker-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Docker Run
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#using-docker-compose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Docker Compose
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configure-mcpjson-for-ai-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configure mcp.json for AI Integration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#install-python-package" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install Python Package
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repository-owners" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repository Owners
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mcp-configuration-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCP Configuration Examples
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MCP Configuration Examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-standard-io-stdio-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Standard IO (stdio) Deployment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-streamable-http-sse-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Streamable HTTP (SSE) Deployment
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Features">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tunnel-class" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tunnel Class
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fastmcp-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FastMCP Server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enhanced-capabilities-for-agentic-frameworks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enhanced Capabilities for Agentic Frameworks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#testing-infrastructure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing Infrastructure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usage
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Usage">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#additional-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Additional Notes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Additional Notes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-setup-passwordless-ssh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Setup Passwordless SSH
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-run-a-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Run a Command
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-copy-ssh-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Copy SSH Config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-rotate-ssh-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Rotate SSH Keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-upload-a-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Upload a File
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-download-a-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Download a File
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tunnel-manager-inventory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tunnel Manager Inventory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mcp-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCP CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#using-as-an-mcp-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using as an MCP Server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a2a-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A2A CLI
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="A2A CLI">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#run-in-stdio-mode-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run in stdio mode (default):
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#run-in-http-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run in HTTP mode:
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tunnel-class_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tunnel Class
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tunnel Class">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#using-rsa-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using RSA Keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#using-ed25519-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Ed25519 Keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deploy-mcp-server-as-a-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deploy MCP Server as a Service
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Deploy MCP Server as a Service">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#using-docker-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Docker Run
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#using-docker-compose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Docker Compose
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configure-mcpjson-for-ai-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configure mcp.json for AI Integration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#install-python-package" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install Python Package
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repository-owners" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repository Owners
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mcp-configuration-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCP Configuration Examples
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MCP Configuration Examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-standard-io-stdio-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Standard IO (stdio) Deployment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-streamable-http-sse-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Streamable HTTP (SSE) Deployment
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="tunnel-manager-a2a-ag-ui-mcp">Tunnel Manager - A2A | AG-UI | MCP<a class="headerlink" href="#tunnel-manager-a2a-ag-ui-mcp" title="Permanent link">&para;</a></h1>
+<p><img alt="PyPI - Version" src="https://img.shields.io/pypi/v/tunnel-manager" />
+<img alt="MCP Server" src="https://badge.mcpx.dev?type=server" title="MCP Server" />
+<img alt="PyPI - Downloads" src="https://img.shields.io/pypi/dd/tunnel-manager" />
+<img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/Knuckles-Team/tunnel-manager" />
+<img alt="GitHub forks" src="https://img.shields.io/github/forks/Knuckles-Team/tunnel-manager" />
+<img alt="GitHub contributors" src="https://img.shields.io/github/contributors/Knuckles-Team/tunnel-manager" />
+<img alt="PyPI - License" src="https://img.shields.io/pypi/l/tunnel-manager" />
+<img alt="GitHub" src="https://img.shields.io/github/license/Knuckles-Team/tunnel-manager" /></p>
+<p><img alt="GitHub last commit (by committer)" src="https://img.shields.io/github/last-commit/Knuckles-Team/tunnel-manager" />
+<img alt="GitHub pull requests" src="https://img.shields.io/github/issues-pr/Knuckles-Team/tunnel-manager" />
+<img alt="GitHub closed pull requests" src="https://img.shields.io/github/issues-pr-closed/Knuckles-Team/tunnel-manager" />
+<img alt="GitHub issues" src="https://img.shields.io/github/issues/Knuckles-Team/tunnel-manager" /></p>
+<p><img alt="GitHub top language" src="https://img.shields.io/github/languages/top/Knuckles-Team/tunnel-manager" />
+<img alt="GitHub language count" src="https://img.shields.io/github/languages/count/Knuckles-Team/tunnel-manager" />
+<img alt="GitHub repo size" src="https://img.shields.io/github/repo-size/Knuckles-Team/tunnel-manager" />
+<img alt="GitHub repo file count (file type)" src="https://img.shields.io/github/directory-file-count/Knuckles-Team/tunnel-manager" />
+<img alt="PyPI - Wheel" src="https://img.shields.io/pypi/wheel/tunnel-manager" />
+<img alt="PyPI - Implementation" src="https://img.shields.io/pypi/implementation/tunnel-manager" /></p>
+<p><em>Version: 1.8.0</em></p>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>This project provides a Python-based <code>Tunnel</code> class for secure SSH connections and file transfers, integrated with a FastMCP server (<code>mcp_server.py</code>) to expose these capabilities as tools for AI-driven workflows. The implementation supports both standard SSH (e.g., for local networks) and Teleport's secure access platform, leveraging the <code>paramiko</code> library for SSH operations.</p>
+<h3 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h3>
+<h4 id="tunnel-class">Tunnel Class<a class="headerlink" href="#tunnel-class" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Purpose</strong>: Facilitates secure SSH connections, file transfers, and key management for single or multiple hosts.</li>
+<li><strong>Key Functionality</strong>:<ul>
+<li><strong>Run Remote Commands</strong>: Execute shell commands on a remote host and retrieve output.</li>
+<li><strong>File Upload/Download</strong>: Transfer files to/from a single host or all hosts in an inventory group using SFTP.</li>
+<li><strong>Passwordless SSH Setup</strong>: Configure key-based authentication for secure, passwordless access, with support for RSA and Ed25519 key types.</li>
+<li><strong>SSH Config Management</strong>: Copy local SSH config files to remote hosts.</li>
+<li><strong>Key Rotation</strong>: Generate and deploy new SSH key pairs (RSA or Ed25519), updating <code>authorized_keys</code>.</li>
+<li><strong>Inventory Support</strong>: Operate on multiple hosts defined in an Ansible-style YAML inventory, with group targeting (e.g., <code>all</code>, <code>homelab</code>, <code>poweredge</code>).</li>
+<li><strong>Teleport Support</strong>: Seamlessly integrates with Teleport's certificate-based authentication and proxying.</li>
+<li><strong>Configuration Flexibility</strong>: Loads SSH settings from <code>~/.ssh/config</code> by default, with optional overrides for username, password, identity files, certificates, and proxy commands.</li>
+<li><strong>Logging</strong>: Optional file-based logging for debugging and auditing.</li>
+<li><strong>Parallel Execution</strong>: Support for parallel operations across multiple hosts with configurable thread limits.</li>
+<li><strong>Key Type Support</strong>: Explicit support for both RSA and Ed25519 keys in authentication, generation, and rotation for enhanced security and compatibility.</li>
+<li><strong>Host Management</strong>: Managed host inventory with <code>HostManager</code> class for storing and retrieving host configurations.</li>
+</ul>
+</li>
+</ul>
+<h4 id="fastmcp-server">FastMCP Server<a class="headerlink" href="#fastmcp-server" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Purpose</strong>: Exposes <code>Tunnel</code> class functionality as a FastMCP server, enabling AI tools to perform remote operations programmatically.</li>
+<li><strong>Tools Provided</strong>:</li>
+<li><strong>Host Management Tools</strong>:<ul>
+<li><code>list_hosts</code>: List all managed hosts in the inventory</li>
+<li><code>add_host</code>: Add a new host to the managed inventory</li>
+<li><code>remove_host</code>: Remove a host from the managed inventory</li>
+</ul>
+</li>
+<li><strong>Single Host Operations</strong>:<ul>
+<li><code>run_command_on_remote_host</code>: Runs a shell command on a single remote host</li>
+<li><code>send_file_to_remote_host</code>: Uploads a file to a single remote host via SFTP</li>
+<li><code>receive_file_from_remote_host</code>: Downloads a file from a single remote host via SFTP</li>
+<li><code>check_ssh_server</code>: Checks if the SSH server is running and configured for key-based authentication</li>
+<li><code>test_key_auth</code>: Tests key-based authentication for a host</li>
+<li><code>setup_passwordless_ssh</code>: Sets up passwordless SSH for a single host</li>
+<li><code>copy_ssh_config</code>: Copies an SSH config file to a single remote host</li>
+<li><code>rotate_ssh_key</code>: Rotates SSH keys for a single host</li>
+<li><code>remove_host_key</code>: Removes a host's key from the local <code>known_hosts</code> file</li>
+</ul>
+</li>
+<li><strong>Inventory Operations</strong>:<ul>
+<li><code>configure_key_auth_on_inventory</code>: Sets up passwordless SSH for all hosts in an inventory group</li>
+<li><code>run_command_on_inventory</code>: Runs a command on all hosts in an inventory group</li>
+<li><code>copy_ssh_config_on_inventory</code>: Copies an SSH config file to all hosts in an inventory group</li>
+<li><code>rotate_ssh_key_on_inventory</code>: Rotates SSH keys for all hosts in an inventory group</li>
+<li><code>send_file_to_inventory</code>: Uploads a file to all hosts in an inventory group via SFTP</li>
+<li><code>receive_file_from_inventory</code>: Downloads a file from all hosts in an inventory group via SFTP</li>
+</ul>
+</li>
+<li><strong>Operation Management Tools</strong>:<ul>
+<li><code>start_operation</code>: Start a new operation with progress tracking</li>
+<li><code>get_operation_progress</code>: Get the progress of a running operation</li>
+<li><code>cancel_operation</code>: Cancel a running operation</li>
+<li><code>get_resource_metrics</code>: Get resource metrics during operations</li>
+<li><code>list_active_sessions</code>: List active SSH sessions</li>
+</ul>
+</li>
+<li><strong>System Intelligence Tools</strong>:<ul>
+<li><code>get_system_info</code>: Get comprehensive system information (OS, hardware, packages, uptime)</li>
+<li><code>discover_services</code>: Discover running services, processes, and open ports</li>
+<li><code>analyze_logs</code>: Analyze log files for specified patterns</li>
+<li><code>network_topology</code>: Map network interfaces, routes, and active connections</li>
+</ul>
+</li>
+<li><strong>Advanced File Operations Tools</strong>:<ul>
+<li><code>recursive_file_operations</code>: Perform recursive directory operations (copy, move, delete, list, chmod, chown)</li>
+<li><code>file_content_search</code>: Search for file content across directories</li>
+<li><code>file_watch_monitor</code>: Monitor files/directories for real-time changes</li>
+<li><code>file_diff_compare</code>: Compare files across two different hosts</li>
+<li><code>smart_backup</code>: Create automated backups with versioning and compression</li>
+</ul>
+</li>
+<li><strong>Security Auditing Tools</strong>:<ul>
+<li><code>security_audit</code>: Perform comprehensive security assessment</li>
+<li><code>compliance_check</code>: Check compliance against security standards (CIS, PCI DSS, HIPAA)</li>
+<li><code>vulnerability_scan</code>: Scan for known vulnerabilities</li>
+<li><code>access_control_audit</code>: Audit access controls and permissions</li>
+</ul>
+</li>
+<li><strong>Transport Options</strong>: Supports <code>stdio</code> (for local scripting), <code>http</code>, and <code>sse</code> transport modes.</li>
+<li><strong>Progress Reporting</strong>: Integrates with FastMCP's <code>Context</code> for progress updates during operations.</li>
+<li><strong>Logging</strong>: Comprehensive logging to a file or console output.</li>
+<li><strong>Error Handling</strong>: Consistent error responses using <code>ResponseBuilder</code> for all tools.</li>
+</ul>
+<h4 id="enhanced-capabilities-for-agentic-frameworks">Enhanced Capabilities for Agentic Frameworks<a class="headerlink" href="#enhanced-capabilities-for-agentic-frameworks" title="Permanent link">&para;</a></h4>
+<p>The tunnel-manager now includes advanced capabilities specifically designed for AI-driven workflows:</p>
+<p><strong>Operation Management</strong>
+- Track long-running operations with streaming progress updates
+- Monitor CPU, memory, and disk usage during operations
+- Maintain persistent SSH connection pools for efficiency
+- Cancel in-progress operations gracefully
+- Tools: start_operation, get_operation_progress, cancel_operation, get_resource_metrics, list_active_sessions</p>
+<p><strong>System Intelligence &amp; Discovery</strong>
+- Gather comprehensive system information (OS, hardware, packages, uptime)
+- Discover running services, processes, and open ports
+- Analyze log files for patterns and security events
+- Map network topology (interfaces, routes, DNS, connections)
+- Tools: get_system_info, discover_services, analyze_logs, network_topology</p>
+<p><strong>Advanced File Operations</strong>
+- Perform recursive directory operations (copy, move, delete, chmod, chown)
+- Search file content across multiple directories with grep-like functionality
+- Monitor files/directories for real-time changes
+- Compare files across different hosts
+- Create automated backups with compression and versioning
+- Tools: recursive_file_operations, file_content_search, file_watch_monitor, file_diff_compare, smart_backup</p>
+<p><strong>Security &amp; Compliance Automation</strong>
+- Perform comprehensive security assessments with scoring (0-100)
+- Check compliance against industry standards (CIS Benchmark, PCI DSS, HIPAA)
+- Scan for known vulnerabilities in packages and configurations
+- Audit access controls, user permissions, sudo configuration, and SSH settings
+- Tools: security_audit, compliance_check, vulnerability_scan, access_control_audit</p>
+<h4 id="testing-infrastructure">Testing Infrastructure<a class="headerlink" href="#testing-infrastructure" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Comprehensive Test Suite</strong>: 212 tests covering core functionality with enhanced capabilities (98.6% pass rate)</li>
+<li><strong>Test Coverage</strong>:</li>
+<li><code>tunnel_manager.py</code>: 74% coverage</li>
+<li><code>agent_server.py</code>: 96% coverage</li>
+<li><code>__init__.py</code>: 89% coverage</li>
+<li><code>operation_manager.py</code>: Full test coverage (37 tests)</li>
+<li><code>system_intelligence.py</code>: Full test coverage (27 tests)</li>
+<li><code>advanced_file_manager.py</code>: Full test coverage (32 tests)</li>
+<li><code>security_auditor.py</code>: Full test coverage (28 tests)</li>
+<li><strong>Test Categories</strong>:</li>
+<li>Unit tests for <code>HostManager</code> class</li>
+<li>Unit tests for <code>Tunnel</code> class (SSH operations, file transfers, key management)</li>
+<li>Unit tests for MCP server helper functions</li>
+<li>Unit tests for agent server functionality</li>
+<li>Integration tests for SSH operations</li>
+<li>Tests for enhanced operation management with progress tracking</li>
+<li>Tests for system intelligence and discovery</li>
+<li>Tests for advanced file operations</li>
+<li>Tests for security and compliance auditing</li>
+<li><strong>Testing Framework</strong>: pytest with pytest-asyncio for async testing</li>
+</ul>
+<h2 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h2>
+<h3 id="cli">CLI<a class="headerlink" href="#cli" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Short Flag</th>
+<th>Long Flag</th>
+<th>Description</th>
+<th>Required</th>
+<th>Default Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>-h</td>
+<td>--help</td>
+<td>Show usage for the script</td>
+<td>No</td>
+<td>None</td>
+</tr>
+<tr>
+<td></td>
+<td>--log-file</td>
+<td>Log to specified file (default: console output)</td>
+<td>No</td>
+<td>Console</td>
+</tr>
+<tr>
+<td></td>
+<td>setup-all</td>
+<td>Setup passwordless SSH for all hosts in inventory</td>
+<td>Yes*</td>
+<td>None</td>
+</tr>
+<tr>
+<td></td>
+<td>--inventory</td>
+<td>YAML inventory path</td>
+<td>Yes</td>
+<td>None</td>
+</tr>
+<tr>
+<td></td>
+<td>--shared-key-path</td>
+<td>Path to shared private key</td>
+<td>No</td>
+<td>~/.ssh/id_shared</td>
+</tr>
+<tr>
+<td></td>
+<td>--key-type</td>
+<td>Key type (rsa or ed25519)</td>
+<td>No</td>
+<td>ed25519</td>
+</tr>
+<tr>
+<td></td>
+<td>--group</td>
+<td>Inventory group to target</td>
+<td>No</td>
+<td>all</td>
+</tr>
+<tr>
+<td></td>
+<td>--parallel</td>
+<td>Run operation in parallel</td>
+<td>No</td>
+<td>False</td>
+</tr>
+<tr>
+<td></td>
+<td>--max-threads</td>
+<td>Max threads for parallel execution</td>
+<td>No</td>
+<td>5</td>
+</tr>
+<tr>
+<td></td>
+<td>run-command</td>
+<td>Run a shell command on all hosts in inventory</td>
+<td>Yes*</td>
+<td>None</td>
+</tr>
+<tr>
+<td></td>
+<td>--remote-command</td>
+<td>Shell command to run</td>
+<td>Yes</td>
+<td>None</td>
+</tr>
+<tr>
+<td></td>
+<td>copy-config</td>
+<td>Copy SSH config to all hosts in inventory</td>
+<td>Yes*</td>
+<td>None</td>
+</tr>
+<tr>
+<td></td>
+<td>--local-config-path</td>
+<td>Local SSH config path</td>
+<td>Yes</td>
+<td>None</td>
+</tr>
+<tr>
+<td></td>
+<td>--remote-config-path</td>
+<td>Remote path for SSH config</td>
+<td>No</td>
+<td>~/.ssh/config</td>
+</tr>
+<tr>
+<td></td>
+<td>rotate-key</td>
+<td>Rotate SSH keys for all hosts in inventory</td>
+<td>Yes*</td>
+<td>None</td>
+</tr>
+<tr>
+<td></td>
+<td>--key-prefix</td>
+<td>Prefix for new key paths (appends hostname)</td>
+<td>No</td>
+<td>~/.ssh/id_</td>
+</tr>
+<tr>
+<td></td>
+<td>--key-type</td>
+<td>Key type (rsa or ed25519)</td>
+<td>No</td>
+<td>ed25519</td>
+</tr>
+<tr>
+<td></td>
+<td>send-file</td>
+<td>Upload a file to all hosts in inventory</td>
+<td>Yes*</td>
+<td>None</td>
+</tr>
+<tr>
+<td></td>
+<td>--local-path</td>
+<td>Local file path to upload</td>
+<td>Yes</td>
+<td>None</td>
+</tr>
+<tr>
+<td></td>
+<td>--remote-path</td>
+<td>Remote destination path</td>
+<td>Yes</td>
+<td>None</td>
+</tr>
+<tr>
+<td></td>
+<td>receive-file</td>
+<td>Download a file from all hosts in inventory</td>
+<td>Yes*</td>
+<td>None</td>
+</tr>
+<tr>
+<td></td>
+<td>--remote-path</td>
+<td>Remote file path to download</td>
+<td>Yes</td>
+<td>None</td>
+</tr>
+<tr>
+<td></td>
+<td>--local-path-prefix</td>
+<td>Local directory path prefix to save files</td>
+<td>Yes</td>
+<td>None</td>
+</tr>
+</tbody>
+</table>
+<h3 id="notes">Notes<a class="headerlink" href="#notes" title="Permanent link">&para;</a></h3>
+<p>One of the commands (<code>setup-all</code>, <code>run-command</code>, <code>copy-config</code>, <code>rotate-key</code>, <code>send-file</code>, <code>receive-file</code>) must be specified as the first argument to <code>tunnel_manager.py</code>. Each command has required arguments that must be specified with flags:
+- <code>setup-all</code>: Requires <code>--inventory</code>.
+- <code>run-command</code>: Requires <code>--inventory</code> and <code>--remote-command</code>.
+- <code>copy-config</code>: Requires <code>--inventory</code> and <code>--local-config-path</code>.
+- <code>rotate-key</code>: Requires <code>--inventory</code>.
+- <code>send-file</code>: Requires <code>--inventory</code>, <code>--local-path</code>, and <code>--remote-path</code>.
+- <code>receive-file</code>: Requires <code>--inventory</code>, <code>--remote-path</code>, and <code>--local-path-prefix</code>.</p>
+<h3 id="additional-notes">Additional Notes<a class="headerlink" href="#additional-notes" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Ensure <code>ansible_host</code> values in <code>inventory.yml</code> are resolvable IPs or hostnames.</li>
+<li>Update <code>ansible_ssh_private_key_file</code> in the inventory after running <code>rotate-key</code>.</li>
+<li>Use <code>--log-file</code> for file-based logging or omit for console output.</li>
+<li>The <code>--parallel</code> option speeds up operations but may overload resources; adjust <code>--max-threads</code> as needed.</li>
+<li>The <code>receive-file</code> command saves files to <code>local_path_prefix/&lt;hostname&gt;/&lt;filename&gt;</code> to preserve original filenames and avoid conflicts.</li>
+<li>Ed25519 keys are recommended for better security and performance over RSA, but RSA is supported for compatibility with older systems.</li>
+</ul>
+<h4 id="1-setup-passwordless-ssh">1. Setup Passwordless SSH<a class="headerlink" href="#1-setup-passwordless-ssh" title="Permanent link">&para;</a></h4>
+<p>Set up passwordless SSH for hosts in the inventory, distributing a shared key. Use <code>--key-type</code> to specify RSA or Ed25519 (default: ed25519).
+- <strong>Target <code>all</code> group (sequential, Ed25519)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>tunnel-manager<span class="w"> </span>setup-all<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--shared-key-path<span class="w"> </span>~/.ssh/id_shared<span class="w"> </span>--key-type<span class="w"> </span>ed25519
+</code></pre></div>
+- <strong>Target <code>homelab</code> group (parallel, 3 threads, RSA)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>tunnel-manager<span class="w"> </span>setup-all<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--shared-key-path<span class="w"> </span>~/.ssh/id_shared_rsa<span class="w"> </span>--key-type<span class="w"> </span>rsa<span class="w"> </span>--group<span class="w"> </span>homelab<span class="w"> </span>--parallel<span class="w"> </span>--max-threads<span class="w"> </span><span class="m">3</span>
+</code></pre></div>
+- <strong>Target <code>poweredge</code> group (sequential, Ed25519)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>tunnel-manager<span class="w"> </span>--log-file<span class="w"> </span>setup_poweredge.log<span class="w"> </span>setup-all<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--shared-key-path<span class="w"> </span>~/.ssh/id_shared<span class="w"> </span>--key-type<span class="w"> </span>ed25519<span class="w"> </span>--group<span class="w"> </span>poweredge
+</code></pre></div></p>
+<h4 id="2-run-a-command">2. Run a Command<a class="headerlink" href="#2-run-a-command" title="Permanent link">&para;</a></h4>
+<p>Execute a shell command on all hosts in the specified group.
+- <strong>Run <code>uptime</code> on <code>all</code> group (sequential)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>tunnel-manager<span class="w"> </span>run-command<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--remote-command<span class="w"> </span><span class="s2">&quot;uptime&quot;</span>
+</code></pre></div>
+- <strong>Run <code>df -h</code> on <code>homelab</code> group (parallel, 5 threads)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>tunnel-manager<span class="w"> </span>run-command<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--remote-command<span class="w"> </span><span class="s2">&quot;df -h&quot;</span><span class="w"> </span>--group<span class="w"> </span>homelab<span class="w"> </span>--parallel<span class="w"> </span>--max-threads<span class="w"> </span><span class="m">5</span>
+</code></pre></div>
+- <strong>Run <code>whoami</code> on <code>poweredge</code> group (sequential)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>tunnel-manager<span class="w"> </span>run-command<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--remote-command<span class="w"> </span><span class="s2">&quot;whoami&quot;</span><span class="w"> </span>--group<span class="w"> </span>poweredge
+</code></pre></div></p>
+<h4 id="3-copy-ssh-config">3. Copy SSH Config<a class="headerlink" href="#3-copy-ssh-config" title="Permanent link">&para;</a></h4>
+<p>Copy a local SSH config file to the remote hosts’ <code>~/.ssh/config</code>.
+- <strong>Copy to <code>all</code> group (sequential)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>tunnel-manager<span class="w"> </span>copy-config<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--local-config-path<span class="w"> </span>~/.ssh/config
+</code></pre></div>
+- <strong>Copy to <code>homelab</code> group (parallel, 4 threads)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>tunnel-manager<span class="w"> </span>copy-config<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--local-config-path<span class="w"> </span>~/.ssh/config<span class="w"> </span>--group<span class="w"> </span>homelab<span class="w"> </span>--parallel<span class="w"> </span>--max-threads<span class="w"> </span><span class="m">4</span>
+</code></pre></div>
+- <strong>Copy to <code>poweredge</code> group with custom remote path</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>tunnel-manager<span class="w"> </span>--log-file<span class="w"> </span>copy_config.log<span class="w"> </span>copy-config<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--local-config-path<span class="w"> </span>~/.ssh/config<span class="w"> </span>--remote-config-path<span class="w"> </span>~/.ssh/custom_config<span class="w"> </span>--group<span class="w"> </span>poweredge
+</code></pre></div></p>
+<h4 id="4-rotate-ssh-keys">4. Rotate SSH Keys<a class="headerlink" href="#4-rotate-ssh-keys" title="Permanent link">&para;</a></h4>
+<p>Rotate SSH keys for hosts, generating new keys with a prefix. Use <code>--key-type</code> to specify RSA or Ed25519 (default: ed25519).
+- <strong>Rotate keys for <code>all</code> group (sequential, Ed25519)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>tunnel-manager<span class="w"> </span>rotate-key<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--key-prefix<span class="w"> </span>~/.ssh/id_<span class="w"> </span>--key-type<span class="w"> </span>ed25519
+</code></pre></div>
+- <strong>Rotate keys for <code>homelab</code> group (parallel, 3 threads, RSA)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>tunnel-manager<span class="w"> </span>rotate-key<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--key-prefix<span class="w"> </span>~/.ssh/id_rsa_<span class="w"> </span>--key-type<span class="w"> </span>rsa<span class="w"> </span>--group<span class="w"> </span>homelab<span class="w"> </span>--parallel<span class="w"> </span>--max-threads<span class="w"> </span><span class="m">3</span>
+</code></pre></div>
+- <strong>Rotate keys for <code>poweredge</code> group (sequential, Ed25519)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>tunnel-manager<span class="w"> </span>--log-file<span class="w"> </span>rotate.log<span class="w"> </span>rotate-key<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--key-prefix<span class="w"> </span>~/.ssh/id_<span class="w"> </span>--key-type<span class="w"> </span>ed25519<span class="w"> </span>--group<span class="w"> </span>poweredge
+</code></pre></div></p>
+<h4 id="5-upload-a-file">5. Upload a File<a class="headerlink" href="#5-upload-a-file" title="Permanent link">&para;</a></h4>
+<p>Upload a local file to all hosts in the specified group.
+- <strong>Upload to <code>all</code> group (sequential)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>tunnel-manager<span class="w"> </span>send-file<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--local-path<span class="w"> </span>./myfile.txt<span class="w"> </span>--remote-path<span class="w"> </span>/home/user/myfile.txt
+</code></pre></div>
+- <strong>Upload to <code>homelab</code> group (parallel, 3 threads)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>tunnel-manager<span class="w"> </span>send-file<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--local-path<span class="w"> </span>./myfile.txt<span class="w"> </span>--remote-path<span class="w"> </span>/home/user/myfile.txt<span class="w"> </span>--group<span class="w"> </span>homelab<span class="w"> </span>--parallel<span class="w"> </span>--max-threads<span class="w"> </span><span class="m">3</span>
+</code></pre></div>
+- <strong>Upload to <code>poweredge</code> group (sequential)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>tunnel-manager<span class="w"> </span>--log-file<span class="w"> </span>upload_poweredge.log<span class="w"> </span>send-file<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--local-path<span class="w"> </span>./myfile.txt<span class="w"> </span>--remote-path<span class="w"> </span>/home/user/myfile.txt<span class="w"> </span>--group<span class="w"> </span>poweredge
+</code></pre></div></p>
+<h4 id="6-download-a-file">6. Download a File<a class="headerlink" href="#6-download-a-file" title="Permanent link">&para;</a></h4>
+<p>Download a file from all hosts in the specified group, saving to host-specific subdirectories (e.g., <code>downloads/R510/myfile.txt</code>).
+- <strong>Download from <code>all</code> group (sequential)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>tunnel-manager<span class="w"> </span>receive-file<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--remote-path<span class="w"> </span>/home/user/myfile.txt<span class="w"> </span>--local-path-prefix<span class="w"> </span>./downloads
+</code></pre></div>
+- <strong>Download from <code>homelab</code> group (parallel, 3 threads)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>tunnel-manager<span class="w"> </span>receive-file<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--remote-path<span class="w"> </span>/home/user/myfile.txt<span class="w"> </span>--local-path-prefix<span class="w"> </span>./downloads<span class="w"> </span>--group<span class="w"> </span>homelab<span class="w"> </span>--parallel<span class="w"> </span>--max-threads<span class="w"> </span><span class="m">3</span>
+</code></pre></div>
+- <strong>Download from <code>poweredge</code> group (sequential)</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>tunnel-manager<span class="w"> </span>--log-file<span class="w"> </span>download_poweredge.log<span class="w"> </span>receive-file<span class="w"> </span>--inventory<span class="w"> </span>inventory.yml<span class="w"> </span>--remote-path<span class="w"> </span>/home/user/myfile.txt<span class="w"> </span>--local-path-prefix<span class="w"> </span>./downloads<span class="w"> </span>--group<span class="w"> </span>poweredge
+</code></pre></div></p>
+<h3 id="tunnel-manager-inventory">Tunnel Manager Inventory<a class="headerlink" href="#tunnel-manager-inventory" title="Permanent link">&para;</a></h3>
+<p><strong>Inventory File Example (<code>inventory.yml</code>)</strong>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="nt">all</span><span class="p">:</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">  </span><span class="nt">hosts</span><span class="p">:</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="w">    </span><span class="nt">r510</span><span class="p">:</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="w">      </span><span class="nt">ansible_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">192.168.1.10</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="w">      </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="w">      </span><span class="nt">ansible_ssh_private_key_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;~/.ssh/id_ed25519&quot;</span>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="w">    </span><span class="nt">r710</span><span class="p">:</span>
+<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="w">      </span><span class="nt">ansible_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">192.168.1.11</span>
+<a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a><span class="w">      </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
+<a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a><span class="w">      </span><span class="nt">ansible_ssh_pass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mypassword</span>
+<a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a><span class="w">    </span><span class="nt">gr1080</span><span class="p">:</span>
+<a id="__codelineno-18-12" name="__codelineno-18-12" href="#__codelineno-18-12"></a><span class="w">      </span><span class="nt">ansible_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">192.168.1.14</span>
+<a id="__codelineno-18-13" name="__codelineno-18-13" href="#__codelineno-18-13"></a><span class="w">      </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
+<a id="__codelineno-18-14" name="__codelineno-18-14" href="#__codelineno-18-14"></a><span class="w">      </span><span class="nt">ansible_ssh_private_key_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;~/.ssh/id_rsa&quot;</span>
+<a id="__codelineno-18-15" name="__codelineno-18-15" href="#__codelineno-18-15"></a><span class="nt">homelab</span><span class="p">:</span>
+<a id="__codelineno-18-16" name="__codelineno-18-16" href="#__codelineno-18-16"></a><span class="w">  </span><span class="nt">hosts</span><span class="p">:</span>
+<a id="__codelineno-18-17" name="__codelineno-18-17" href="#__codelineno-18-17"></a><span class="w">    </span><span class="nt">r510</span><span class="p">:</span>
+<a id="__codelineno-18-18" name="__codelineno-18-18" href="#__codelineno-18-18"></a><span class="w">      </span><span class="nt">ansible_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">192.168.1.10</span>
+<a id="__codelineno-18-19" name="__codelineno-18-19" href="#__codelineno-18-19"></a><span class="w">      </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
+<a id="__codelineno-18-20" name="__codelineno-18-20" href="#__codelineno-18-20"></a><span class="w">      </span><span class="nt">ansible_ssh_private_key_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;~/.ssh/id_ed25519&quot;</span>
+<a id="__codelineno-18-21" name="__codelineno-18-21" href="#__codelineno-18-21"></a><span class="w">    </span><span class="nt">r710</span><span class="p">:</span>
+<a id="__codelineno-18-22" name="__codelineno-18-22" href="#__codelineno-18-22"></a><span class="w">      </span><span class="nt">ansible_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">192.168.1.11</span>
+<a id="__codelineno-18-23" name="__codelineno-18-23" href="#__codelineno-18-23"></a><span class="w">      </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
+<a id="__codelineno-18-24" name="__codelineno-18-24" href="#__codelineno-18-24"></a><span class="w">      </span><span class="nt">ansible_ssh_pass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mypassword</span>
+<a id="__codelineno-18-25" name="__codelineno-18-25" href="#__codelineno-18-25"></a><span class="w">    </span><span class="nt">gr1080</span><span class="p">:</span>
+<a id="__codelineno-18-26" name="__codelineno-18-26" href="#__codelineno-18-26"></a><span class="w">      </span><span class="nt">ansible_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">192.168.1.14</span>
+<a id="__codelineno-18-27" name="__codelineno-18-27" href="#__codelineno-18-27"></a><span class="w">      </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
+<a id="__codelineno-18-28" name="__codelineno-18-28" href="#__codelineno-18-28"></a><span class="w">      </span><span class="nt">ansible_ssh_private_key_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;~/.ssh/id_rsa&quot;</span>
+<a id="__codelineno-18-29" name="__codelineno-18-29" href="#__codelineno-18-29"></a><span class="nt">poweredge</span><span class="p">:</span>
+<a id="__codelineno-18-30" name="__codelineno-18-30" href="#__codelineno-18-30"></a><span class="w">  </span><span class="nt">hosts</span><span class="p">:</span>
+<a id="__codelineno-18-31" name="__codelineno-18-31" href="#__codelineno-18-31"></a><span class="w">    </span><span class="nt">r510</span><span class="p">:</span>
+<a id="__codelineno-18-32" name="__codelineno-18-32" href="#__codelineno-18-32"></a><span class="w">      </span><span class="nt">ansible_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">192.168.1.10</span>
+<a id="__codelineno-18-33" name="__codelineno-18-33" href="#__codelineno-18-33"></a><span class="w">      </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
+<a id="__codelineno-18-34" name="__codelineno-18-34" href="#__codelineno-18-34"></a><span class="w">      </span><span class="nt">ansible_ssh_private_key_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;~/.ssh/id_ed25519&quot;</span>
+<a id="__codelineno-18-35" name="__codelineno-18-35" href="#__codelineno-18-35"></a><span class="w">    </span><span class="nt">r710</span><span class="p">:</span>
+<a id="__codelineno-18-36" name="__codelineno-18-36" href="#__codelineno-18-36"></a><span class="w">      </span><span class="nt">ansible_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">192.168.1.11</span>
+<a id="__codelineno-18-37" name="__codelineno-18-37" href="#__codelineno-18-37"></a><span class="w">      </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
+<a id="__codelineno-18-38" name="__codelineno-18-38" href="#__codelineno-18-38"></a><span class="w">      </span><span class="nt">ansible_ssh_pass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mypassword</span>
+</code></pre></div>
+<p>Replace IPs, usernames, and passwords with your actual values.</p>
+<h3 id="mcp-cli">MCP CLI<a class="headerlink" href="#mcp-cli" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Short Flag</th>
+<th>Long Flag</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>-h</td>
+<td>--help</td>
+<td>Display help information</td>
+</tr>
+<tr>
+<td>-t</td>
+<td>--transport</td>
+<td>Transport method: 'stdio', 'http', or 'sse' [legacy] (default: stdio)</td>
+</tr>
+<tr>
+<td>-s</td>
+<td>--host</td>
+<td>Host address for HTTP transport (default: 0.0.0.0)</td>
+</tr>
+<tr>
+<td>-p</td>
+<td>--port</td>
+<td>Port number for HTTP transport (default: 8000)</td>
+</tr>
+<tr>
+<td></td>
+<td>--auth-type</td>
+<td>Authentication type: 'none', 'static', 'jwt', 'oauth-proxy', 'oidc-proxy', 'remote-oauth' (default: none)</td>
+</tr>
+<tr>
+<td></td>
+<td>--token-jwks-uri</td>
+<td>JWKS URI for JWT verification</td>
+</tr>
+<tr>
+<td></td>
+<td>--token-issuer</td>
+<td>Issuer for JWT verification</td>
+</tr>
+<tr>
+<td></td>
+<td>--token-audience</td>
+<td>Audience for JWT verification</td>
+</tr>
+<tr>
+<td></td>
+<td>--oauth-upstream-auth-endpoint</td>
+<td>Upstream authorization endpoint for OAuth Proxy</td>
+</tr>
+<tr>
+<td></td>
+<td>--oauth-upstream-token-endpoint</td>
+<td>Upstream token endpoint for OAuth Proxy</td>
+</tr>
+<tr>
+<td></td>
+<td>--oauth-upstream-client-id</td>
+<td>Upstream client ID for OAuth Proxy</td>
+</tr>
+<tr>
+<td></td>
+<td>--oauth-upstream-client-secret</td>
+<td>Upstream client secret for OAuth Proxy</td>
+</tr>
+<tr>
+<td></td>
+<td>--oauth-base-url</td>
+<td>Base URL for OAuth Proxy</td>
+</tr>
+<tr>
+<td></td>
+<td>--oidc-config-url</td>
+<td>OIDC configuration URL</td>
+</tr>
+<tr>
+<td></td>
+<td>--oidc-client-id</td>
+<td>OIDC client ID</td>
+</tr>
+<tr>
+<td></td>
+<td>--oidc-client-secret</td>
+<td>OIDC client secret</td>
+</tr>
+<tr>
+<td></td>
+<td>--oidc-base-url</td>
+<td>Base URL for OIDC Proxy</td>
+</tr>
+<tr>
+<td></td>
+<td>--remote-auth-servers</td>
+<td>Comma-separated list of authorization servers for Remote OAuth</td>
+</tr>
+<tr>
+<td></td>
+<td>--remote-base-url</td>
+<td>Base URL for Remote OAuth</td>
+</tr>
+<tr>
+<td></td>
+<td>--allowed-client-redirect-uris</td>
+<td>Comma-separated list of allowed client redirect URIs</td>
+</tr>
+<tr>
+<td></td>
+<td>--eunomia-type</td>
+<td>Eunomia authorization type: 'none', 'embedded', 'remote' (default: none)</td>
+</tr>
+<tr>
+<td></td>
+<td>--eunomia-policy-file</td>
+<td>Policy file for embedded Eunomia (default: mcp_policies.json)</td>
+</tr>
+<tr>
+<td></td>
+<td>--eunomia-remote-url</td>
+<td>URL for remote Eunomia server</td>
+</tr>
+</tbody>
+</table>
+<h3 id="using-as-an-mcp-server">Using as an MCP Server<a class="headerlink" href="#using-as-an-mcp-server" title="Permanent link">&para;</a></h3>
+<p>The MCP Server can be run in two modes: <code>stdio</code> (for local testing) or <code>http</code> (for networked access). To start the server, use the following commands:</p>
+<h3 id="a2a-cli">A2A CLI<a class="headerlink" href="#a2a-cli" title="Permanent link">&para;</a></h3>
+<h4 id="endpoints">Endpoints<a class="headerlink" href="#endpoints" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Web UI</strong>: <code>http://localhost:8000/</code> (if enabled)</li>
+<li><strong>A2A</strong>: <code>http://localhost:8000/a2a</code> (Discovery: <code>/a2a/.well-known/agent.json</code>)</li>
+<li><strong>AG-UI</strong>: <code>http://localhost:8000/ag-ui</code> (POST)</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Short Flag</th>
+<th>Long Flag</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>-h</td>
+<td>--help</td>
+<td>Display help information</td>
+</tr>
+<tr>
+<td></td>
+<td>--host</td>
+<td>Host to bind the server to (default: 0.0.0.0)</td>
+</tr>
+<tr>
+<td></td>
+<td>--port</td>
+<td>Port to bind the server to (default: 9000)</td>
+</tr>
+<tr>
+<td></td>
+<td>--reload</td>
+<td>Enable auto-reload</td>
+</tr>
+<tr>
+<td></td>
+<td>--provider</td>
+<td>LLM Provider: 'openai', 'anthropic', 'google', 'huggingface'</td>
+</tr>
+<tr>
+<td></td>
+<td>--model-id</td>
+<td>LLM Model ID (default: nvidia/nemotron-3-super)</td>
+</tr>
+<tr>
+<td></td>
+<td>--base-url</td>
+<td>LLM Base URL (for OpenAI compatible providers)</td>
+</tr>
+<tr>
+<td></td>
+<td>--api-key</td>
+<td>LLM API Key</td>
+</tr>
+<tr>
+<td></td>
+<td>--mcp-url</td>
+<td>MCP Server URL (default: http://localhost:8000/mcp)</td>
+</tr>
+<tr>
+<td></td>
+<td>--web</td>
+<td>Enable Pydantic AI Web UI</td>
+</tr>
+</tbody>
+</table>
+<h4 id="run-in-stdio-mode-default">Run in stdio mode (default):<a class="headerlink" href="#run-in-stdio-mode-default" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>tunnel-manager-mcp<span class="w"> </span>--transport<span class="w"> </span><span class="s2">&quot;stdio&quot;</span>
+</code></pre></div>
+<h4 id="run-in-http-mode">Run in HTTP mode:<a class="headerlink" href="#run-in-http-mode" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>tunnel-manager-mcp<span class="w"> </span>--transport<span class="w"> </span><span class="s2">&quot;http&quot;</span><span class="w">  </span>--host<span class="w"> </span><span class="s2">&quot;0.0.0.0&quot;</span><span class="w">  </span>--port<span class="w"> </span><span class="s2">&quot;8000&quot;</span>
+</code></pre></div>
+<h3 id="tunnel-class_1">Tunnel Class<a class="headerlink" href="#tunnel-class_1" title="Permanent link">&para;</a></h3>
+<p>The <code>Tunnel</code> class can be used standalone for SSH operations. Examples:</p>
+<h4 id="using-rsa-keys">Using RSA Keys<a class="headerlink" href="#using-rsa-keys" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">tunnel_manager.tunnel_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">Tunnel</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="c1"># Initialize with a remote host (assumes ~/.ssh/config or explicit params)</span>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="n">tunnel</span> <span class="o">=</span> <span class="n">Tunnel</span><span class="p">(</span>
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>    <span class="n">remote_host</span><span class="o">=</span><span class="s2">&quot;192.168.1.10&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>    <span class="n">username</span><span class="o">=</span><span class="s2">&quot;admin&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a>    <span class="n">password</span><span class="o">=</span><span class="s2">&quot;mypassword&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a>    <span class="n">identity_file</span><span class="o">=</span><span class="s2">&quot;/path/to/id_rsa&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a>    <span class="n">certificate_file</span><span class="o">=</span><span class="s2">&quot;/path/to/cert&quot;</span><span class="p">,</span>  <span class="c1"># Optional for Teleport</span>
+<a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a>    <span class="n">proxy_command</span><span class="o">=</span><span class="s2">&quot;tsh proxy ssh %h&quot;</span><span class="p">,</span>  <span class="c1"># Optional for Teleport</span>
+<a id="__codelineno-21-11" name="__codelineno-21-11" href="#__codelineno-21-11"></a>    <span class="n">ssh_config_file</span><span class="o">=</span><span class="s2">&quot;~/.ssh/config&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-12" name="__codelineno-21-12" href="#__codelineno-21-12"></a><span class="p">)</span>
+<a id="__codelineno-21-13" name="__codelineno-21-13" href="#__codelineno-21-13"></a>
+<a id="__codelineno-21-14" name="__codelineno-21-14" href="#__codelineno-21-14"></a><span class="c1"># Connect and run a command</span>
+<a id="__codelineno-21-15" name="__codelineno-21-15" href="#__codelineno-21-15"></a><span class="n">tunnel</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
+<a id="__codelineno-21-16" name="__codelineno-21-16" href="#__codelineno-21-16"></a><span class="n">out</span><span class="p">,</span> <span class="n">err</span> <span class="o">=</span> <span class="n">tunnel</span><span class="o">.</span><span class="n">run_command</span><span class="p">(</span><span class="s2">&quot;ls -la /tmp&quot;</span><span class="p">)</span>
+<a id="__codelineno-21-17" name="__codelineno-21-17" href="#__codelineno-21-17"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Output: </span><span class="si">{</span><span class="n">out</span><span class="si">}</span><span class="se">\n</span><span class="s2">Error: </span><span class="si">{</span><span class="n">err</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-21-18" name="__codelineno-21-18" href="#__codelineno-21-18"></a>
+<a id="__codelineno-21-19" name="__codelineno-21-19" href="#__codelineno-21-19"></a><span class="c1"># Upload a file</span>
+<a id="__codelineno-21-20" name="__codelineno-21-20" href="#__codelineno-21-20"></a><span class="n">tunnel</span><span class="o">.</span><span class="n">send_file</span><span class="p">(</span><span class="s2">&quot;/local/file.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;/remote/file.txt&quot;</span><span class="p">)</span>
+<a id="__codelineno-21-21" name="__codelineno-21-21" href="#__codelineno-21-21"></a>
+<a id="__codelineno-21-22" name="__codelineno-21-22" href="#__codelineno-21-22"></a><span class="c1"># Download a file</span>
+<a id="__codelineno-21-23" name="__codelineno-21-23" href="#__codelineno-21-23"></a><span class="n">tunnel</span><span class="o">.</span><span class="n">receive_file</span><span class="p">(</span><span class="s2">&quot;/remote/file.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;/local/downloaded.txt&quot;</span><span class="p">)</span>
+<a id="__codelineno-21-24" name="__codelineno-21-24" href="#__codelineno-21-24"></a>
+<a id="__codelineno-21-25" name="__codelineno-21-25" href="#__codelineno-21-25"></a><span class="c1"># Setup passwordless SSH with RSA</span>
+<a id="__codelineno-21-26" name="__codelineno-21-26" href="#__codelineno-21-26"></a><span class="n">tunnel</span><span class="o">.</span><span class="n">setup_passwordless_ssh</span><span class="p">(</span><span class="n">local_key_path</span><span class="o">=</span><span class="s2">&quot;~/.ssh/id_rsa&quot;</span><span class="p">,</span> <span class="n">key_type</span><span class="o">=</span><span class="s2">&quot;rsa&quot;</span><span class="p">)</span>
+<a id="__codelineno-21-27" name="__codelineno-21-27" href="#__codelineno-21-27"></a>
+<a id="__codelineno-21-28" name="__codelineno-21-28" href="#__codelineno-21-28"></a><span class="c1"># Copy SSH config</span>
+<a id="__codelineno-21-29" name="__codelineno-21-29" href="#__codelineno-21-29"></a><span class="n">tunnel</span><span class="o">.</span><span class="n">copy_ssh_config</span><span class="p">(</span><span class="s2">&quot;/local/ssh_config&quot;</span><span class="p">,</span> <span class="s2">&quot;~/.ssh/config&quot;</span><span class="p">)</span>
+<a id="__codelineno-21-30" name="__codelineno-21-30" href="#__codelineno-21-30"></a>
+<a id="__codelineno-21-31" name="__codelineno-21-31" href="#__codelineno-21-31"></a><span class="c1"># Rotate SSH key with RSA</span>
+<a id="__codelineno-21-32" name="__codelineno-21-32" href="#__codelineno-21-32"></a><span class="n">tunnel</span><span class="o">.</span><span class="n">rotate_ssh_key</span><span class="p">(</span><span class="s2">&quot;/path/to/new_rsa_key&quot;</span><span class="p">,</span> <span class="n">key_type</span><span class="o">=</span><span class="s2">&quot;rsa&quot;</span><span class="p">)</span>
+<a id="__codelineno-21-33" name="__codelineno-21-33" href="#__codelineno-21-33"></a>
+<a id="__codelineno-21-34" name="__codelineno-21-34" href="#__codelineno-21-34"></a><span class="c1"># Close the connection</span>
+<a id="__codelineno-21-35" name="__codelineno-21-35" href="#__codelineno-21-35"></a><span class="n">tunnel</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</code></pre></div>
+<h4 id="using-ed25519-keys">Using Ed25519 Keys<a class="headerlink" href="#using-ed25519-keys" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">tunnel_manager.tunnel_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">Tunnel</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="c1"># Initialize with a remote host (assumes ~/.ssh/config or explicit params)</span>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="n">tunnel</span> <span class="o">=</span> <span class="n">Tunnel</span><span class="p">(</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>    <span class="n">remote_host</span><span class="o">=</span><span class="s2">&quot;192.168.1.10&quot;</span><span class="p">,</span>
+<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a>    <span class="n">username</span><span class="o">=</span><span class="s2">&quot;admin&quot;</span><span class="p">,</span>
+<a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a>    <span class="n">password</span><span class="o">=</span><span class="s2">&quot;mypassword&quot;</span><span class="p">,</span>
+<a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a>    <span class="n">identity_file</span><span class="o">=</span><span class="s2">&quot;/path/to/id_ed25519&quot;</span><span class="p">,</span>
+<a id="__codelineno-22-9" name="__codelineno-22-9" href="#__codelineno-22-9"></a>    <span class="n">certificate_file</span><span class="o">=</span><span class="s2">&quot;/path/to/cert&quot;</span><span class="p">,</span>  <span class="c1"># Optional for Teleport</span>
+<a id="__codelineno-22-10" name="__codelineno-22-10" href="#__codelineno-22-10"></a>    <span class="n">proxy_command</span><span class="o">=</span><span class="s2">&quot;tsh proxy ssh %h&quot;</span><span class="p">,</span>  <span class="c1"># Optional for Teleport</span>
+<a id="__codelineno-22-11" name="__codelineno-22-11" href="#__codelineno-22-11"></a>    <span class="n">ssh_config_file</span><span class="o">=</span><span class="s2">&quot;~/.ssh/config&quot;</span><span class="p">,</span>
+<a id="__codelineno-22-12" name="__codelineno-22-12" href="#__codelineno-22-12"></a><span class="p">)</span>
+<a id="__codelineno-22-13" name="__codelineno-22-13" href="#__codelineno-22-13"></a>
+<a id="__codelineno-22-14" name="__codelineno-22-14" href="#__codelineno-22-14"></a><span class="c1"># Connect and run a command</span>
+<a id="__codelineno-22-15" name="__codelineno-22-15" href="#__codelineno-22-15"></a><span class="n">tunnel</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
+<a id="__codelineno-22-16" name="__codelineno-22-16" href="#__codelineno-22-16"></a><span class="n">out</span><span class="p">,</span> <span class="n">err</span> <span class="o">=</span> <span class="n">tunnel</span><span class="o">.</span><span class="n">run_command</span><span class="p">(</span><span class="s2">&quot;ls -la /tmp&quot;</span><span class="p">)</span>
+<a id="__codelineno-22-17" name="__codelineno-22-17" href="#__codelineno-22-17"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Output: </span><span class="si">{</span><span class="n">out</span><span class="si">}</span><span class="se">\n</span><span class="s2">Error: </span><span class="si">{</span><span class="n">err</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-22-18" name="__codelineno-22-18" href="#__codelineno-22-18"></a>
+<a id="__codelineno-22-19" name="__codelineno-22-19" href="#__codelineno-22-19"></a><span class="c1"># Upload a file</span>
+<a id="__codelineno-22-20" name="__codelineno-22-20" href="#__codelineno-22-20"></a><span class="n">tunnel</span><span class="o">.</span><span class="n">send_file</span><span class="p">(</span><span class="s2">&quot;/local/file.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;/remote/file.txt&quot;</span><span class="p">)</span>
+<a id="__codelineno-22-21" name="__codelineno-22-21" href="#__codelineno-22-21"></a>
+<a id="__codelineno-22-22" name="__codelineno-22-22" href="#__codelineno-22-22"></a><span class="c1"># Download a file</span>
+<a id="__codelineno-22-23" name="__codelineno-22-23" href="#__codelineno-22-23"></a><span class="n">tunnel</span><span class="o">.</span><span class="n">receive_file</span><span class="p">(</span><span class="s2">&quot;/remote/file.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;/local/downloaded.txt&quot;</span><span class="p">)</span>
+<a id="__codelineno-22-24" name="__codelineno-22-24" href="#__codelineno-22-24"></a>
+<a id="__codelineno-22-25" name="__codelineno-22-25" href="#__codelineno-22-25"></a><span class="c1"># Setup passwordless SSH with Ed25519</span>
+<a id="__codelineno-22-26" name="__codelineno-22-26" href="#__codelineno-22-26"></a><span class="n">tunnel</span><span class="o">.</span><span class="n">setup_passwordless_ssh</span><span class="p">(</span><span class="n">local_key_path</span><span class="o">=</span><span class="s2">&quot;~/.ssh/id_ed25519&quot;</span><span class="p">,</span> <span class="n">key_type</span><span class="o">=</span><span class="s2">&quot;ed25519&quot;</span><span class="p">)</span>
+<a id="__codelineno-22-27" name="__codelineno-22-27" href="#__codelineno-22-27"></a>
+<a id="__codelineno-22-28" name="__codelineno-22-28" href="#__codelineno-22-28"></a><span class="c1"># Copy SSH config</span>
+<a id="__codelineno-22-29" name="__codelineno-22-29" href="#__codelineno-22-29"></a><span class="n">tunnel</span><span class="o">.</span><span class="n">copy_ssh_config</span><span class="p">(</span><span class="s2">&quot;/local/ssh_config&quot;</span><span class="p">,</span> <span class="s2">&quot;~/.ssh/config&quot;</span><span class="p">)</span>
+<a id="__codelineno-22-30" name="__codelineno-22-30" href="#__codelineno-22-30"></a>
+<a id="__codelineno-22-31" name="__codelineno-22-31" href="#__codelineno-22-31"></a><span class="c1"># Rotate SSH key with Ed25519</span>
+<a id="__codelineno-22-32" name="__codelineno-22-32" href="#__codelineno-22-32"></a><span class="n">tunnel</span><span class="o">.</span><span class="n">rotate_ssh_key</span><span class="p">(</span><span class="s2">&quot;/path/to/new_ed25519_key&quot;</span><span class="p">,</span> <span class="n">key_type</span><span class="o">=</span><span class="s2">&quot;ed25519&quot;</span><span class="p">)</span>
+<a id="__codelineno-22-33" name="__codelineno-22-33" href="#__codelineno-22-33"></a>
+<a id="__codelineno-22-34" name="__codelineno-22-34" href="#__codelineno-22-34"></a><span class="c1"># Close the connection</span>
+<a id="__codelineno-22-35" name="__codelineno-22-35" href="#__codelineno-22-35"></a><span class="n">tunnel</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</code></pre></div>
+<h3 id="deploy-mcp-server-as-a-service">Deploy MCP Server as a Service<a class="headerlink" href="#deploy-mcp-server-as-a-service" title="Permanent link">&para;</a></h3>
+<p>The MCP server can be deployed using Docker, with configurable authentication, middleware, and Eunomia authorization.</p>
+<h4 id="using-docker-run">Using Docker Run<a class="headerlink" href="#using-docker-run" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>docker<span class="w"> </span>pull<span class="w"> </span>knucklessg1/tunnel-manager:latest
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="w">  </span>--name<span class="w"> </span>tunnel-manager-mcp<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="w">  </span>-p<span class="w"> </span><span class="m">8004</span>:8004<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">HOST</span><span class="o">=</span><span class="m">0</span>.0.0.0<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">PORT</span><span class="o">=</span><span class="m">8004</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">TRANSPORT</span><span class="o">=</span>http<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-9" name="__codelineno-23-9" href="#__codelineno-23-9"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">AUTH_TYPE</span><span class="o">=</span>none<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-10" name="__codelineno-23-10" href="#__codelineno-23-10"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">EUNOMIA_TYPE</span><span class="o">=</span>none<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-11" name="__codelineno-23-11" href="#__codelineno-23-11"></a><span class="w">  </span>knucklessg1/tunnel-manager:latest
+</code></pre></div>
+<p>For advanced authentication (e.g., JWT, OAuth Proxy, OIDC Proxy, Remote OAuth) or Eunomia, add the relevant environment variables:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a><span class="w">  </span>--name<span class="w"> </span>tunnel-manager-mcp<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a><span class="w">  </span>-p<span class="w"> </span><span class="m">8004</span>:8004<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">HOST</span><span class="o">=</span><span class="m">0</span>.0.0.0<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">PORT</span><span class="o">=</span><span class="m">8004</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-6" name="__codelineno-24-6" href="#__codelineno-24-6"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">TRANSPORT</span><span class="o">=</span>http<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-7" name="__codelineno-24-7" href="#__codelineno-24-7"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">AUTH_TYPE</span><span class="o">=</span>oidc-proxy<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-8" name="__codelineno-24-8" href="#__codelineno-24-8"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">OIDC_CONFIG_URL</span><span class="o">=</span>https://provider.com/.well-known/openid-configuration<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-9" name="__codelineno-24-9" href="#__codelineno-24-9"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">OIDC_CLIENT_ID</span><span class="o">=</span>your-client-id<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-10" name="__codelineno-24-10" href="#__codelineno-24-10"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">OIDC_CLIENT_SECRET</span><span class="o">=</span>your-client-secret<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-11" name="__codelineno-24-11" href="#__codelineno-24-11"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">OIDC_BASE_URL</span><span class="o">=</span>https://your-server.com<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-12" name="__codelineno-24-12" href="#__codelineno-24-12"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">ALLOWED_CLIENT_REDIRECT_URIS</span><span class="o">=</span>http://localhost:*,https://*.example.com/*<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-13" name="__codelineno-24-13" href="#__codelineno-24-13"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">EUNOMIA_TYPE</span><span class="o">=</span>embedded<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-14" name="__codelineno-24-14" href="#__codelineno-24-14"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">EUNOMIA_POLICY_FILE</span><span class="o">=</span>/app/mcp_policies.json<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-15" name="__codelineno-24-15" href="#__codelineno-24-15"></a><span class="w">  </span>knucklessg1/tunnel-manager:latest
+</code></pre></div>
+<h4 id="using-docker-compose">Using Docker Compose<a class="headerlink" href="#using-docker-compose" title="Permanent link">&para;</a></h4>
+<p>Create a <code>docker-compose.yml</code> file:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="nt">services</span><span class="p">:</span>
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a><span class="w">  </span><span class="nt">tunnel-manager-mcp</span><span class="p">:</span>
+<a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">knucklessg1/tunnel-manager:latest</span>
+<a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a><span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+<a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HOST=0.0.0.0</span>
+<a id="__codelineno-25-6" name="__codelineno-25-6" href="#__codelineno-25-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PORT=8004</span>
+<a id="__codelineno-25-7" name="__codelineno-25-7" href="#__codelineno-25-7"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TRANSPORT=http</span>
+<a id="__codelineno-25-8" name="__codelineno-25-8" href="#__codelineno-25-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AUTH_TYPE=none</span>
+<a id="__codelineno-25-9" name="__codelineno-25-9" href="#__codelineno-25-9"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">EUNOMIA_TYPE=none</span>
+<a id="__codelineno-25-10" name="__codelineno-25-10" href="#__codelineno-25-10"></a><span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
+<a id="__codelineno-25-11" name="__codelineno-25-11" href="#__codelineno-25-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8004:8004</span>
+</code></pre></div>
+<p>For advanced setups with authentication and Eunomia:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="nt">services</span><span class="p">:</span>
+<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a><span class="w">  </span><span class="nt">tunnel-manager-mcp</span><span class="p">:</span>
+<a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">knucklessg1/tunnel-manager:latest</span>
+<a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a><span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+<a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HOST=0.0.0.0</span>
+<a id="__codelineno-26-6" name="__codelineno-26-6" href="#__codelineno-26-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PORT=8004</span>
+<a id="__codelineno-26-7" name="__codelineno-26-7" href="#__codelineno-26-7"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TRANSPORT=http</span>
+<a id="__codelineno-26-8" name="__codelineno-26-8" href="#__codelineno-26-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AUTH_TYPE=oidc-proxy</span>
+<a id="__codelineno-26-9" name="__codelineno-26-9" href="#__codelineno-26-9"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">OIDC_CONFIG_URL=https://provider.com/.well-known/openid-configuration</span>
+<a id="__codelineno-26-10" name="__codelineno-26-10" href="#__codelineno-26-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">OIDC_CLIENT_ID=your-client-id</span>
+<a id="__codelineno-26-11" name="__codelineno-26-11" href="#__codelineno-26-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">OIDC_CLIENT_SECRET=your-client-secret</span>
+<a id="__codelineno-26-12" name="__codelineno-26-12" href="#__codelineno-26-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">OIDC_BASE_URL=https://your-server.com</span>
+<a id="__codelineno-26-13" name="__codelineno-26-13" href="#__codelineno-26-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ALLOWED_CLIENT_REDIRECT_URIS=http://localhost:*,https://*.example.com/*</span>
+<a id="__codelineno-26-14" name="__codelineno-26-14" href="#__codelineno-26-14"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">EUNOMIA_TYPE=embedded</span>
+<a id="__codelineno-26-15" name="__codelineno-26-15" href="#__codelineno-26-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">EUNOMIA_POLICY_FILE=/app/mcp_policies.json</span>
+<a id="__codelineno-26-16" name="__codelineno-26-16" href="#__codelineno-26-16"></a><span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
+<a id="__codelineno-26-17" name="__codelineno-26-17" href="#__codelineno-26-17"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8004:8004</span>
+<a id="__codelineno-26-18" name="__codelineno-26-18" href="#__codelineno-26-18"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+<a id="__codelineno-26-19" name="__codelineno-26-19" href="#__codelineno-26-19"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./mcp_policies.json:/app/mcp_policies.json</span>
+</code></pre></div>
+<p>Run the service:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>docker-compose<span class="w"> </span>up<span class="w"> </span>-d
+</code></pre></div>
+<h4 id="configure-mcpjson-for-ai-integration">Configure <code>mcp.json</code> for AI Integration<a class="headerlink" href="#configure-mcpjson-for-ai-integration" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="p">{</span>
+<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a><span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a><span class="w">    </span><span class="nt">&quot;tunnel_manager&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a><span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uv&quot;</span><span class="p">,</span>
+<a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-28-6" name="__codelineno-28-6" href="#__codelineno-28-6"></a><span class="w">        </span><span class="s2">&quot;run&quot;</span><span class="p">,</span>
+<a id="__codelineno-28-7" name="__codelineno-28-7" href="#__codelineno-28-7"></a><span class="w">        </span><span class="s2">&quot;--with&quot;</span><span class="p">,</span>
+<a id="__codelineno-28-8" name="__codelineno-28-8" href="#__codelineno-28-8"></a><span class="w">        </span><span class="s2">&quot;tunnel-manager&quot;</span><span class="p">,</span>
+<a id="__codelineno-28-9" name="__codelineno-28-9" href="#__codelineno-28-9"></a><span class="w">        </span><span class="s2">&quot;tunnel_manager_mcp&quot;</span>
+<a id="__codelineno-28-10" name="__codelineno-28-10" href="#__codelineno-28-10"></a><span class="w">      </span><span class="p">],</span>
+<a id="__codelineno-28-11" name="__codelineno-28-11" href="#__codelineno-28-11"></a><span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-28-12" name="__codelineno-28-12" href="#__codelineno-28-12"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_REMOTE_HOST&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;192.168.1.12&quot;</span><span class="p">,</span><span class="w">      </span><span class="c1">// Optional</span>
+<a id="__codelineno-28-13" name="__codelineno-28-13" href="#__codelineno-28-13"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_USERNAME&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;admin&quot;</span><span class="p">,</span><span class="w">                </span><span class="c1">// Optional</span>
+<a id="__codelineno-28-14" name="__codelineno-28-14" href="#__codelineno-28-14"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_PASSWORD&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span><span class="w">                     </span><span class="c1">// Optional</span>
+<a id="__codelineno-28-15" name="__codelineno-28-15" href="#__codelineno-28-15"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_REMOTE_PORT&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;22&quot;</span><span class="p">,</span><span class="w">                </span><span class="c1">// Optional</span>
+<a id="__codelineno-28-16" name="__codelineno-28-16" href="#__codelineno-28-16"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_IDENTITY_FILE&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span><span class="w">                </span><span class="c1">// Optional</span>
+<a id="__codelineno-28-17" name="__codelineno-28-17" href="#__codelineno-28-17"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_INVENTORY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;~/inventory.yaml&quot;</span><span class="p">,</span><span class="w">    </span><span class="c1">// Optional</span>
+<a id="__codelineno-28-18" name="__codelineno-28-18" href="#__codelineno-28-18"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_INVENTORY_GROUP&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;all&quot;</span><span class="p">,</span><span class="w">           </span><span class="c1">// Optional</span>
+<a id="__codelineno-28-19" name="__codelineno-28-19" href="#__codelineno-28-19"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_PARALLEL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;true&quot;</span><span class="p">,</span><span class="w">                 </span><span class="c1">// Optional</span>
+<a id="__codelineno-28-20" name="__codelineno-28-20" href="#__codelineno-28-20"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_CERTIFICATE&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span><span class="w">                  </span><span class="c1">// Optional</span>
+<a id="__codelineno-28-21" name="__codelineno-28-21" href="#__codelineno-28-21"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_PROXY_COMMAND&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span><span class="w">                </span><span class="c1">// Optional</span>
+<a id="__codelineno-28-22" name="__codelineno-28-22" href="#__codelineno-28-22"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_LOG_FILE&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;~/tunnel_log.txt&quot;</span><span class="p">,</span><span class="w">     </span><span class="c1">// Optional</span>
+<a id="__codelineno-28-23" name="__codelineno-28-23" href="#__codelineno-28-23"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_MAX_THREADS&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;6&quot;</span><span class="w">                  </span><span class="c1">// Optional</span>
+<a id="__codelineno-28-24" name="__codelineno-28-24" href="#__codelineno-28-24"></a><span class="w">      </span><span class="p">},</span>
+<a id="__codelineno-28-25" name="__codelineno-28-25" href="#__codelineno-28-25"></a><span class="w">      </span><span class="nt">&quot;timeout&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">200000</span>
+<a id="__codelineno-28-26" name="__codelineno-28-26" href="#__codelineno-28-26"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-28-27" name="__codelineno-28-27" href="#__codelineno-28-27"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-28-28" name="__codelineno-28-28" href="#__codelineno-28-28"></a><span class="p">}</span>
+</code></pre></div>
+<h2 id="install-python-package">Install Python Package<a class="headerlink" href="#install-python-package" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>tunnel-manager
+</code></pre></div>
+<p>or</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>tunnel-manager
+</code></pre></div>
+<h2 id="repository-owners">Repository Owners<a class="headerlink" href="#repository-owners" title="Permanent link">&para;</a></h2>
+<p><img width="100%" height="180em" src="https://github-readme-stats.vercel.app/api?username=Knucklessg1&show_icons=true&hide_border=true&&count_private=true&include_all_commits=true" /></p>
+<p><img alt="GitHub followers" src="https://img.shields.io/github/followers/Knucklessg1" />
+<img alt="GitHub User's stars" src="https://img.shields.io/github/stars/Knucklessg1" /></p>
+<h2 id="mcp-configuration-examples">MCP Configuration Examples<a class="headerlink" href="#mcp-configuration-examples" title="Permanent link">&para;</a></h2>
+<h3 id="1-standard-io-stdio-deployment">1. Standard IO (stdio) Deployment<a class="headerlink" href="#1-standard-io-stdio-deployment" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a><span class="p">{</span>
+<a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a><span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-31-3" name="__codelineno-31-3" href="#__codelineno-31-3"></a><span class="w">    </span><span class="nt">&quot;tunnel-manager&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-31-4" name="__codelineno-31-4" href="#__codelineno-31-4"></a><span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uv&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-5" name="__codelineno-31-5" href="#__codelineno-31-5"></a><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-31-6" name="__codelineno-31-6" href="#__codelineno-31-6"></a><span class="w">        </span><span class="s2">&quot;run&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-7" name="__codelineno-31-7" href="#__codelineno-31-7"></a><span class="w">        </span><span class="s2">&quot;tunnel-manager-mcp&quot;</span>
+<a id="__codelineno-31-8" name="__codelineno-31-8" href="#__codelineno-31-8"></a><span class="w">      </span><span class="p">],</span>
+<a id="__codelineno-31-9" name="__codelineno-31-9" href="#__codelineno-31-9"></a><span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-31-10" name="__codelineno-31-10" href="#__codelineno-31-10"></a><span class="w">        </span><span class="nt">&quot;ADVANCED_FILE_OPERATIONSTOOL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;True&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-11" name="__codelineno-31-11" href="#__codelineno-31-11"></a><span class="w">        </span><span class="nt">&quot;AGENT_DESCRIPTION&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_AGENT_DESCRIPTION&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-12" name="__codelineno-31-12" href="#__codelineno-31-12"></a><span class="w">        </span><span class="nt">&quot;AGENT_SYSTEM_PROMPT&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_AGENT_SYSTEM_PROMPT&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-13" name="__codelineno-31-13" href="#__codelineno-31-13"></a><span class="w">        </span><span class="nt">&quot;DEFAULT_AGENT_NAME&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_DEFAULT_AGENT_NAME&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-14" name="__codelineno-31-14" href="#__codelineno-31-14"></a><span class="w">        </span><span class="nt">&quot;HOST_MANAGEMENTTOOL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;True&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-15" name="__codelineno-31-15" href="#__codelineno-31-15"></a><span class="w">        </span><span class="nt">&quot;LLM_API_KEY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_LLM_API_KEY&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-16" name="__codelineno-31-16" href="#__codelineno-31-16"></a><span class="w">        </span><span class="nt">&quot;LLM_BASE_URL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_LLM_BASE_URL&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-17" name="__codelineno-31-17" href="#__codelineno-31-17"></a><span class="w">        </span><span class="nt">&quot;MCP_URL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_MCP_URL&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-18" name="__codelineno-31-18" href="#__codelineno-31-18"></a><span class="w">        </span><span class="nt">&quot;MISCTOOL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;True&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-19" name="__codelineno-31-19" href="#__codelineno-31-19"></a><span class="w">        </span><span class="nt">&quot;MODEL_ID&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_MODEL_ID&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-20" name="__codelineno-31-20" href="#__codelineno-31-20"></a><span class="w">        </span><span class="nt">&quot;OPERATION_MANAGEMENTTOOL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;True&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-21" name="__codelineno-31-21" href="#__codelineno-31-21"></a><span class="w">        </span><span class="nt">&quot;REMOTE_ACCESSTOOL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;True&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-22" name="__codelineno-31-22" href="#__codelineno-31-22"></a><span class="w">        </span><span class="nt">&quot;SECURITY_AUDITINGTOOL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;True&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-23" name="__codelineno-31-23" href="#__codelineno-31-23"></a><span class="w">        </span><span class="nt">&quot;SYSTEM_INTELLIGENCETOOL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;True&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-24" name="__codelineno-31-24" href="#__codelineno-31-24"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_CERTIFICATE&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_CERTIFICATE&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-25" name="__codelineno-31-25" href="#__codelineno-31-25"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_IDENTITY_FILE&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_IDENTITY_FILE&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-26" name="__codelineno-31-26" href="#__codelineno-31-26"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_INVENTORY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_INVENTORY&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-27" name="__codelineno-31-27" href="#__codelineno-31-27"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_INVENTORY_GROUP&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_INVENTORY_GROUP&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-28" name="__codelineno-31-28" href="#__codelineno-31-28"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_LOG_FILE&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_LOG_FILE&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-29" name="__codelineno-31-29" href="#__codelineno-31-29"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_MAX_THREADS&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_MAX_THREADS&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-30" name="__codelineno-31-30" href="#__codelineno-31-30"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_PARALLEL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_PARALLEL&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-31" name="__codelineno-31-31" href="#__codelineno-31-31"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_PASSWORD&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_PASSWORD&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-32" name="__codelineno-31-32" href="#__codelineno-31-32"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_PROXY_COMMAND&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_PROXY_COMMAND&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-33" name="__codelineno-31-33" href="#__codelineno-31-33"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_REMOTE_HOST&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_REMOTE_HOST&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-34" name="__codelineno-31-34" href="#__codelineno-31-34"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_REMOTE_PORT&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_REMOTE_PORT&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-31-35" name="__codelineno-31-35" href="#__codelineno-31-35"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_USERNAME&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_USERNAME&gt;&quot;</span>
+<a id="__codelineno-31-36" name="__codelineno-31-36" href="#__codelineno-31-36"></a><span class="w">      </span><span class="p">}</span>
+<a id="__codelineno-31-37" name="__codelineno-31-37" href="#__codelineno-31-37"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-31-38" name="__codelineno-31-38" href="#__codelineno-31-38"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-31-39" name="__codelineno-31-39" href="#__codelineno-31-39"></a><span class="p">}</span>
+</code></pre></div>
+<h3 id="2-streamable-http-sse-deployment">2. Streamable HTTP (SSE) Deployment<a class="headerlink" href="#2-streamable-http-sse-deployment" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="p">{</span>
+<a id="__codelineno-32-2" name="__codelineno-32-2" href="#__codelineno-32-2"></a><span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-32-3" name="__codelineno-32-3" href="#__codelineno-32-3"></a><span class="w">    </span><span class="nt">&quot;tunnel-manager&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-32-4" name="__codelineno-32-4" href="#__codelineno-32-4"></a><span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uv&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-5" name="__codelineno-32-5" href="#__codelineno-32-5"></a><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-32-6" name="__codelineno-32-6" href="#__codelineno-32-6"></a><span class="w">        </span><span class="s2">&quot;run&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-7" name="__codelineno-32-7" href="#__codelineno-32-7"></a><span class="w">        </span><span class="s2">&quot;tunnel-manager-mcp&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-8" name="__codelineno-32-8" href="#__codelineno-32-8"></a><span class="w">        </span><span class="s2">&quot;--transport&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-9" name="__codelineno-32-9" href="#__codelineno-32-9"></a><span class="w">        </span><span class="s2">&quot;http&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-10" name="__codelineno-32-10" href="#__codelineno-32-10"></a><span class="w">        </span><span class="s2">&quot;--host&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-11" name="__codelineno-32-11" href="#__codelineno-32-11"></a><span class="w">        </span><span class="s2">&quot;0.0.0.0&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-12" name="__codelineno-32-12" href="#__codelineno-32-12"></a><span class="w">        </span><span class="s2">&quot;--port&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-13" name="__codelineno-32-13" href="#__codelineno-32-13"></a><span class="w">        </span><span class="s2">&quot;8000&quot;</span>
+<a id="__codelineno-32-14" name="__codelineno-32-14" href="#__codelineno-32-14"></a><span class="w">      </span><span class="p">],</span>
+<a id="__codelineno-32-15" name="__codelineno-32-15" href="#__codelineno-32-15"></a><span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-32-16" name="__codelineno-32-16" href="#__codelineno-32-16"></a><span class="w">        </span><span class="nt">&quot;ADVANCED_FILE_OPERATIONSTOOL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;True&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-17" name="__codelineno-32-17" href="#__codelineno-32-17"></a><span class="w">        </span><span class="nt">&quot;AGENT_DESCRIPTION&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_AGENT_DESCRIPTION&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-18" name="__codelineno-32-18" href="#__codelineno-32-18"></a><span class="w">        </span><span class="nt">&quot;AGENT_SYSTEM_PROMPT&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_AGENT_SYSTEM_PROMPT&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-19" name="__codelineno-32-19" href="#__codelineno-32-19"></a><span class="w">        </span><span class="nt">&quot;DEFAULT_AGENT_NAME&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_DEFAULT_AGENT_NAME&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-20" name="__codelineno-32-20" href="#__codelineno-32-20"></a><span class="w">        </span><span class="nt">&quot;HOST_MANAGEMENTTOOL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;True&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-21" name="__codelineno-32-21" href="#__codelineno-32-21"></a><span class="w">        </span><span class="nt">&quot;LLM_API_KEY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_LLM_API_KEY&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-22" name="__codelineno-32-22" href="#__codelineno-32-22"></a><span class="w">        </span><span class="nt">&quot;LLM_BASE_URL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_LLM_BASE_URL&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-23" name="__codelineno-32-23" href="#__codelineno-32-23"></a><span class="w">        </span><span class="nt">&quot;MCP_URL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_MCP_URL&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-24" name="__codelineno-32-24" href="#__codelineno-32-24"></a><span class="w">        </span><span class="nt">&quot;MISCTOOL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;True&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-25" name="__codelineno-32-25" href="#__codelineno-32-25"></a><span class="w">        </span><span class="nt">&quot;MODEL_ID&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_MODEL_ID&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-26" name="__codelineno-32-26" href="#__codelineno-32-26"></a><span class="w">        </span><span class="nt">&quot;OPERATION_MANAGEMENTTOOL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;True&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-27" name="__codelineno-32-27" href="#__codelineno-32-27"></a><span class="w">        </span><span class="nt">&quot;REMOTE_ACCESSTOOL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;True&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-28" name="__codelineno-32-28" href="#__codelineno-32-28"></a><span class="w">        </span><span class="nt">&quot;SECURITY_AUDITINGTOOL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;True&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-29" name="__codelineno-32-29" href="#__codelineno-32-29"></a><span class="w">        </span><span class="nt">&quot;SYSTEM_INTELLIGENCETOOL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;True&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-30" name="__codelineno-32-30" href="#__codelineno-32-30"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_CERTIFICATE&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_CERTIFICATE&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-31" name="__codelineno-32-31" href="#__codelineno-32-31"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_IDENTITY_FILE&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_IDENTITY_FILE&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-32" name="__codelineno-32-32" href="#__codelineno-32-32"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_INVENTORY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_INVENTORY&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-33" name="__codelineno-32-33" href="#__codelineno-32-33"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_INVENTORY_GROUP&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_INVENTORY_GROUP&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-34" name="__codelineno-32-34" href="#__codelineno-32-34"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_LOG_FILE&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_LOG_FILE&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-35" name="__codelineno-32-35" href="#__codelineno-32-35"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_MAX_THREADS&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_MAX_THREADS&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-36" name="__codelineno-32-36" href="#__codelineno-32-36"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_PARALLEL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_PARALLEL&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-37" name="__codelineno-32-37" href="#__codelineno-32-37"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_PASSWORD&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_PASSWORD&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-38" name="__codelineno-32-38" href="#__codelineno-32-38"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_PROXY_COMMAND&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_PROXY_COMMAND&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-39" name="__codelineno-32-39" href="#__codelineno-32-39"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_REMOTE_HOST&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_REMOTE_HOST&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-40" name="__codelineno-32-40" href="#__codelineno-32-40"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_REMOTE_PORT&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_REMOTE_PORT&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-32-41" name="__codelineno-32-41" href="#__codelineno-32-41"></a><span class="w">        </span><span class="nt">&quot;TUNNEL_USERNAME&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;YOUR_TUNNEL_USERNAME&gt;&quot;</span>
+<a id="__codelineno-32-42" name="__codelineno-32-42" href="#__codelineno-32-42"></a><span class="w">      </span><span class="p">}</span>
+<a id="__codelineno-32-43" name="__codelineno-32-43" href="#__codelineno-32-43"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-32-44" name="__codelineno-32-44" href="#__codelineno-32-44"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-32-45" name="__codelineno-32-45" href="#__codelineno-32-45"></a><span class="p">}</span>
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.sections", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
