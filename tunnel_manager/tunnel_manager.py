@@ -457,7 +457,9 @@ class Tunnel:
         """
         logger = logging.getLogger("Tunnel")
         logger.info(f"Processing inventory '{inventory}' for group '{group}'")
-        print(f"Loading inventory '{inventory}' for group '{group}'...")
+        print(
+            f"Loading inventory '{inventory}' for group '{group}'...", file=sys.stderr
+        )
 
         try:
             with open(inventory) as f:
@@ -508,11 +510,11 @@ class Tunnel:
             raise ValueError(f"Group '{group}' not found in inventory or invalid")
 
         logger.info(f"Found {len(hosts)} hosts in group '{group}'")
-        print(f"Found {len(hosts)} hosts in group '{group}'")
+        print(f"Found {len(hosts)} hosts in group '{group}'", file=sys.stderr)
 
         if not hosts:
             logger.warning(f"No valid hosts found in group '{group}'")
-            print(f"Warning: No valid hosts found in group '{group}'")
+            print(f"Warning: No valid hosts found in group '{group}'", file=sys.stderr)
             return
 
         if parallel:
@@ -529,7 +531,7 @@ class Tunnel:
         else:
             for host in hosts:
                 func(host)
-        print(f"Completed processing group '{group}'")
+        print(f"Completed processing group '{group}'", file=sys.stderr)
 
     def remove_host_key(
         self, known_hosts_path=os.path.expanduser("~/.ssh/known_hosts")
@@ -764,7 +766,7 @@ class Tunnel:
         """
         logger = logging.getLogger("Tunnel")
         logger.info(f"Running command '{command}' on group '{group}'")
-        print(f"Executing command '{command}' on group '{group}'...")
+        print(f"Executing command '{command}' on group '{group}'...", file=sys.stderr)
 
         def run_host(host):
             try:
@@ -781,7 +783,8 @@ class Tunnel:
                     f"Host {host['hostname']}: In: {command}, Out: {out}, Err: {err}"
                 )
                 print(
-                    f"Host {host['hostname']}:\nInput: {command}\nOutput: {out}\nError: {err}"
+                    f"Host {host['hostname']}:\nInput: {command}\nOutput: {out}\nError: {err}",
+                    file=sys.stderr,
                 )
                 tunnel.close()
             except Exception as e:
@@ -792,7 +795,7 @@ class Tunnel:
             Tunnel.execute_on_inventory(
                 inventory, run_host, group, parallel, max_threads
             )
-            print(f"Completed command execution on group '{group}'")
+            print(f"Completed command execution on group '{group}'", file=sys.stderr)
         except Exception as e:
             logger.error(f"Failed to execute command on group '{group}': {str(e)}")
             print(
@@ -951,7 +954,7 @@ class Tunnel:
 
 
 def tunnel_manager():
-    print(f"tunnel_manager v{__version__}")
+    print(f"tunnel_manager v{__version__}", file=sys.stderr)
     parser = argparse.ArgumentParser(description="Tunnel Manager CLI")
     parser.add_argument("--log-file", help="Log to this file (default: console output)")
 
@@ -1097,7 +1100,7 @@ def tunnel_manager():
     logger.debug(
         f"Starting Tunnel Automation with command: {args.command}, args: {vars(args)}"
     )
-    print(f"Starting Tunnel Automation with command: {args.command}")
+    print(f"Starting Tunnel Automation with command: {args.command}", file=sys.stderr)
 
     try:
         if args.command == "setup-all":
@@ -1154,7 +1157,7 @@ def tunnel_manager():
                 args.max_threads,
             )
         logger.debug("Automation Complete")
-        print("Automation Complete")
+        print("Automation Complete", file=sys.stderr)
     except Exception as e:
         logger.error(f"Automation failed: {str(e)}")
         print(f"Error: Automation failed: {str(e)}", file=sys.stderr)

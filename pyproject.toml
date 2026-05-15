@@ -21,7 +21,7 @@ text = "MIT"
 mcp = [ "agent-utilities[mcp]>=0.9.0",]
 agent = [ "agent-utilities[agent,logfire]>=0.9.0",]
 all = [ "agent-utilities[mcp,agent,logfire]>=0.9.0",]
-test = [ "pytest", "pytest-asyncio",]
+test = [ "pytest", "pytest-asyncio", "pytest-cov",]
 
 [project.scripts]
 tunnel-manager = "tunnel_manager.tunnel_manager:main"
@@ -54,3 +54,6 @@ ignore = [ "E402", "E501", "B008",]
 
 [tool.setuptools.packages.find]
 where = [ ".",]
+
+[tool.vulture]
+ignore_names = ["request", "config"]

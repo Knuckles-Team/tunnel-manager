@@ -1,0 +1,85 @@
+# Tasks: Code Enhancement: tunnel-manager
+
+Generated: 2026-05-12T14:14:41.041412+00:00
+Skipped informational: 5
+
+- [ ] [P] **T001** [Dependency Audit] Minor update: asyncssh 2.22.0 (installed) -> 2.23.0
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T002** [Dependency Audit] MAJOR update: paramiko 4.0.0 (installed) -> 5.0.0
+  - Priority: P2-Medium | Effort: Small
+- [ ] [P] **T003** [Codebase Optimization] 4 functions exceed 200 lines (actionable refactoring targets): register_remote_a
+  - Priority: P2-Medium | Effort: Large
+- [ ] [P] **T004** [Codebase Optimization] Monolithic: security_auditor.py (881L) — 1 functions with high complexity (worst
+  - Priority: P1-High | Effort: Large
+- [ ] [P] **T005** [Codebase Optimization] Monolithic: mcp_server.py (3399L) — 5 functions with high complexity (worst: reg
+  - Priority: P1-High | Effort: Large
+- [ ] [P] **T006** [Codebase Optimization] Monolithic: advanced_file_manager.py (894L) — 1 functions with high complexity (
+  - Priority: P1-High | Effort: Large
+- [ ] [P] **T007** [Codebase Optimization] Needs attention: tunnel_manager.py (1165L) — 1 functions with high complexity (w
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T008** [Codebase Optimization] 33 functions with nesting depth >4
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T009** [Test Coverage] 17 tests without assertions
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T010** [Test Coverage] 23 potential doc-test drift items
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T011** [Documentation & Governance] README.md missing sections: installation
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T012** [Documentation & Governance] README missing: MCP tools mapping table with descriptions
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T013** [Documentation & Governance] README missing: Has a Table of Contents
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T014** [Documentation & Governance] README missing: References /docs directory material
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T015** [Documentation & Governance] README missing: Has MCP tools mapping table with descriptions
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T016** [Architecture & Design Patterns] SRP: 11 modules exceed 500 lines (god modules)
+  - Priority: P2-Medium | Effort: Large
+- [ ] [P] **T017** [Architecture & Design Patterns] SRP: 9 classes have >15 methods
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T018** [Architecture & Design Patterns] No discernible layer architecture (no domain/service/adapter separation)
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T019** [Architecture & Design Patterns] Low dependency injection ratio: 2%
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T020** [Concept Traceability] Low traceability ratio: 0% concepts fully traced
+  - Priority: P4-Enhancement | Effort: Medium
+- [ ] [P] **T021** [Concept Traceability] 217 test functions missing concept markers
+  - Priority: P4-Enhancement | Effort: Small
+- [ ] [P] **T022** [Concept Traceability] 112 significant functions (>10 lines) missing concept markers in docstrings
+  - Priority: P4-Enhancement | Effort: Small
+- [ ] [P] **T023** [Linting & Formatting] Total lint findings: 179 (high/error: 153, medium/warning: 26, low: 0)
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T024** [Pre-Commit Compliance] 1 hook(s) may be outdated: ruff-pre-commit
+  - Priority: P2-Medium | Effort: Small
+- [ ] [P] **T025** [Directory Organization] 2 rogue/throwaway scripts detected (fix_*, validate_*, patch_*, etc.): scripts/v
+  - Priority: P4-Enhancement | Effort: Medium
+- [ ] [P] **T026** [Changelog Audit] CHANGELOG.md is missing — create one following Keep a Changelog format
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T027** [Changelog Audit] CHANGELOG.md is missing
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T028** [Pytest Quality] 2 tests have generic names (test_1, test_case_42, etc.)
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T029** [Pytest Quality] 5 test files exceed 500 lines — split into focused modules
+  - Priority: P1-High | Effort: Large
+- [ ] [P] **T030** [Pytest Quality] 3 test files have >30 tests — too dense
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T031** [Pytest Quality] Test directory lacks subdirectory organization (consider unit/, integration/, e2
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T032** [Pytest Quality] Missing conftest.py for shared fixtures
+  - Priority: P1-High | Effort: Small
+- [ ] [P] **T033** [Pytest Quality] Low fixture usage: only 19% of tests use fixtures
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T034** [Pytest Quality] No @pytest.mark.parametrize usage — consider data-driven tests
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T035** [Pytest Quality] No shared fixtures in conftest.py
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T036** [Pytest Quality] 17 tests have no assertions
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T037** [Pytest Quality] 67 tests use weak assertions (assert result is not None, assert True, etc.)
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T038** [Environment Variables] Undocumented env vars: ENABLE_OTEL, EUNOMIA_REMOTE_URL, OAUTH_BASE_URL, OAUTH_UP
+  - Priority: P3-Low | Effort: Medium
+- [ ] [P] **T039** [Environment Variables] 22 Python env vars not in .env.example: ADVANCED_FILE_OPERATIONSTOOL, DEFAULT_AG
+  - Priority: P3-Low | Effort: Medium
+- [ ] [P] **T040** [Environment Variables] 8 env vars have no default value in code
+  - Priority: P3-Low | Effort: Medium

@@ -1065,8 +1065,7 @@ class TestTunnelStaticMethods:
 class TestTunnelCLI:
     """Test Tunnel CLI functionality."""
 
-    @patch("tunnel_manager.tunnel_manager.Tunnel")
-    def test_tunnel_manager_cli(self, mock_tunnel):
+    def test_tunnel_manager_cli(self):
         """Test tunnel_manager CLI entry point."""
         from tunnel_manager.tunnel_manager import tunnel_manager
 

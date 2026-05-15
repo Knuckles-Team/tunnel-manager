@@ -715,3 +715,44 @@ uv pip install --upgrade tunnel-manager
   }
 }
 ```
+
+## Available MCP Tools
+This server implements an action-routed dynamic tool architecture, consolidating operations into categorized tools.
+| Tool Name | Action | Description |
+|-----------|--------|-------------|
+| `tunnel_host_management` | `list_hosts` | Executes `list_hosts` within the `host_management` category. |
+| `tunnel_host_management` | `add_host` | Executes `add_host` within the `host_management` category. |
+| `tunnel_host_management` | `remove_host` | Executes `remove_host` within the `host_management` category. |
+| `tunnel_remote_access` | `run_command_on_remote_host` | Executes `run_command_on_remote_host` within the `remote_access` category. |
+| `tunnel_remote_access` | `send_file_to_remote_host` | Executes `send_file_to_remote_host` within the `remote_access` category. |
+| `tunnel_remote_access` | `receive_file_from_remote_host` | Executes `receive_file_from_remote_host` within the `remote_access` category. |
+| `tunnel_remote_access` | `check_ssh_server` | Executes `check_ssh_server` within the `remote_access` category. |
+| `tunnel_remote_access` | `test_key_auth` | Executes `test_key_auth` within the `remote_access` category. |
+| `tunnel_remote_access` | `setup_passwordless_ssh` | Executes `setup_passwordless_ssh` within the `remote_access` category. |
+| `tunnel_remote_access` | `copy_ssh_config` | Executes `copy_ssh_config` within the `remote_access` category. |
+| `tunnel_remote_access` | `rotate_ssh_key` | Executes `rotate_ssh_key` within the `remote_access` category. |
+| `tunnel_remote_access` | `remove_host_key` | Executes `remove_host_key` within the `remote_access` category. |
+| `tunnel_remote_access` | `configure_key_auth_on_inventory` | Executes `configure_key_auth_on_inventory` within the `remote_access` category. |
+| `tunnel_remote_access` | `run_command_on_inventory` | Executes `run_command_on_inventory` within the `remote_access` category. |
+| `tunnel_remote_access` | `copy_ssh_config_on_inventory` | Executes `copy_ssh_config_on_inventory` within the `remote_access` category. |
+| `tunnel_remote_access` | `rotate_ssh_key_on_inventory` | Executes `rotate_ssh_key_on_inventory` within the `remote_access` category. |
+| `tunnel_remote_access` | `send_file_to_inventory` | Executes `send_file_to_inventory` within the `remote_access` category. |
+| `tunnel_remote_access` | `receive_file_from_inventory` | Executes `receive_file_from_inventory` within the `remote_access` category. |
+| `tunnel_operation_management` | `start_operation` | Executes `start_operation` within the `operation_management` category. |
+| `tunnel_operation_management` | `get_operation_progress` | Executes `get_operation_progress` within the `operation_management` category. |
+| `tunnel_operation_management` | `cancel_operation` | Executes `cancel_operation` within the `operation_management` category. |
+| `tunnel_operation_management` | `get_resource_metrics` | Executes `get_resource_metrics` within the `operation_management` category. |
+| `tunnel_operation_management` | `list_active_sessions` | Executes `list_active_sessions` within the `operation_management` category. |
+| `tunnel_system_intelligence` | `get_system_info` | Executes `get_system_info` within the `system_intelligence` category. |
+| `tunnel_system_intelligence` | `discover_services` | Executes `discover_services` within the `system_intelligence` category. |
+| `tunnel_system_intelligence` | `analyze_logs` | Executes `analyze_logs` within the `system_intelligence` category. |
+| `tunnel_system_intelligence` | `network_topology` | Executes `network_topology` within the `system_intelligence` category. |
+| `tunnel_advanced_file_operations` | `recursive_file_operations` | Executes `recursive_file_operations` within the `advanced_file_operations` category. |
+| `tunnel_advanced_file_operations` | `file_content_search` | Executes `file_content_search` within the `advanced_file_operations` category. |
+| `tunnel_advanced_file_operations` | `file_watch_monitor` | Executes `file_watch_monitor` within the `advanced_file_operations` category. |
+| `tunnel_advanced_file_operations` | `file_diff_compare` | Executes `file_diff_compare` within the `advanced_file_operations` category. |
+| `tunnel_advanced_file_operations` | `smart_backup` | Executes `smart_backup` within the `advanced_file_operations` category. |
+| `tunnel_security_auditing` | `security_audit` | Executes `security_audit` within the `security_auditing` category. |
+| `tunnel_security_auditing` | `compliance_check` | Executes `compliance_check` within the `security_auditing` category. |
+| `tunnel_security_auditing` | `vulnerability_scan` | Executes `vulnerability_scan` within the `security_auditing` category. |
+| `tunnel_security_auditing` | `access_control_audit` | Executes `access_control_audit` within the `security_auditing` category. |

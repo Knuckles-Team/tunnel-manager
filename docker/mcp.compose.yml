@@ -3,8 +3,8 @@ services:
   tunnel-manager-mcp:
     image: docker.io/knucklessg1/tunnel-manager:latest
     #    build:
-    #      context: . # Debug
-    #      dockerfile: debug.Dockerfile
+    #      context: .. # Debug
+    #      dockerfile: docker/debug.Dockerfile
     container_name: tunnel-manager-mcp
     hostname: tunnel-manager-mcp
     command: [ "tunnel-manager-mcp" ]
@@ -17,7 +17,7 @@ services:
         max-file: "3"
     restart: always
     env_file:
-      - .env
+      - ../.env
 
     environment:
       - "PYTHONUNBUFFERED=1"
@@ -39,8 +39,8 @@ services:
   tunnel-manager-agent:
     image: docker.io/knucklessg1/tunnel-manager:latest
     #    build:
-    #      context: . # Debug
-    #      dockerfile: debug.Dockerfile
+    #      context: .. # Debug
+    #      dockerfile: docker/debug.Dockerfile
     container_name: tunnel-manager-agent
     hostname: tunnel-manager-agent
     command: [ "tunnel-manager-agent" ]
@@ -55,7 +55,7 @@ services:
         max-file: "3"
     restart: always
     env_file:
-      - .env
+      - ../.env
 
     environment:
       - "PYTHONUNBUFFERED=1"

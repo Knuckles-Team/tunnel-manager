@@ -1,4 +1,4 @@
-FROM python:3-slim
+FROM python:3.13-slim
 
 ARG HOST=0.0.0.0
 ARG PORT=8000
@@ -51,14 +51,17 @@ ENV HOST=${HOST} \
     UV_SYSTEM_PYTHON=1 \
     UV_COMPILE_BYTECODE=1
 
-RUN apt-get update \
-     && apt-get install -y default-jre ripgrep tree fd-find curl nano \
-     && curl -LsSf https://astral.sh/uv/install.sh | sh \
-     && curl -sS https://starship.rs/install.sh | sh -s -- --yes \
-    && mkdir -p /root/.config \
-    && echo 'eval "$(starship init bash)"' >> /root/.bashrc \ \
-    uv pip install --system --upgrade --verbose --no-cache --break-system-packages --prerelease=allow tunnel-manager[all]>=1.10.0
+COPY . /app
+WORKDIR /app
 
-COPY starship.toml /root/.config/starship.toml
+RUN apt-get update \
+    && apt-get install -y default-jre ripgrep tree fd-find curl nano \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && curl -sS https://starship.rs/install.sh | sh -s -- --yes \
+    && mkdir -p /root/.config \
+    && echo 'eval "$(starship init bash)"' >> /root/.bashrc \
+&& uv pip install --system --upgrade --verbose --no-cache --break-system-packages --prerelease=allow .[all]
+
+COPY docker/starship.toml /root/.config/starship.toml
 
 CMD ["tunnel-manager-mcp"]
