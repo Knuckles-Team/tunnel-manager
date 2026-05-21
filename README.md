@@ -21,7 +21,7 @@
 ![PyPI - Wheel](https://img.shields.io/pypi/wheel/tunnel-manager)
 ![PyPI - Implementation](https://img.shields.io/pypi/implementation/tunnel-manager)
 
-*Version: 1.11.0*
+*Version: 1.11.1*
 
 ## Overview
 
@@ -600,6 +600,42 @@ docker-compose up -d
 }
 ```
 
+## Security & Governance
+
+This project is built on [`agent-utilities`](https://github.com/Knuckles-Team/agent-utilities), inheriting enterprise-grade security and governance features.
+
+### Authentication & Authorization
+| Feature | Description |
+|---------|-------------|
+| **OIDC Token Delegation** | RFC 8693 token exchange for user-context propagation from A2A → MCP |
+| **Eunomia Policies** | Fine-grained, policy-driven tool authorization (`none`, `embedded`, `remote`) |
+| **Scoped Credentials** | Tools execute with the caller's scoped identity where possible |
+| **3LO / OAuth / API Token** | Multiple auth strategies with graceful fallback |
+
+### Eunomia Policy Enforcement
+Eunomia provides a policy enforcement point for all tool calls:
+- **Embedded mode**: Load local `mcp_policies.json` for role-based access, sensitivity gating, and audit logging
+- **Remote mode**: Forward authorization decisions to a central Eunomia policy server for multi-agent governance
+- Enable via CLI: `--eunomia-type embedded --eunomia-policy-file mcp_policies.json`
+
+### Runtime Protections
+| Protection | Description |
+|------------|-------------|
+| **Tool Guard** | Sensitivity detection with human-in-the-loop approval gating |
+| **Prompt Injection Defense** | Input scanning and repetition/loop guards |
+| **Content Filtering** | Output schema enforcement and cost budget controls |
+| **Stuck Loop Detection** | Automatic detection and recovery from agent loops |
+| **Context Limit Warnings** | Proactive alerts before context window exhaustion |
+
+### Graph Agent Architecture
+The A2A agent uses `pydantic-graph` orchestration with:
+- **RouterNode**: Lightweight classifier that routes queries to specialized domains
+- **DomainNode**: Focused executor with only relevant tools loaded, preventing tool hallucination
+- **Approval Gates**: Policy-driven approval workflows before sensitive operations
+- **Usage Guards**: Budget and rate limiting enforcement
+
+> **Production Recommendation**: Enable `--eunomia-type embedded` (or `remote`) + OIDC delegation + containerized deployment. See [`agent-utilities` documentation](https://github.com/Knuckles-Team/agent-utilities) for full policy configuration.
+
 ## Install Python Package
 ```bash
 python -m pip install tunnel-manager
@@ -622,100 +658,38 @@ uv pip install --upgrade tunnel-manager
 
 ## MCP Configuration Examples
 
-### 1. Standard IO (stdio) Deployment
-
+### stdio (recommended for local development)
 ```json
 {
   "mcpServers": {
     "tunnel-manager": {
-      "command": "uv",
-      "args": [
-        "run",
-        "tunnel-manager-mcp"
-      ],
+      "command": ".venv/bin/tunnel-manager-mcp",
+      "args": [],
       "env": {
-        "ADVANCED_FILE_OPERATIONSTOOL": "True",
-        "AGENT_DESCRIPTION": "<YOUR_AGENT_DESCRIPTION>",
-        "AGENT_SYSTEM_PROMPT": "<YOUR_AGENT_SYSTEM_PROMPT>",
-        "DEFAULT_AGENT_NAME": "<YOUR_DEFAULT_AGENT_NAME>",
-        "HOST_MANAGEMENTTOOL": "True",
-        "LLM_API_KEY": "<YOUR_LLM_API_KEY>",
-        "LLM_BASE_URL": "<YOUR_LLM_BASE_URL>",
-        "MCP_URL": "<YOUR_MCP_URL>",
-        "MISCTOOL": "True",
-        "MODEL_ID": "<YOUR_MODEL_ID>",
-        "OPERATION_MANAGEMENTTOOL": "True",
-        "REMOTE_ACCESSTOOL": "True",
-        "SECURITY_AUDITINGTOOL": "True",
-        "SYSTEM_INTELLIGENCETOOL": "True",
-        "TUNNEL_CERTIFICATE": "<YOUR_TUNNEL_CERTIFICATE>",
-        "TUNNEL_IDENTITY_FILE": "<YOUR_TUNNEL_IDENTITY_FILE>",
-        "TUNNEL_INVENTORY": "<YOUR_TUNNEL_INVENTORY>",
-        "TUNNEL_INVENTORY_GROUP": "<YOUR_TUNNEL_INVENTORY_GROUP>",
-        "TUNNEL_LOG_FILE": "<YOUR_TUNNEL_LOG_FILE>",
-        "TUNNEL_MAX_THREADS": "<YOUR_TUNNEL_MAX_THREADS>",
-        "TUNNEL_PARALLEL": "<YOUR_TUNNEL_PARALLEL>",
-        "TUNNEL_PASSWORD": "<YOUR_TUNNEL_PASSWORD>",
-        "TUNNEL_PROXY_COMMAND": "<YOUR_TUNNEL_PROXY_COMMAND>",
-        "TUNNEL_REMOTE_HOST": "<YOUR_TUNNEL_REMOTE_HOST>",
-        "TUNNEL_REMOTE_PORT": "<YOUR_TUNNEL_REMOTE_PORT>",
-        "TUNNEL_USERNAME": "<YOUR_TUNNEL_USERNAME>"
-      }
+        "TUNNEL_IDENTITY_FILE": "",
+        "TM_HOSTS_TOOL": "True",
+        "TM_REMOTE_TOOL": "True",
+        "TM_INVENTORY_TOOL": "True",
+        "TM_OPERATIONS_TOOL": "True",
+        "TM_SYSTEM_TOOL": "True",
+        "TM_FILES_TOOL": "True",
+        "TM_SECURITY_TOOL": "True"
+}
     }
   }
 }
 ```
 
-### 2. Streamable HTTP (SSE) Deployment
-
+### Streamable HTTP (recommended for production)
 ```json
 {
   "mcpServers": {
     "tunnel-manager": {
-      "command": "uv",
-      "args": [
-        "run",
-        "tunnel-manager-mcp",
-        "--transport",
-        "http",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "8000"
-      ],
-      "env": {
-        "ADVANCED_FILE_OPERATIONSTOOL": "True",
-        "AGENT_DESCRIPTION": "<YOUR_AGENT_DESCRIPTION>",
-        "AGENT_SYSTEM_PROMPT": "<YOUR_AGENT_SYSTEM_PROMPT>",
-        "DEFAULT_AGENT_NAME": "<YOUR_DEFAULT_AGENT_NAME>",
-        "HOST_MANAGEMENTTOOL": "True",
-        "LLM_API_KEY": "<YOUR_LLM_API_KEY>",
-        "LLM_BASE_URL": "<YOUR_LLM_BASE_URL>",
-        "MCP_URL": "<YOUR_MCP_URL>",
-        "MISCTOOL": "True",
-        "MODEL_ID": "<YOUR_MODEL_ID>",
-        "OPERATION_MANAGEMENTTOOL": "True",
-        "REMOTE_ACCESSTOOL": "True",
-        "SECURITY_AUDITINGTOOL": "True",
-        "SYSTEM_INTELLIGENCETOOL": "True",
-        "TUNNEL_CERTIFICATE": "<YOUR_TUNNEL_CERTIFICATE>",
-        "TUNNEL_IDENTITY_FILE": "<YOUR_TUNNEL_IDENTITY_FILE>",
-        "TUNNEL_INVENTORY": "<YOUR_TUNNEL_INVENTORY>",
-        "TUNNEL_INVENTORY_GROUP": "<YOUR_TUNNEL_INVENTORY_GROUP>",
-        "TUNNEL_LOG_FILE": "<YOUR_TUNNEL_LOG_FILE>",
-        "TUNNEL_MAX_THREADS": "<YOUR_TUNNEL_MAX_THREADS>",
-        "TUNNEL_PARALLEL": "<YOUR_TUNNEL_PARALLEL>",
-        "TUNNEL_PASSWORD": "<YOUR_TUNNEL_PASSWORD>",
-        "TUNNEL_PROXY_COMMAND": "<YOUR_TUNNEL_PROXY_COMMAND>",
-        "TUNNEL_REMOTE_HOST": "<YOUR_TUNNEL_REMOTE_HOST>",
-        "TUNNEL_REMOTE_PORT": "<YOUR_TUNNEL_REMOTE_PORT>",
-        "TUNNEL_USERNAME": "<YOUR_TUNNEL_USERNAME>"
-      }
+      "url": "http://localhost:8080/tunnel-manager-mcp/mcp"
     }
   }
 }
 ```
-
 ## Available MCP Tools
 This server implements an action-routed dynamic tool architecture, consolidating operations into categorized tools.
 | Tool Name | Action | Description |

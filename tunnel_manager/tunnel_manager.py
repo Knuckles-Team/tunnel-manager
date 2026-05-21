@@ -12,7 +12,7 @@ import yaml
 
 from .models import CommandResult, HostConfig
 
-__version__ = "1.11.0"
+__version__ = "1.11.1"
 
 
 class HostManager:
@@ -165,9 +165,7 @@ class Tunnel:
             return
 
         self.ssh_client = paramiko.SSHClient()
-        self.ssh_client.set_missing_host_key_policy(
-            paramiko.AutoAddPolicy()
-        )  # nosec B507
+        self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # nosec B507
 
         proxy = None
         if self.proxy_command:

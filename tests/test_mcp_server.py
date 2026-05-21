@@ -10,7 +10,7 @@ class TestGetMcpInstance:
         with patch("tunnel_manager.mcp_server.create_mcp_server") as mock_create:
             mock_create.return_value = (MagicMock(), MagicMock(), [MagicMock()])
 
-            mcp, args, middlewares = get_mcp_instance()
+            mcp, args, middlewares, registered_tags = get_mcp_instance()
 
             assert mcp is not None
 
