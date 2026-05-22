@@ -1,79 +1,28 @@
----
+version: '3.8'
+
 services:
   tunnel-manager-mcp:
-    image: docker.io/knucklessg1/tunnel-manager:latest
-    #    build:
-    #      context: .. # Debug
-    #      dockerfile: docker/debug.Dockerfile
+    image: knucklessg1/tunnel-manager:latest
     container_name: tunnel-manager-mcp
     hostname: tunnel-manager-mcp
-    command: [ "tunnel-manager-mcp" ]
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    restart: always
+    env_file:
+      - ../.env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HOST=0.0.0.0
+      - PORT=8000
+      - TRANSPORT=streamable-http
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
-    restart: always
-    env_file:
-      - ../.env
-
-    environment:
-      - "PYTHONUNBUFFERED=1"
-      - "HOST=0.0.0.0"
-      - "PORT=8002"
-      - "TRANSPORT=streamable-http"
-      - "TUNNEL_REMOTE_HOST=${TUNNEL_REMOTE_HOST}"
-    ports:
-      - "8002:8002"
-    healthcheck:
-      test: [ "CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    volumes:
-      - ~/.ssh:/root/.ssh:ro
-
-  tunnel-manager-agent:
-    image: docker.io/knucklessg1/tunnel-manager:latest
-    #    build:
-    #      context: .. # Debug
-    #      dockerfile: docker/debug.Dockerfile
-    container_name: tunnel-manager-agent
-    hostname: tunnel-manager-agent
-    command: [ "tunnel-manager-agent" ]
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      - tunnel-manager-mcp
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-    restart: always
-    env_file:
-      - ../.env
-
-    environment:
-      - "PYTHONUNBUFFERED=1"
-      - "HOST=0.0.0.0"
-      - "PORT=9002"
-      - "MCP_URL=http://tunnel-manager-mcp:8002/mcp"
-      - "PROVIDER=openai"
-      - "LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:1234/v1}"
-      - "LLM_API_KEY=${LLM_API_KEY:-llama}"
-      - "MODEL_ID=${MODEL_ID:-nvidia/nemotron-3-super}"
-      - "DEBUG=False"
-      - "ENABLE_WEB_UI=True"
-      - "ENABLE_OTEL=True"
-    ports:
-      - "9002:9002"
-    healthcheck:
-      test: [ "CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9002/health')" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s

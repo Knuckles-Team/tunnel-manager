@@ -885,7 +885,7 @@ def register_inventory_tools(mcp: FastMCP):
     )
     async def tm_inventory(
         action: str = Field(
-            description="Action: 'configure_key_auth', 'run_command', 'copy_ssh_config', 'rotate_key', 'send_file', 'receive_file'"
+            description="Action: 'configure_key_auth', 'mesh_bootstrap', 'run_command', 'copy_ssh_config', 'rotate_key', 'send_file', 'receive_file'"
         ),
         inventory: str = Field(
             default=os.environ.get("TUNNEL_INVENTORY", _DEFAULT_INVENTORY_PATH),
@@ -1089,6 +1089,53 @@ def register_inventory_tools(mcp: FastMCP):
                 return ResponseBuilder.build(
                     500,
                     f"Setup all fail: {e}",
+                    {"inventory": inventory, "group": group, "key_type": key_type},
+                    str(e),
+                )
+
+        elif action == "mesh_bootstrap":
+            if key_type not in ["rsa", "ed25519"]:
+                return ResponseBuilder.build(
+                    400,
+                    f"Invalid key_type: {key_type}",
+                    {"action": action},
+                    errors=["key_type must be 'rsa' or 'ed25519'"],
+                )
+            try:
+                res = await asyncio.to_thread(
+                    Tunnel.setup_full_mesh_ssh,
+                    inventory=inventory,
+                    key_path=key,
+                    key_type=key_type,
+                    group=group,
+                    parallel=parallel,
+                    max_threads=max_threads,
+                )
+
+                status_code = 200 if res["status"] == "success" else 500
+                msg = (
+                    "Full-mesh SSH bootstrap completed successfully"
+                    if status_code == 200
+                    else "Full-mesh SSH bootstrap failed for some hosts"
+                )
+
+                return ResponseBuilder.build(
+                    status_code,
+                    msg,
+                    {
+                        "inventory": inventory,
+                        "group": group,
+                        "key_type": key_type,
+                        "host_results": res["host_results"],
+                    },
+                    stdout="; ".join(res["errors"]),
+                    errors=res["errors"],
+                )
+            except Exception as e:
+                ctx_log(ctx, logger, "error", f"Mesh bootstrap fail: {e}")
+                return ResponseBuilder.build(
+                    500,
+                    f"Mesh bootstrap fail: {e}",
                     {"inventory": inventory, "group": group, "key_type": key_type},
                     str(e),
                 )

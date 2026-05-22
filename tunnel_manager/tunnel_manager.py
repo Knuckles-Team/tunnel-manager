@@ -154,7 +154,10 @@ class Tunnel:
         if not self.username:
             raise ValueError("Username must be provided via parameter or SSH config.")
         if not self.identity_file and not self.password:
-            raise ValueError("Either identity_file or password must be provided.")
+            self.logger.info(
+                "Neither identity_file nor password was explicitly provided. "
+                "Will attempt authentication using local SSH Agent and default keys."
+            )
 
     def connect(self):
         if (
@@ -165,49 +168,78 @@ class Tunnel:
             return
 
         self.ssh_client = paramiko.SSHClient()
-        self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # nosec B507
+        self.ssh_client.set_missing_host_key_policy(
+            paramiko.AutoAddPolicy()
+        )  # nosec B507
 
+        # 1. Path Expansion & Normalization (Linux & Windows)
+        expanded_identity = None
+        if self.identity_file:
+            expanded_identity = os.path.abspath(os.path.expanduser(self.identity_file))
+            self.logger.info(f"Resolved identity path: {expanded_identity}")
+
+        expanded_cert = None
+        if self.certificate_file:
+            expanded_cert = os.path.abspath(os.path.expanduser(self.certificate_file))
+            self.logger.info(f"Resolved certificate path: {expanded_cert}")
+
+        # 2. Proxy Command Token Expansion & Platform Resolution (Linux & Windows)
         proxy = None
         if self.proxy_command:
-            proxy = paramiko.ProxyCommand(self.proxy_command)
-            self.logger.info(f"Using proxy command: {self.proxy_command}")
+            cmd_str = self.proxy_command
+            cmd_str = cmd_str.replace("%h", self.remote_host)
+            cmd_str = cmd_str.replace("%p", str(self.port))
+            cmd_str = cmd_str.replace("%r", self.username or "")
+
+            import shlex
+            import shutil
+
+            try:
+                parts = shlex.split(cmd_str)
+                if parts:
+                    resolved_exec = shutil.which(parts[0])
+                    if resolved_exec:
+                        parts[0] = resolved_exec
+                        cmd_str = " ".join(parts)
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to parse proxy command '{cmd_str}': {str(e)}"
+                )
+
+            proxy = paramiko.ProxyCommand(cmd_str)
+            self.logger.info(f"Using proxy command: {cmd_str}")
 
         try:
-            if self.identity_file:
+            private_key = None
+            if expanded_identity:
                 try:
                     private_key = paramiko.Ed25519Key.from_private_key_file(
-                        self.identity_file
+                        expanded_identity
                     )
-                    self.logger.info(f"Loaded ED25519 key from: {self.identity_file}")
+                    self.logger.info(f"Loaded ED25519 key from: {expanded_identity}")
                 except paramiko.ssh_exception.SSHException:
                     private_key = paramiko.RSAKey.from_private_key_file(
-                        self.identity_file
+                        expanded_identity
                     )
-                    self.logger.info(f"Loaded RSA key from: {self.identity_file}")
-                if self.certificate_file:
-                    private_key.load_certificate(self.certificate_file)
-                    self.logger.info(f"Loaded certificate: {self.certificate_file}")
-                self.ssh_client.connect(
-                    self.remote_host,
-                    port=self.port,
-                    username=self.username,
-                    pkey=private_key,
-                    sock=proxy,
-                    auth_timeout=30,
-                    look_for_keys=False,
-                    allow_agent=False,
-                )
-            else:
-                self.ssh_client.connect(
-                    self.remote_host,
-                    port=self.port,
-                    username=self.username,
-                    password=self.password,
-                    sock=proxy,
-                    auth_timeout=30,
-                    look_for_keys=False,
-                    allow_agent=False,
-                )
+                    self.logger.info(f"Loaded RSA key from: {expanded_identity}")
+
+                if expanded_cert:
+                    private_key.load_certificate(expanded_cert)
+                    self.logger.info(f"Loaded certificate: {expanded_cert}")
+
+            # 3. Connection with SSH Agent and user-provided keys
+            # We enable allow_agent=True and look_for_keys=True by default to allow zero-burden fallback.
+            self.ssh_client.connect(
+                self.remote_host,
+                port=self.port,
+                username=self.username,
+                password=self.password,
+                pkey=private_key,
+                sock=proxy,
+                auth_timeout=30,
+                look_for_keys=True,
+                allow_agent=True,
+            )
             self.logger.info(f"Connected to {self.remote_host}")
         except Exception as e:
             self.logger.error(f"Connection failed: {str(e)}")
@@ -749,6 +781,375 @@ class Tunnel:
             logging.info(f"Key auth test for {username}@{hostname}: {msg}")
 
         Tunnel.execute_on_inventory(inventory, setup_host, group, parallel, max_threads)
+
+    @staticmethod
+    def setup_full_mesh_ssh(
+        inventory,
+        key_path=os.path.expanduser("~/.ssh/id_ed25519"),
+        key_type="ed25519",
+        group="all",
+        parallel=False,
+        max_threads=5,
+    ):
+        """
+        Set up full-mesh passwordless SSH for all hosts in the specified group.
+        Ensures every host can SSH to every other host, including the local machine,
+        without password prompts. Supports POSIX and Windows remotes.
+        """
+        import subprocess
+
+        logger = logging.getLogger("Tunnel")
+        logger.info(
+            f"Starting native full-mesh SSH bootstrap for group '{group}' using inventory '{inventory}'"
+        )
+
+        # 1. Local key generation
+        key_path = os.path.expanduser(key_path)
+        pub_key_path = key_path + ".pub"
+        if key_type not in ["rsa", "ed25519"]:
+            raise ValueError("key_type must be 'rsa' or 'ed25519'")
+
+        if not os.path.exists(key_path):
+            os.makedirs(os.path.dirname(key_path), exist_ok=True)
+            if key_type == "rsa":
+                subprocess.run(
+                    [
+                        "/usr/bin/ssh-keygen",
+                        "-t",
+                        "rsa",
+                        "-b",
+                        "4096",
+                        "-f",
+                        key_path,
+                        "-N",
+                        "",
+                    ],
+                    check=True,
+                )
+            else:
+                subprocess.run(
+                    ["/usr/bin/ssh-keygen", "-t", "ed25519", "-f", key_path, "-N", ""],
+                    check=True,
+                )
+            logger.info(f"Generated local {key_type} key pair: {key_path}")
+
+        with open(pub_key_path) as f:
+            local_pub_key = f.read().strip()
+
+        # 2. Parse inventory hosts
+        try:
+            with open(inventory) as f:
+                inventory_data = yaml.safe_load(f)
+        except Exception as e:
+            logger.error(f"Failed to read inventory file: {e}")
+            raise
+
+        hosts = []
+        if (
+            group in inventory_data
+            and isinstance(inventory_data[group], dict)
+            and "hosts" in inventory_data[group]
+            and isinstance(inventory_data[group]["hosts"], dict)
+        ):
+            for host_name, vars in inventory_data[group]["hosts"].items():
+                host_entry = {
+                    "name": host_name,
+                    "hostname": vars.get("ansible_host", host_name),
+                    "username": vars.get("ansible_user"),
+                    "password": vars.get("ansible_ssh_pass"),
+                    "key_path": vars.get("ansible_ssh_private_key_file") or key_path,
+                }
+                if host_entry["username"]:
+                    hosts.append(host_entry)
+        else:
+            raise ValueError(f"Group '{group}' not found in inventory or invalid")
+
+        if not hosts:
+            logger.warning(f"No valid hosts found in group '{group}'")
+            return {"status": "success", "host_results": [], "errors": []}
+
+        # First pass - setup passwordless access, detect remote OS, ensure keygen and read pubkey
+        host_results = {}
+
+        def process_first_pass(host):
+            hostname = host["hostname"]
+            username = host["username"]
+            password = host["password"]
+            kpath = host["key_path"]
+
+            tunnel = Tunnel(
+                remote_host=hostname,
+                username=username,
+                password=password,
+                identity_file=kpath,
+            )
+
+            # Test key auth
+            res, _ = tunnel.test_key_auth(kpath)
+            if not res:
+                if not password:
+                    raise ValueError(
+                        f"Key authentication failed and no password provided for {username}@{hostname}"
+                    )
+                logger.info(
+                    f"Key auth failed for {username}@{hostname}, attempting passwordless setup..."
+                )
+                tunnel.remove_host_key()
+                tunnel.setup_passwordless_ssh(local_key_path=kpath, key_type=key_type)
+
+            # Re-connect to perform remote generation and detection
+            tunnel.connect()
+            try:
+                # Detect OS
+                is_windows = False
+                res_os = tunnel.run_command("uname -s")
+                if (
+                    not res_os.success
+                    or "uname" in res_os.stderr.lower()
+                    or not res_os.stdout
+                ):
+                    is_windows = True
+
+                # Check / generate key on remote
+                if is_windows:
+                    tunnel.run_command(
+                        'if not exist "%USERPROFILE%\\.ssh" mkdir "%USERPROFILE%\\.ssh"'
+                    )
+                    gen_cmd = f'if not exist "%USERPROFILE%\\.ssh\\id_{key_type}" (ssh-keygen -t {key_type} -N "" -f "%USERPROFILE%\\.ssh\\id_{key_type}")'
+                else:
+                    tunnel.run_command("mkdir -p ~/.ssh && chmod 700 ~/.ssh")
+                    gen_cmd = f"if [ ! -f ~/.ssh/id_{key_type} ]; then ssh-keygen -t {key_type} -N '' -f ~/.ssh/id_{key_type}; fi"
+
+                res_gen = tunnel.run_command(gen_cmd)
+                if not res_gen.success:
+                    raise RuntimeError(
+                        f"Failed to generate key on remote host: {res_gen.stderr or res_gen.error_message}"
+                    )
+
+                # Read remote public key
+                if is_windows:
+                    read_cmd = f'type "%USERPROFILE%\\.ssh\\id_{key_type}.pub"'
+                else:
+                    read_cmd = f"cat ~/.ssh/id_{key_type}.pub"
+
+                res_pub = tunnel.run_command(read_cmd)
+                if not res_pub.success or not res_pub.stdout:
+                    raise RuntimeError(
+                        f"Failed to read public key from remote: {res_pub.stderr or res_pub.error_message}"
+                    )
+                remote_pub_key = res_pub.stdout.strip()
+
+                # Extract local-perceived IP via SSH_CONNECTION
+                if is_windows:
+                    ip_cmd = "echo %SSH_CONNECTION%"
+                else:
+                    ip_cmd = "echo $SSH_CONNECTION"
+
+                res_ip = tunnel.run_command(ip_cmd)
+                client_ip = None
+                if res_ip.success and res_ip.stdout:
+                    parts = res_ip.stdout.strip().split()
+                    if parts:
+                        client_ip = parts[0]
+
+                # Ensure local pub key is explicitly inside remote authorized_keys
+                if is_windows:
+                    tunnel.run_command(
+                        f'echo {local_pub_key} >> "%USERPROFILE%\\.ssh\\authorized_keys"'
+                    )
+                else:
+                    tunnel.run_command(
+                        f"echo '{local_pub_key}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+                    )
+
+                host_results[hostname] = {
+                    "name": host["name"],
+                    "hostname": hostname,
+                    "username": username,
+                    "password": password,
+                    "key_path": kpath,
+                    "is_windows": is_windows,
+                    "remote_pub_key": remote_pub_key,
+                    "client_ip": client_ip,
+                    "status": "success",
+                    "errors": [],
+                }
+            except Exception as e:
+                host_results[hostname] = {
+                    "name": host["name"],
+                    "hostname": hostname,
+                    "username": username,
+                    "status": "failed",
+                    "errors": [str(e)],
+                }
+            finally:
+                tunnel.close()
+
+        # Run first pass (parallel or sequential)
+        if parallel:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_threads
+            ) as executor:
+                futures = [executor.submit(process_first_pass, h) for h in hosts]
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        future.result()
+                    except Exception as e:
+                        logger.error(f"Error in first pass: {e}")
+        else:
+            for h in hosts:
+                try:
+                    process_first_pass(h)
+                except Exception as e:
+                    logger.error(f"Error in first pass: {e}")
+
+        # Filter out failed hosts from second pass
+        successful_hosts = [
+            r for r in host_results.values() if r["status"] == "success"
+        ]
+
+        # Second pass - distribute other hosts' public keys and run ssh-keyscan
+        def process_second_pass(host):
+            hostname = host["hostname"]
+            username = host["username"]
+            kpath = host["key_path"]
+            is_windows = host["is_windows"]
+            client_ip = host["client_ip"]
+
+            tunnel = Tunnel(
+                remote_host=hostname, username=username, identity_file=kpath
+            )
+            tunnel.connect()
+            try:
+                # Read existing authorized_keys
+                if is_windows:
+                    cat_cmd = 'type "%USERPROFILE%\\.ssh\\authorized_keys"'
+                else:
+                    cat_cmd = "cat ~/.ssh/authorized_keys"
+
+                res_auth = tunnel.run_command(cat_cmd)
+                existing_keys = res_auth.stdout if res_auth.success else ""
+
+                # Collect and append keys
+                keys_to_add = []
+                if local_pub_key not in existing_keys:
+                    keys_to_add.append(local_pub_key)
+
+                for other_host in successful_hosts:
+                    if other_host["hostname"] != hostname:
+                        other_pub = other_host["remote_pub_key"]
+                        if other_pub not in existing_keys:
+                            keys_to_add.append(other_pub)
+
+                if keys_to_add:
+                    for key_to_add in keys_to_add:
+                        if is_windows:
+                            tunnel.run_command(
+                                f'echo {key_to_add} >> "%USERPROFILE%\\.ssh\\authorized_keys"'
+                            )
+                        else:
+                            tunnel.run_command(
+                                f"echo '{key_to_add}' >> ~/.ssh/authorized_keys"
+                            )
+                    if not is_windows:
+                        tunnel.run_command("chmod 600 ~/.ssh/authorized_keys")
+
+                # Setup keyscan for all targets
+                scan_targets = set()
+                if client_ip:
+                    scan_targets.add(client_ip)
+                for other_host in successful_hosts:
+                    if other_host["hostname"] != hostname:
+                        scan_targets.add(other_host["hostname"])
+                        if (
+                            other_host.get("name")
+                            and other_host["name"] != other_host["hostname"]
+                        ):
+                            scan_targets.add(other_host["name"])
+
+                for target in scan_targets:
+                    if is_windows:
+                        keyscan_cmd = f'ssh-keyscan -H {target} >> "%USERPROFILE%\\.ssh\\known_hosts"'
+                    else:
+                        tunnel.run_command(
+                            "touch ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts"
+                        )
+                        keyscan_cmd = f"ssh-keyscan -H {target} >> ~/.ssh/known_hosts"
+                    tunnel.run_command(keyscan_cmd)
+
+            except Exception as e:
+                host_results[hostname]["status"] = "failed"
+                host_results[hostname]["errors"].append(str(e))
+            finally:
+                tunnel.close()
+
+        # Run second pass (parallel or sequential)
+        if parallel:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_threads
+            ) as executor:
+                futures = [
+                    executor.submit(process_second_pass, h) for h in successful_hosts
+                ]
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        future.result()
+                    except Exception as e:
+                        logger.error(f"Error in second pass: {e}")
+        else:
+            for h in successful_hosts:
+                try:
+                    process_second_pass(h)
+                except Exception as e:
+                    logger.error(f"Error in second pass: {e}")
+
+        # Local updates (local authorized_keys and local known_hosts)
+        try:
+            local_auth_path = os.path.expanduser("~/.ssh/authorized_keys")
+            local_existing_keys = ""
+            if os.path.exists(local_auth_path):
+                with open(local_auth_path) as f:
+                    local_existing_keys = f.read()
+
+            with open(local_auth_path, "a") as f:
+                for h in successful_hosts:
+                    if h["remote_pub_key"] not in local_existing_keys:
+                        f.write("\n" + h["remote_pub_key"] + "\n")
+
+            local_known_hosts = os.path.expanduser("~/.ssh/known_hosts")
+            os.makedirs(os.path.dirname(local_known_hosts), exist_ok=True)
+            with open(local_known_hosts, "a"):
+                pass
+
+            for h in successful_hosts:
+                for target in [h["hostname"], h.get("name")]:
+                    if target:
+                        try:
+                            res = subprocess.run(
+                                ["ssh-keyscan", "-H", target],
+                                capture_output=True,
+                                text=True,
+                                check=False,
+                            )
+                            if res.returncode == 0 and res.stdout.strip():
+                                with open(local_known_hosts, "a") as f:
+                                    f.write("\n" + res.stdout.strip() + "\n")
+                        except Exception as e:
+                            logger.warning(f"Local keyscan failed for {target}: {e}")
+        except Exception as e:
+            logger.error(f"Failed to update local authorized_keys / known_hosts: {e}")
+
+        # Assemble final result
+        final_results = list(host_results.values())
+        errors = []
+        for r in final_results:
+            errors.extend(r["errors"])
+
+        return {
+            "status": "success" if not errors else "failed",
+            "host_results": final_results,
+            "errors": errors,
+        }
 
     @staticmethod
     def run_command_on_inventory(

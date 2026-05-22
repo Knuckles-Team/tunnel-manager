@@ -13,8 +13,10 @@ from tunnel_manager.tunnel_manager import HostManager, Tunnel
 class TestHostManager:
     """Test HostManager class."""
 
-    def test_init_default_config(self):
+    @patch("os.path.exists")
+    def test_init_default_config(self, mock_exists):
         """Test HostManager initialization with default config."""
+        mock_exists.return_value = False
         hm = HostManager()
         assert hm.config_file == os.path.expanduser("~/.tunnel_manager/hosts.yaml")
         assert hm.hosts == {}
@@ -148,6 +150,7 @@ class TestHostManager:
         hm = HostManager()
         hm.hosts = {"test": {"hostname": "example.com"}}
         result = hm.get_host("test")
+        assert result is not None
         assert result.hostname == "example.com"
 
     def test_get_host_nonexistent(self):
@@ -209,16 +212,16 @@ class TestTunnel:
 
     @patch("paramiko.SSHConfig")
     def test_init_missing_auth(self, mock_ssh_config):
-        """Test Tunnel initialization fails without auth method."""
+        """Test Tunnel initialization succeeds without explicit auth (falling back to agent)."""
         mock_config_instance = Mock()
         mock_config_instance.lookup.return_value = {"user": "testuser"}
         mock_ssh_config.return_value = mock_config_instance
 
         with patch("os.path.exists", return_value=False):
-            with pytest.raises(
-                ValueError, match="Either identity_file or password must be provided"
-            ):
-                Tunnel(remote_host="example.com", username="testuser")
+            t = Tunnel(remote_host="example.com", username="testuser")
+            assert t.username == "testuser"
+            assert t.identity_file is None
+            assert t.password is None
 
     @patch("paramiko.SSHConfig")
     @patch("paramiko.SSHClient")
@@ -765,6 +768,72 @@ class TestTunnel:
         # The functionality is tested through integration tests
         pytest.skip("Complex file mocking required")
 
+    @patch("paramiko.SSHConfig")
+    @patch("paramiko.SSHClient")
+    def test_connect_path_expansion(self, mock_ssh_client, mock_ssh_config):
+        """Test relative path expansion for identity and certificate files in connect()."""
+        mock_config_instance = Mock()
+        mock_config_instance.lookup.return_value = {}
+        mock_ssh_config.return_value = mock_config_instance
+
+        mock_client_instance = Mock()
+        mock_ssh_client.return_value = mock_client_instance
+
+        with patch("os.path.exists", return_value=True):
+            with patch("paramiko.Ed25519Key.from_private_key_file") as mock_key:
+                mock_key.return_value = Mock()
+                t = Tunnel(
+                    remote_host="example.com",
+                    username="testuser",
+                    identity_file="~/relative/key",
+                    certificate_file="~/relative/cert",
+                )
+
+                # Mock expanduser to simulate actual expansion
+                with patch(
+                    "os.path.expanduser",
+                    side_effect=lambda x: x.replace("~", "/home/user"),
+                ):
+                    t.connect()
+
+                    # Verify they were expanded and passed resolved paths
+                    expected_key = os.path.abspath("/home/user/relative/key")
+                    expected_cert = os.path.abspath("/home/user/relative/cert")
+
+                    mock_key.assert_called_once_with(expected_key)
+                    mock_key.return_value.load_certificate.assert_called_once_with(
+                        expected_cert
+                    )
+
+    @patch("paramiko.SSHConfig")
+    @patch("paramiko.SSHClient")
+    @patch("paramiko.ProxyCommand")
+    def test_connect_proxy_command_token_expansion(
+        self, mock_proxy_command, mock_ssh_client, mock_ssh_config
+    ):
+        """Test token expansion in proxy command in connect()."""
+        mock_config_instance = Mock()
+        mock_config_instance.lookup.return_value = {}
+        mock_ssh_config.return_value = mock_config_instance
+
+        mock_client_instance = Mock()
+        mock_ssh_client.return_value = mock_client_instance
+
+        with patch("os.path.exists", return_value=False):
+            t = Tunnel(
+                remote_host="example.com",
+                username="testuser",
+                password="password",
+                proxy_command="tsh proxy ssh %r@%h:%p",
+            )
+
+            with patch("shutil.which", return_value="/usr/bin/tsh"):
+                t.connect()
+                # Verify that token expansion replaced placeholders and shutil.which resolved executable
+                mock_proxy_command.assert_called_once_with(
+                    "/usr/bin/tsh proxy ssh testuser@example.com:22"
+                )
+
 
 class TestTunnelStaticMethods:
     """Test Tunnel static methods for inventory operations."""
@@ -1075,3 +1144,188 @@ class TestTunnelCLI:
                 tunnel_manager()
             except SystemExit:
                 pass  # --help causes sys.exit
+
+
+class TestAsyncTunnelManager:
+    """Test AsyncTunnelManager class."""
+
+    @pytest.mark.asyncio
+    @patch("asyncssh.connect")
+    async def test_async_run_command_on_host_agent_and_tokens(self, mock_connect):
+        """Test async connect with path expansion, tokens, and agent fallback."""
+        from tunnel_manager.async_tunnel import AsyncTunnelManager
+        from tunnel_manager.models import HostConfig
+
+        # Mock async context manager for asyncssh.connect
+        mock_conn = Mock()
+        mock_result = Mock()
+        mock_result.exit_status = 0
+        mock_result.stdout = "success_output"
+        mock_result.stderr = ""
+
+        # Async mock conn.run
+        async def mock_run(cmd):
+            return mock_result
+
+        mock_conn.run = mock_run
+
+        class AsyncContextManagerMock:
+            async def __aenter__(self):
+                return mock_conn
+
+            async def __aexit__(self, *args):
+                pass
+
+        mock_connect.return_value = AsyncContextManagerMock()
+
+        host_config = HostConfig(
+            hostname="example.com",
+            user="testuser",
+            port=2222,
+            identity_file="~/relative/key",
+            proxy_command="tsh proxy ssh %r@%h:%p",
+            extra_config={"certificate_file": "~/relative/cert"},
+        )
+
+        with patch(
+            "os.path.expanduser", side_effect=lambda x: x.replace("~", "/home/user")
+        ):
+            with patch("shutil.which", return_value="/usr/bin/tsh"):
+                res = await AsyncTunnelManager.async_run_command_on_host(
+                    host_config, "ls"
+                )
+
+                # Verify results
+                assert res.success is True
+                assert res.stdout == "success_output"
+
+                # Verify connect was called with expanded and resolved paths/tokens
+                expected_key = os.path.abspath("/home/user/relative/key")
+                expected_cert = os.path.abspath("/home/user/relative/cert")
+                expected_proxy = "/usr/bin/tsh proxy ssh testuser@example.com:2222"
+
+                call_kwargs = mock_connect.call_args[1]
+                assert call_kwargs["host"] == "example.com"
+                assert call_kwargs["port"] == 2222
+                assert call_kwargs["username"] == "testuser"
+                assert call_kwargs["client_keys"] == [(expected_key, expected_cert)]
+                assert call_kwargs["proxy_command"] == expected_proxy
+
+
+class TestSetupFullMeshSsh:
+    """Test full-mesh SSH bootstrap functionality."""
+
+    @patch("tunnel_manager.tunnel_manager.Tunnel")
+    def test_setup_full_mesh_ssh_success(self, mock_tunnel_cls):
+        """Test setup_full_mesh_ssh runs successfully for a mix of Linux and Windows targets."""
+        # 1. Custom mock open to allow actual YAML files to be read normally while mocking SSH key reads
+        original_open = open
+
+        def custom_open(file, mode="r", *args, **kwargs):
+            if "id_ed25519" in str(file):
+                return mock_open(
+                    read_data="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPubkey local_user@local_host"
+                )()
+            return original_open(file, mode, *args, **kwargs)
+
+        # 2. Mock inventory data
+        inventory_data = {
+            "all": {
+                "hosts": {
+                    "node1": {
+                        "ansible_host": "192.168.1.10",
+                        "ansible_user": "root",
+                        "ansible_ssh_pass": "secret1",
+                    },
+                    "node2": {
+                        "ansible_host": "192.168.1.20",
+                        "ansible_user": "Administrator",
+                        "ansible_ssh_pass": "secret2",
+                    },
+                }
+            }
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(inventory_data, f)
+            inventory_path = f.name
+
+        try:
+            # 3. Mock Tunnel connections and behavior
+            mock_t1 = Mock()  # node1 (Linux)
+            mock_t2 = Mock()  # node2 (Windows)
+
+            def tunnel_init(remote_host, username, password=None, **kwargs):
+                if remote_host == "192.168.1.10":
+                    return mock_t1
+                elif remote_host == "192.168.1.20":
+                    return mock_t2
+                raise ValueError("Unexpected host")
+
+            mock_tunnel_cls.side_effect = tunnel_init
+
+            from tunnel_manager.models import CommandResult
+
+            def run_cmd_t1(cmd):
+                if "uname -s" in cmd:
+                    return CommandResult(success=True, stdout="Linux\n")
+                elif "id_ed25519.pub" in cmd:
+                    return CommandResult(
+                        success=True, stdout="ssh-ed25519 AAAAnode1pub root@node1\n"
+                    )
+                elif "SSH_CONNECTION" in cmd:
+                    return CommandResult(
+                        success=True, stdout="192.168.1.5 54321 192.168.1.10 22\n"
+                    )
+                elif "authorized_keys" in cmd and "cat" in cmd:
+                    return CommandResult(success=True, stdout="")
+                return CommandResult(success=True, stdout="")
+
+            mock_t1.run_command.side_effect = run_cmd_t1
+            mock_t1.test_key_auth.return_value = (True, "")
+
+            def run_cmd_t2(cmd):
+                if "uname -s" in cmd:
+                    return CommandResult(
+                        success=False, stderr="uname: command not found"
+                    )
+                elif "id_ed25519.pub" in cmd:
+                    return CommandResult(
+                        success=True,
+                        stdout="ssh-ed25519 AAAAnode2pub administrator@node2\n",
+                    )
+                elif "SSH_CONNECTION" in cmd:
+                    return CommandResult(
+                        success=True, stdout="192.168.1.5 54322 192.168.1.20 22\n"
+                    )
+                elif "authorized_keys" in cmd and "type" in cmd:
+                    return CommandResult(success=True, stdout="")
+                return CommandResult(success=True, stdout="")
+
+            mock_t2.run_command.side_effect = run_cmd_t2
+            mock_t2.test_key_auth.return_value = (True, "")
+
+            # 4. Run the mesh bootstrap function
+            with (
+                patch("os.path.exists", return_value=True),
+                patch("tunnel_manager.tunnel_manager.open", side_effect=custom_open),
+            ):
+                result = Tunnel.setup_full_mesh_ssh(
+                    inventory=inventory_path,
+                    key_path="~/.ssh/id_ed25519",
+                    key_type="ed25519",
+                    parallel=False,
+                )
+
+            # 5. Verify the results
+            assert result["status"] == "success", f"Result: {result}"
+            assert len(result["errors"]) == 0
+
+            host_map = {r["hostname"]: r for r in result["host_results"]}
+            assert "192.168.1.10" in host_map
+            assert "192.168.1.20" in host_map
+            assert host_map["192.168.1.10"]["status"] == "success"
+            assert host_map["192.168.1.20"]["status"] == "success"
+
+        finally:
+            os.unlink(inventory_path)

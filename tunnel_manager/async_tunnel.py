@@ -24,6 +24,17 @@ class AsyncTunnelManager:
         Connects to a single host asynchronously and executes the command.
         """
         try:
+            # 1. Path Expansion & Normalization (Linux & Windows)
+            key_path = host_config.identity_file or host_config.key_path
+            if key_path:
+                key_path = os.path.abspath(os.path.expanduser(key_path))
+
+            certificate_file = host_config.extra_config.get(
+                "certificate_file"
+            ) or host_config.extra_config.get("certificatefile")
+            if certificate_file:
+                certificate_file = os.path.abspath(os.path.expanduser(certificate_file))
+
             connect_kwargs = {
                 "host": host_config.hostname,
                 "port": host_config.port,
@@ -33,15 +44,37 @@ class AsyncTunnelManager:
 
             if host_config.password:
                 connect_kwargs["password"] = host_config.password
-            elif host_config.identity_file or host_config.key_path:
-                key_path = host_config.identity_file or host_config.key_path
-                connect_kwargs["client_keys"] = [os.path.expanduser(key_path)]
-            else:
-                return CommandResult(
-                    success=False,
-                    error_message=f"No authentication method provided for {host_config.hostname}",
-                    command=command,
-                )
+
+            # Client keys and certificates pairing
+            if key_path:
+                if certificate_file:
+                    connect_kwargs["client_keys"] = [(key_path, certificate_file)]
+                else:
+                    connect_kwargs["client_keys"] = [key_path]
+
+            # 2. Proxy Command Token Expansion & Platform Resolution (Linux & Windows)
+            if host_config.proxy_command:
+                proxy_cmd = host_config.proxy_command
+                proxy_cmd = proxy_cmd.replace("%h", host_config.hostname)
+                proxy_cmd = proxy_cmd.replace("%p", str(host_config.port))
+                proxy_cmd = proxy_cmd.replace("%r", host_config.user or "")
+
+                import shlex
+                import shutil
+
+                try:
+                    parts = shlex.split(proxy_cmd)
+                    if parts:
+                        resolved_exec = shutil.which(parts[0])
+                        if resolved_exec:
+                            parts[0] = resolved_exec
+                            proxy_cmd = " ".join(parts)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to parse proxy command '{proxy_cmd}': {str(e)}"
+                    )
+
+                connect_kwargs["proxy_command"] = proxy_cmd
 
             async with asyncssh.connect(**connect_kwargs) as conn:
                 result = await conn.run(command)
