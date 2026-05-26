@@ -43,7 +43,7 @@
 
 This agent wraps the Create SSH Tunnels to your remote hosts and host as an MCP Server for Agentic AI! API. You can interact with it programmatically or via its integrated execution entrypoints.
 
-Detailed instructions on how to use the underlying API wrappers, extended schema bindings, and developer SDK references are maintained in [docs/index.md](file:///home/apps/workspace/agent-packages/agents/tunnel-manager/docs/index.md).
+Detailed instructions on how to use the underlying API wrappers, extended schema bindings, and developer SDK references are maintained in [docs/index.md](docs/index.md).
 
 ---
 
@@ -54,15 +54,36 @@ This server utilizes dynamic Action-Routed tools to optimize token overhead and 
 ### Available MCP Tools
 | Tool Module | Toggle Env Var | Enabled by Default | Description & Nested Methods |
 |-------------|----------------|--------------------|------------------------------|
-| **Host** | `TM_HOSTS_TOOL` | `True` | Register host inventory management tool. Action-routed methods: `list`, `add`, `remove`. |
-| **Remote** | `TM_REMOTE_TOOL` | `True` | Register single-host SSH operations tool. Action-routed methods: `run_command`, `send_file`, `receive_file`, `check_ssh`, `test_key_auth`, `setup_passwordless`, `copy_ssh_config`, `rotate_key`, `remove_host_key`. |
-| **Inventory** | `TM_INVENTORY_TOOL` | `True` | Register bulk inventory operations tool. Action-routed methods: `configure_key_auth`, `mesh_bootstrap`, `run_command`, `copy_ssh_config`, `rotate_key`, `send_file`, `receive_file`. |
-| **Operations** | `TM_OPERATIONS_TOOL` | `True` | Register operation lifecycle and session management tool. Action-routed methods: `start`, `get_progress`, `cancel`, `get_metrics`, `list_sessions`. |
-| **System** | `TM_SYSTEM_TOOL` | `True` | Register remote system intelligence tool. Action-routed methods: `get_info`, `discover_services`, `analyze_logs`, `network_topology`. |
-| **File** | `TM_FILES_TOOL` | `True` | Register advanced file operations tool. Action-routed methods: `recursive_ops`, `content_search`, `watch`, `diff_compare`, `backup`. |
-| **Security** | `TM_SECURITY_TOOL` | `True` | Register security scanning and compliance tool. Action-routed methods: `security_audit`, `compliance_check`, `vulnerability_scan`, `access_control_audit`. |
+| **Host** | `HOST_TOOL` | `True` | Register host inventory management tool. Action-routed methods: `add`, `list`, `remove`. |
+| **Remote** | `REMOTE_TOOL` | `True` | Register single-host SSH operations tool. Action-routed methods: `check_ssh`, `copy_ssh_config`, `receive_file`, `remove_host_key`, `rotate_key`, `run_command`, `send_file`, `setup_passwordless`, `test_key_auth`. |
+| **Inventory** | `INVENTORY_TOOL` | `True` | Register bulk inventory operations tool. Action-routed methods: `configure_key_auth`, `copy_ssh_config`, `mesh_bootstrap`, `receive_file`, `rotate_key`, `run_command`, `send_file`. |
+| **Operations** | `OPERATIONS_TOOL` | `True` | Register operation lifecycle and session management tool. Action-routed methods: `cancel`, `get_metrics`, `get_progress`, `list_sessions`, `start`. |
+| **System** | `SYSTEM_TOOL` | `True` | Register remote system intelligence tool. Action-routed methods: `analyze_logs`, `discover_services`, `get_info`, `network_topology`. |
+| **File** | `FILE_TOOL` | `True` | Register advanced file operations tool. Action-routed methods: `backup`, `content_search`, `diff_compare`, `recursive_ops`, `watch`. |
+| **Security** | `SECURITY_TOOL` | `True` | Register security scanning and compliance tool. Action-routed methods: `access_control_audit`, `compliance_check`, `security_audit`, `vulnerability_scan`. |
 
-Detailed tool schemas, parameter shapes, and validation constraints are preserved in [docs/mcp.md](file:///home/apps/workspace/agent-packages/agents/tunnel-manager/docs/mcp.md).
+Detailed tool schemas, parameter shapes, and validation constraints are preserved in [docs/mcp.md](docs/mcp.md).
+
+### Dynamic Tool Selection & Visibility
+
+This MCP server supports dynamic toolset selection and visibility filtering at runtime. This allows you to restrict the set of exposed tools in order to prevent blowing up the LLM's context window.
+
+You can configure tool filtering via multiple input channels:
+
+- **CLI Arguments:** Pass `--tools` or `--toolsets` (or their disabled counterparts `--disabled-tools` and `--disabled-toolsets`) during startup.
+- **Environment Variables:** Define standard environment variables:
+  - `MCP_ENABLED_TOOLS` / `MCP_DISABLED_TOOLS`
+  - `MCP_ENABLED_TAGS` / `MCP_DISABLED_TAGS`
+- **HTTP SSE Request Headers:** Pass custom headers during transport initialization:
+  - `x-mcp-enabled-tools` / `x-mcp-disabled-tools`
+  - `x-mcp-enabled-tags` / `x-mcp-disabled-tags`
+- **HTTP SSE Request Query Parameters:** Append query parameters directly to your transport connection URL:
+  - `?tools=tool1,tool2`
+  - `?tags=tag1`
+
+When query strings or parameters are supplied, an LLM-free **Knowledge Graph resolution layer** (using `DynamicToolOrchestrator`) matches query intents against known tool tags, names, or descriptions, with safe fallback and automated 24-hour background cache refreshing.
+
+---
 
 ### MCP Configuration Examples
 
@@ -228,7 +249,7 @@ services:
 
 ```
 
-Detailed graph node architecture explanations, custom skill configurations, and agentic trace guides are available in [docs/agent.md](file:///home/apps/workspace/agent-packages/agents/tunnel-manager/docs/agent.md).
+Detailed graph node architecture explanations, custom skill configurations, and agentic trace guides are available in [docs/agent.md](docs/agent.md).
 
 ---
 

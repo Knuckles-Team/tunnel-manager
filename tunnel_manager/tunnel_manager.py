@@ -20,7 +20,8 @@ class HostManager:
         if config_file:
             self.config_file = config_file
         else:
-            self.config_file = os.path.expanduser("~/.tunnel_manager/hosts.yaml")
+            xdg_config = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+            self.config_file = os.path.join(xdg_config, "agent-utilities", "inventory.yaml")
 
         self.logger = logging.getLogger(__name__)
         self.hosts = {}
@@ -30,7 +31,62 @@ class HostManager:
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file) as f:
-                    self.hosts = yaml.safe_load(f) or {}
+                    raw = yaml.safe_load(f) or {}
+                
+                # Check if it's an Ansible-style inventory
+                if "all" in raw and isinstance(raw["all"], dict):
+                    flattened = {}
+                    all_group = raw["all"]
+                    children = all_group.get("children", {})
+                    all_hosts = all_group.get("hosts", {}) or {}
+                    all_vars = all_group.get("vars", {}) or {}
+                    
+                    # Parse hosts at 'all' level
+                    for alias, hvars in all_hosts.items():
+                        if not hvars:
+                            hvars = {}
+                        entry = {
+                            "hostname": hvars.get("ansible_host", alias),
+                            "user": hvars.get("ansible_user") or all_vars.get("ansible_user", ""),
+                            "password": hvars.get("ansible_ssh_pass") or all_vars.get("ansible_ssh_pass"),
+                            "port": int(hvars.get("ansible_port") or all_vars.get("ansible_port") or 22),
+                            "identity_file": hvars.get("ansible_ssh_private_key_file") or all_vars.get("ansible_ssh_private_key_file"),
+                            "proxy_command": hvars.get("ansible_ssh_common_args") or all_vars.get("ansible_ssh_common_args"),
+                            "key_path": hvars.get("key_path") or all_vars.get("key_path") or hvars.get("ansible_ssh_private_key_file") or all_vars.get("ansible_ssh_private_key_file"),
+                        }
+                        flattened[alias] = entry
+                    
+                    # Parse children groups
+                    for group_name, group_data in children.items():
+                        if not isinstance(group_data, dict):
+                            continue
+                        g_hosts = group_data.get("hosts", {}) or {}
+                        g_vars = group_data.get("vars", {}) or {}
+                        
+                        for alias, hvars in g_hosts.items():
+                            if not hvars:
+                                hvars = {}
+                            
+                            user = hvars.get("ansible_user") or g_vars.get("ansible_user") or all_vars.get("ansible_user", "")
+                            password = hvars.get("ansible_ssh_pass") or g_vars.get("ansible_ssh_pass") or all_vars.get("ansible_ssh_pass")
+                            port = hvars.get("ansible_port") or g_vars.get("ansible_port") or all_vars.get("ansible_port", 22)
+                            identity_file = hvars.get("ansible_ssh_private_key_file") or g_vars.get("ansible_ssh_private_key_file") or all_vars.get("ansible_ssh_private_key_file")
+                            proxy_command = hvars.get("ansible_ssh_common_args") or g_vars.get("ansible_ssh_common_args") or all_vars.get("ansible_ssh_common_args")
+                            key_path = hvars.get("key_path") or g_vars.get("key_path") or hvars.get("ansible_ssh_private_key_file") or g_vars.get("ansible_ssh_private_key_file")
+                            
+                            entry = {
+                                "hostname": hvars.get("ansible_host", alias),
+                                "user": user,
+                                "password": password,
+                                "port": int(port) if port else 22,
+                                "identity_file": identity_file,
+                                "proxy_command": proxy_command,
+                                "key_path": key_path,
+                            }
+                            flattened[alias] = entry
+                    self.hosts = flattened
+                else:
+                    self.hosts = raw
                 self.logger.info(f"Loaded inventory from {self.config_file}")
             except Exception as e:
                 self.logger.error(f"Failed to load inventory: {e}")
@@ -44,8 +100,61 @@ class HostManager:
     def save_inventory(self):
         try:
             os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
-            with open(self.config_file, "w") as f:
-                yaml.dump(self.hosts, f)
+            if self.config_file.endswith("inventory.yaml") or self.config_file.endswith("inventory.yml"):
+                existing_raw = {}
+                if os.path.exists(self.config_file):
+                    try:
+                        with open(self.config_file) as f:
+                            existing_raw = yaml.safe_load(f) or {}
+                    except Exception:
+                        pass
+                
+                if "all" not in existing_raw:
+                    existing_raw = {
+                        "all": {
+                            "children": {
+                                "homelab": {
+                                    "hosts": {},
+                                    "vars": {}
+                                }
+                            }
+                        }
+                    }
+                
+                group_name = "homelab"
+                children = existing_raw["all"].setdefault("children", {})
+                group_data = children.setdefault(group_name, {"hosts": {}, "vars": {}})
+                g_hosts = group_data.setdefault("hosts", {})
+                g_vars = group_data.setdefault("vars", {})
+                
+                for alias, entry in self.hosts.items():
+                    if isinstance(entry, dict):
+                        hostname = entry.get("hostname", alias)
+                        user = entry.get("user")
+                        password = entry.get("password")
+                        port = entry.get("port", 22)
+                        identity_file = entry.get("identity_file") or entry.get("key_path")
+                        
+                        host_vars = g_hosts.setdefault(alias, {})
+                        if not isinstance(host_vars, dict):
+                            host_vars = {}
+                            g_hosts[alias] = host_vars
+                        
+                        host_vars["ansible_host"] = hostname
+                        if user and user != g_vars.get("ansible_user"):
+                            host_vars["ansible_user"] = user
+                        if password and password != g_vars.get("ansible_ssh_pass"):
+                            host_vars["ansible_ssh_pass"] = password
+                        if port and port != g_vars.get("ansible_port", 22):
+                            host_vars["ansible_port"] = port
+                        if identity_file and identity_file != g_vars.get("ansible_ssh_private_key_file"):
+                            host_vars["ansible_ssh_private_key_file"] = identity_file
+                
+                with open(self.config_file, "w") as f:
+                    yaml.dump(existing_raw, f, default_flow_style=False)
+            else:
+                with open(self.config_file, "w") as f:
+                    yaml.dump(self.hosts, f)
             self.logger.info(f"Saved inventory to {self.config_file}")
         except Exception as e:
             self.logger.error(f"Failed to save inventory: {e}")

@@ -59,7 +59,6 @@ logging.basicConfig(
 logger = get_logger("TunnelManager")
 host_manager = HostManager()
 
-
 class ResponseBuilder:
     @staticmethod
     def build(
@@ -82,7 +81,6 @@ class ResponseBuilder:
             "details": details,
             "errors": errors or ([error] if error else []),
         }
-
 
 def load_inventory(
     inventory: str, group: str, logger: logging.Logger
@@ -126,7 +124,6 @@ def load_inventory(
             {"inventory": inventory, "group": group},
             str(e),
         )
-
 
 def _resolve_host(
     host_alias: str,
@@ -173,7 +170,6 @@ def _resolve_host(
         }
 
     return final_config, ssh_config_file
-
 
 def register_host_tools(mcp: FastMCP):
     """Register host inventory management tool."""
@@ -236,7 +232,6 @@ def register_host_tools(mcp: FastMCP):
                 {"action": action},
                 errors=["Valid: list, add, remove"],
             )
-
 
 def register_remote_tools(mcp: FastMCP):
     """Register single-host SSH operations tool."""
@@ -869,7 +864,6 @@ def register_remote_tools(mcp: FastMCP):
                     "Valid: run_command, send_file, receive_file, check_ssh, test_key_auth, setup_passwordless, copy_ssh_config, rotate_key, remove_host_key"
                 ],
             )
-
 
 def register_inventory_tools(mcp: FastMCP):
     """Register bulk inventory operations tool."""
@@ -1792,7 +1786,6 @@ def register_inventory_tools(mcp: FastMCP):
                 ],
             )
 
-
 def register_operations_tools(mcp: FastMCP):
     """Register operation lifecycle and session management tool."""
 
@@ -1970,7 +1963,6 @@ def register_operations_tools(mcp: FastMCP):
                 ],
             )
 
-
 def register_system_tools(mcp: FastMCP):
     """Register remote system intelligence tool."""
 
@@ -2064,7 +2056,6 @@ def register_system_tools(mcp: FastMCP):
                 {"host": remote_host},
                 str(e),
             )
-
 
 def register_file_tools(mcp: FastMCP):
     """Register advanced file operations tool."""
@@ -2331,7 +2322,6 @@ def register_file_tools(mcp: FastMCP):
                 ],
             )
 
-
 def register_security_tools(mcp: FastMCP):
     """Register security scanning and compliance tool."""
 
@@ -2437,7 +2427,6 @@ def register_security_tools(mcp: FastMCP):
                 500, f"Security audit fail ({action})", {"host": remote_host}, str(e)
             )
 
-
 def get_mcp_instance() -> tuple[Any, Any, Any, Any]:
     """Initialize and return the MCP instance, args, and middlewares."""
     load_dotenv(find_dotenv())
@@ -2468,7 +2457,6 @@ def get_mcp_instance() -> tuple[Any, Any, Any, Any]:
     registered_tags: list[str] = []
     return mcp, args, middlewares, registered_tags
 
-
 def mcp_server() -> None:
     mcp, args, middlewares, registered_tags = get_mcp_instance()
     print(f"{'tunnel-manager'} MCP v{__version__}", file=sys.stderr)
@@ -2486,7 +2474,6 @@ def mcp_server() -> None:
     else:
         logger.error("Invalid transport", extra={"transport": args.transport})
         sys.exit(1)
-
 
 if __name__ == "__main__":
     mcp_server()

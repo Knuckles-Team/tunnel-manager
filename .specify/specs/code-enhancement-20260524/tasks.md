@@ -1,0 +1,95 @@
+# Tasks: Code Enhancement: tunnel-manager
+
+Generated: 2026-05-24T04:17:16.242478+00:00
+Skipped informational: 5
+
+- [ ] [P] **T001** [Dependency Audit] Minor update: pytest-xdist 3.6.0 (constraint — not installed) -> 3.8.0
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T002** [Dependency Audit] Minor update: agent-utilities 0.2.40 (installed) -> 0.16.0
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T003** [Dependency Audit] Minor update: asyncssh 2.14.0 (constraint — not installed) -> 2.23.0
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T004** [Dependency Audit] MAJOR update: paramiko 4.0.0 (constraint — not installed) -> 5.0.0
+  - Priority: P2-Medium | Effort: Small
+- [ ] [P] **T005** [Codebase Optimization] Moderate avg cyclomatic complexity: 8.3
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T006** [Codebase Optimization] 14 functions exceed 200 lines (actionable refactoring targets): register_invento
+  - Priority: P2-Medium | Effort: Large
+- [ ] [P] **T007** [Codebase Optimization] Monolithic: security_auditor.py (881L) — 1 functions with high complexity (worst
+  - Priority: P1-High | Effort: Large
+- [ ] [P] **T008** [Codebase Optimization] Monolithic: mcp_server.py (2492L) — 4 functions with high complexity (worst: reg
+  - Priority: P1-High | Effort: Large
+- [ ] [P] **T009** [Codebase Optimization] Monolithic: advanced_file_manager.py (894L) — 1 functions with high complexity (
+  - Priority: P1-High | Effort: Large
+- [ ] [P] **T010** [Codebase Optimization] Needs attention: tunnel_manager.py (1567L) — 2 functions with high complexity (w
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T011** [Codebase Optimization] Needs attention: mcp_remote.py (652L) — 1 functions with high complexity (worst:
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T012** [Codebase Optimization] Needs attention: mcp_inventory.py (946L) — 1 functions with high complexity (wor
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T013** [Codebase Optimization] 43 functions with nesting depth >4
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T014** [Test Coverage] 13 tests without assertions
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T015** [Test Coverage] Test suite lacks intent diversity (only one type)
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T016** [Test Coverage] 15 potential doc-test drift items
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T017** [Documentation & Governance] README.md missing sections: usage|quick start
+  - Priority: P4-Enhancement | Effort: Small
+- [ ] [P] **T018** [Documentation & Governance] 2 broken internal links in README.md
+  - Priority: P4-Enhancement | Effort: Medium
+- [ ] [P] **T019** [Documentation & Governance] README missing: Has a Table of Contents
+  - Priority: P4-Enhancement | Effort: Small
+- [ ] [P] **T020** [Documentation & Governance] README missing: Has usage examples with code blocks
+  - Priority: P4-Enhancement | Effort: Small
+- [ ] [P] **T021** [Architecture & Design Patterns] SRP: 9 modules exceed 500 lines (god modules)
+  - Priority: P2-Medium | Effort: Large
+- [ ] [P] **T022** [Architecture & Design Patterns] SRP: 5 classes have >15 methods
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T023** [Architecture & Design Patterns] No discernible layer architecture (no domain/service/adapter separation)
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T024** [Architecture & Design Patterns] Low dependency injection ratio: 3%
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T025** [Concept Traceability] Low traceability ratio: 0% concepts fully traced
+  - Priority: P4-Enhancement | Effort: Medium
+- [ ] [P] **T026** [Concept Traceability] 15 orphaned concepts (only in one source)
+  - Priority: P4-Enhancement | Effort: Medium
+- [ ] [P] **T027** [Concept Traceability] 65 test functions missing concept markers
+  - Priority: P4-Enhancement | Effort: Small
+- [ ] [P] **T028** [Concept Traceability] 109 significant functions (>10 lines) missing concept markers in docstrings
+  - Priority: P4-Enhancement | Effort: Small
+- [ ] [P] **T029** [Linting & Formatting] Total lint findings: 0 (high/error: 0, medium/warning: 0, low: 0)
+  - Priority: P4-Enhancement | Effort: Medium
+- [ ] [P] **T030** [Pre-Commit Compliance] 1 hook(s) may be outdated: ruff-pre-commit
+  - Priority: P2-Medium | Effort: Small
+- [ ] [P] **T031** [Directory Organization] 2 rogue/throwaway scripts detected (fix_*, validate_*, patch_*, etc.): scripts/v
+  - Priority: P4-Enhancement | Effort: Medium
+- [ ] [P] **T032** [Changelog Audit] CHANGELOG.md exists but could not be parsed — check format compliance
+  - Priority: P3-Low | Effort: Medium
+- [ ] [P] **T033** [Changelog Audit] No changelog entries within the last 30 days
+  - Priority: P3-Low | Effort: Medium
+- [ ] [P] **T034** [Changelog Audit] keepachangelog not installed — pip install 'universal-skills[code-enhancer]'
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T035** [Pytest Quality] 2 tests have generic names (test_1, test_case_42, etc.)
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T036** [Pytest Quality] 1 test files exceed 500 lines — split into focused modules
+  - Priority: P2-Medium | Effort: Large
+- [ ] [P] **T037** [Pytest Quality] 1 test files have >30 tests — too dense
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T038** [Pytest Quality] No @pytest.mark.parametrize usage — consider data-driven tests
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T039** [Pytest Quality] 13 tests have no assertions
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T040** [Pytest Quality] 5 tests use weak assertions (assert result is not None, assert True, etc.)
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T041** [Pytest Quality] 1 tests exceed 100 lines — likely doing too much per test
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T042** [Environment Variables] Only 25% of env vars documented in README.md
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T043** [Environment Variables] Undocumented env vars: AUTH_TYPE, EUNOMIA_POLICY_FILE, EUNOMIA_TYPE, LLM_API_KEY
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T044** [Environment Variables] 15 Python env vars not in .env.example: LLM_API_KEY, LLM_BASE_URL, MCP_URL, MODE
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T045** [analyze_xdg_kg] Analysis error: No module named 'agent_utilities.knowledge_graph'
+  - Priority: P1-High | Effort: Medium

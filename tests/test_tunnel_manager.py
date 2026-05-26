@@ -727,13 +727,34 @@ class TestTunnel:
             if os.path.exists(pub_key_path):
                 os.unlink(pub_key_path)
 
+    @patch("os.path.exists")
+    @patch("paramiko.HostKeys")
     @patch("paramiko.SSHConfig")
-    @patch("paramiko.SSHClient")
-    def test_remove_host_key(self, mock_ssh_client, mock_ssh_config):
-        """Test removing host key from known_hosts - skipped due to complex mocking."""
-        # This test is skipped because the paramiko.HostKeys mocking is complex
-        # The functionality is tested through integration tests
-        pytest.skip("Complex mocking required for paramiko.HostKeys")
+    def test_remove_host_key(self, mock_ssh_config, mock_host_keys_class, mock_exists):
+        """Test removing host key from known_hosts."""
+        mock_exists.return_value = True
+
+        class MockHostKeys(dict):
+            def load(self, path):
+                self.loaded_path = path
+
+            def save(self, path):
+                self.saved_path = path
+
+        mock_kh = MockHostKeys({"example.com": "some-key"})
+        mock_host_keys_class.return_value = mock_kh
+
+        mock_config_instance = Mock()
+        mock_config_instance.lookup.return_value = {}
+        mock_ssh_config.return_value = mock_config_instance
+
+        t = Tunnel(remote_host="example.com", username="testuser", password="testpass")
+        res = t.remove_host_key("/mock/path")
+
+        assert mock_kh.loaded_path == "/mock/path"
+        assert "example.com" not in mock_kh
+        assert mock_kh.saved_path == "/mock/path"
+        assert "Removed host key" in res
 
     @patch("paramiko.SSHConfig")
     @patch("paramiko.SSHClient")
@@ -760,13 +781,71 @@ class TestTunnel:
         finally:
             os.unlink(local_config_path)
 
+    @patch("os.path.exists")
+    @patch("subprocess.run")
     @patch("paramiko.SSHConfig")
     @patch("paramiko.SSHClient")
-    def test_rotate_ssh_key(self, mock_ssh_client, mock_ssh_config):
-        """Test rotating SSH key - skipped due to complex mocking."""
-        # This test is skipped because it requires complex file mocking
-        # The functionality is tested through integration tests
-        pytest.skip("Complex file mocking required")
+    def test_rotate_ssh_key(
+        self, mock_ssh_client, mock_ssh_config, mock_subprocess, mock_exists
+    ):
+        """Test rotating SSH key."""
+        mock_config_instance = Mock()
+        mock_config_instance.lookup.return_value = {}
+        mock_ssh_config.return_value = mock_config_instance
+
+        mock_client_instance = Mock()
+        mock_ssh_client.return_value = mock_client_instance
+
+        # Mock existences
+        # new_key_path doesn't exist (triggering generation)
+        # old_pub_path exists (reading old pub key)
+        def exists_side_effect(path):
+            if "new" in path:
+                return False
+            return True
+
+        mock_exists.side_effect = exists_side_effect
+
+        t = Tunnel(
+            remote_host="example.com", username="testuser", identity_file="/old/key"
+        )
+        t.connect = (
+            Mock()
+        )  # Avoid real connection setup and paramiko private key parsing
+
+        # Mock run_command responses
+        def run_cmd_side_effect(cmd):
+            if "cat" in cmd:
+                return ("old-pub-key-content\nother-key", "")
+            return ("", "")
+
+        t.run_command = Mock(side_effect=run_cmd_side_effect)
+
+        # We need mock_open to return different contents for different paths
+        file_contents = {
+            "/new/key.pub": "new-pub-key-content",
+            "/old/key.pub": "old-pub-key-content",
+        }
+
+        original_open = open
+
+        def custom_open(file, *args, **kwargs):
+            if isinstance(file, str) and file in file_contents:
+                return mock_open(read_data=file_contents[file])()
+            return original_open(file, *args, **kwargs)
+
+        with patch("builtins.open", side_effect=custom_open):
+            t.rotate_ssh_key("/new/key", key_type="ed25519")
+
+        # Verify subprocess.run called to generate ed25519 key
+        mock_subprocess.assert_called_once()
+        assert mock_subprocess.call_args[0][0][2] == "ed25519"
+
+        # Verify run_command was called with updated authorized_keys
+        # It should contain other-key and new-pub-key-content, but not old-pub-key-content
+        called_cmds = [call[0][0] for call in t.run_command.call_args_list]
+        assert any("new-pub-key-content" in cmd for cmd in called_cmds)
+        assert not any("old-pub-key-content" in cmd for cmd in called_cmds)
 
     @patch("paramiko.SSHConfig")
     @patch("paramiko.SSHClient")
