@@ -91,6 +91,7 @@ def register_remote_tools(mcp: FastMCP):
             default=os.path.expanduser("~/.ssh/known_hosts"),
             description="Known hosts path (remove_host_key).",
         ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
         ctx: Context = Field(description="MCP context.", default=""),
     ) -> dict:
         """Single-host SSH operations with shared connection params."""
@@ -126,7 +127,7 @@ def register_remote_tools(mcp: FastMCP):
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
                 t.connect()
-                out, error = t.run_command(cmd)
+                out, error = t.run_command(cmd, timeout=timeout)
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(

@@ -84,6 +84,7 @@ def register_inventory_tools(mcp: FastMCP):
         lpath_prefix: str = Field(
             default="", description="Local dir prefix (receive_file)."
         ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
         ctx: Context = Field(description="MCP context.", default=""),
     ) -> dict:
         """Bulk inventory operations against YAML host groups."""
@@ -316,7 +317,7 @@ def register_inventory_tools(mcp: FastMCP):
                             password=h.get("password"),
                             identity_file=h.get("key_path"),
                         )
-                        out, error = t.run_command(cmd)
+                        out, error = t.run_command(cmd, timeout=timeout)
                         return {
                             "hostname": host,
                             "status": "success",

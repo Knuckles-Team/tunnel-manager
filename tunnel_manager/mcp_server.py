@@ -43,7 +43,7 @@ from tunnel_manager.security_auditor import SecurityAuditor
 from tunnel_manager.system_intelligence import SystemIntelligence
 from tunnel_manager.tunnel_manager import HostManager, Tunnel
 
-__version__ = "1.14.0"
+__version__ = "1.15.0"
 
 # XDG-compliant default paths for tunnel-manager data
 _XDG_CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
@@ -58,6 +58,7 @@ logging.basicConfig(
 )
 logger = get_logger("TunnelManager")
 host_manager = HostManager()
+
 
 class ResponseBuilder:
     @staticmethod
@@ -82,32 +83,187 @@ class ResponseBuilder:
             "errors": errors or ([error] if error else []),
         }
 
+
 def load_inventory(
     inventory: str, group: str, logger: logging.Logger
 ) -> tuple[list[dict], dict]:
     try:
         with open(inventory) as f:
-            inv = yaml.safe_load(f)
+            inv = yaml.safe_load(f) or {}
         hosts = []
-        if group in inv and isinstance(inv[group], dict) and "hosts" in inv[group]:
-            for host, vars in inv[group]["hosts"].items():
+
+        # Check if it's an Ansible-style inventory
+        if "all" in inv and isinstance(inv["all"], dict):
+            all_group = inv["all"]
+            all_vars = all_group.get("vars", {}) or {}
+            all_hosts = all_group.get("hosts", {}) or {}
+            children = all_group.get("children", {}) or {}
+
+            # We need to collect hosts belonging to the target group
+            hosts_to_parse = {}  # alias -> (hvars, g_vars)
+
+            if group == "all":
+                # Add direct hosts from 'all'
+                for alias, hvars in all_hosts.items():
+                    hosts_to_parse[alias] = (hvars or {}, {})
+                # Add hosts from all children
+                for child_data in children.values():
+                    if isinstance(child_data, dict):
+                        g_hosts = child_data.get("hosts", {}) or {}
+                        g_vars = child_data.get("vars", {}) or {}
+                        for alias, hvars in g_hosts.items():
+                            hosts_to_parse[alias] = (hvars or {}, g_vars)
+            elif group in children:
+                child_data = children[group]
+                if isinstance(child_data, dict):
+                    g_hosts = child_data.get("hosts", {}) or {}
+                    g_vars = child_data.get("vars", {}) or {}
+                    for alias, hvars in g_hosts.items():
+                        hosts_to_parse[alias] = (hvars or {}, g_vars)
+            else:
+                # Group not found in children. Check if defined as a top-level key outside children
+                if (
+                    group in inv
+                    and isinstance(inv[group], dict)
+                    and "hosts" in inv[group]
+                ):
+                    legacy_hosts = inv[group]["hosts"] or {}
+                    legacy_vars = inv[group].get("vars", {}) or {}
+                    for alias, hvars in legacy_hosts.items():
+                        hosts_to_parse[alias] = (hvars or {}, legacy_vars)
+                else:
+                    return [], ResponseBuilder.build(
+                        400,
+                        f"Group '{group}' invalid",
+                        {"inventory": inventory, "group": group},
+                        errors=[f"Group '{group}' invalid"],
+                    )
+
+            # Now build the host entries
+            for alias, (hvars, g_vars) in hosts_to_parse.items():
+                username = (
+                    hvars.get("ansible_user")
+                    or hvars.get("user")
+                    or g_vars.get("ansible_user")
+                    or g_vars.get("user")
+                    or all_vars.get("ansible_user")
+                    or all_vars.get("user")
+                    or ""
+                )
+                password = (
+                    hvars.get("ansible_ssh_pass")
+                    or hvars.get("password")
+                    or g_vars.get("ansible_ssh_pass")
+                    or g_vars.get("password")
+                    or all_vars.get("ansible_ssh_pass")
+                    or all_vars.get("password")
+                )
+                key_path = (
+                    hvars.get("key_path")
+                    or hvars.get("identity_file")
+                    or hvars.get("ansible_ssh_private_key_file")
+                    or g_vars.get("key_path")
+                    or g_vars.get("identity_file")
+                    or g_vars.get("ansible_ssh_private_key_file")
+                    or all_vars.get("key_path")
+                    or all_vars.get("identity_file")
+                    or all_vars.get("ansible_ssh_private_key_file")
+                )
+                port = (
+                    hvars.get("ansible_port")
+                    or hvars.get("port")
+                    or g_vars.get("ansible_port")
+                    or g_vars.get("port")
+                    or all_vars.get("ansible_port")
+                    or all_vars.get("port")
+                    or 22
+                )
+
                 entry = {
-                    "hostname": vars.get("ansible_host", host),
-                    "username": vars.get("ansible_user"),
-                    "password": vars.get("ansible_ssh_pass"),
-                    "key_path": vars.get("ansible_ssh_private_key_file"),
+                    "hostname": hvars.get("ansible_host")
+                    or hvars.get("hostname")
+                    or alias,
+                    "username": username,
+                    "password": password,
+                    "key_path": key_path,
+                    "port": int(port) if port else 22,
                 }
                 if not entry["username"]:
                     logger.error(f"Skip {entry['hostname']}: no username")
                     continue
                 hosts.append(entry)
+
         else:
-            return [], ResponseBuilder.build(
-                400,
-                f"Group '{group}' invalid",
-                {"inventory": inventory, "group": group},
-                errors=[f"Group '{group}' invalid"],
-            )
+            # Legacy non-Ansible flat inventory (or key-value flat structure)
+            if group == "all":
+                # Treat the entire inv as flat hosts
+                for alias, hvars in inv.items():
+                    if isinstance(hvars, dict):
+                        username = (
+                            hvars.get("user")
+                            or hvars.get("username")
+                            or hvars.get("ansible_user")
+                            or ""
+                        )
+                        password = hvars.get("password") or hvars.get(
+                            "ansible_ssh_pass"
+                        )
+                        key_path = (
+                            hvars.get("key_path")
+                            or hvars.get("identity_file")
+                            or hvars.get("ansible_ssh_private_key_file")
+                        )
+                        port = hvars.get("port") or hvars.get("ansible_port") or 22
+                        entry = {
+                            "hostname": hvars.get("hostname")
+                            or hvars.get("ansible_host")
+                            or alias,
+                            "username": username,
+                            "password": password,
+                            "key_path": key_path,
+                            "port": int(port) if port else 22,
+                        }
+                        if not entry["username"]:
+                            logger.error(f"Skip {entry['hostname']}: no username")
+                            continue
+                        hosts.append(entry)
+            elif (
+                group in inv
+                and isinstance(inv[group], dict)
+                and "hosts" in inv[group]
+                and isinstance(inv[group]["hosts"], dict)
+            ):
+                # Legacy style with group as a top-level key containing 'hosts'
+                for host, vars in inv[group]["hosts"].items():
+                    hvars = vars or {}
+                    entry = {
+                        "hostname": hvars.get("ansible_host")
+                        or hvars.get("hostname")
+                        or host,
+                        "username": hvars.get("ansible_user")
+                        or hvars.get("user")
+                        or hvars.get("username"),
+                        "password": hvars.get("ansible_ssh_pass")
+                        or hvars.get("password"),
+                        "key_path": hvars.get("ansible_ssh_private_key_file")
+                        or hvars.get("key_path")
+                        or hvars.get("identity_file"),
+                        "port": int(
+                            hvars.get("ansible_port") or hvars.get("port") or 22
+                        ),
+                    }
+                    if not entry["username"]:
+                        logger.error(f"Skip {entry['hostname']}: no username")
+                        continue
+                    hosts.append(entry)
+            else:
+                return [], ResponseBuilder.build(
+                    400,
+                    f"Group '{group}' invalid",
+                    {"inventory": inventory, "group": group},
+                    errors=[f"Group '{group}' invalid"],
+                )
+
         if not hosts:
             return [], ResponseBuilder.build(
                 400,
@@ -124,6 +280,7 @@ def load_inventory(
             {"inventory": inventory, "group": group},
             str(e),
         )
+
 
 def _resolve_host(
     host_alias: str,
@@ -170,6 +327,7 @@ def _resolve_host(
         }
 
     return final_config, ssh_config_file
+
 
 def register_host_tools(mcp: FastMCP):
     """Register host inventory management tool."""
@@ -232,6 +390,7 @@ def register_host_tools(mcp: FastMCP):
                 {"action": action},
                 errors=["Valid: list, add, remove"],
             )
+
 
 def register_remote_tools(mcp: FastMCP):
     """Register single-host SSH operations tool."""
@@ -305,6 +464,7 @@ def register_remote_tools(mcp: FastMCP):
             default=os.path.expanduser("~/.ssh/known_hosts"),
             description="Known hosts path (remove_host_key).",
         ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
         ctx: Context = Field(description="MCP context.", default=""),
     ) -> dict:
         """Single-host SSH operations with shared connection params."""
@@ -340,7 +500,7 @@ def register_remote_tools(mcp: FastMCP):
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
                 t.connect()
-                out, error = t.run_command(cmd)
+                out, error = t.run_command(cmd, timeout=timeout)
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
@@ -865,6 +1025,7 @@ def register_remote_tools(mcp: FastMCP):
                 ],
             )
 
+
 def register_inventory_tools(mcp: FastMCP):
     """Register bulk inventory operations tool."""
 
@@ -925,6 +1086,7 @@ def register_inventory_tools(mcp: FastMCP):
         lpath_prefix: str = Field(
             default="", description="Local dir prefix (receive_file)."
         ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
         ctx: Context = Field(description="MCP context.", default=""),
     ) -> dict:
         """Bulk inventory operations against YAML host groups."""
@@ -1157,7 +1319,7 @@ def register_inventory_tools(mcp: FastMCP):
                             password=h.get("password"),
                             identity_file=h.get("key_path"),
                         )
-                        out, error = t.run_command(cmd)
+                        out, error = t.run_command(cmd, timeout=timeout)
                         return {
                             "hostname": host,
                             "status": "success",
@@ -1786,6 +1948,7 @@ def register_inventory_tools(mcp: FastMCP):
                 ],
             )
 
+
 def register_operations_tools(mcp: FastMCP):
     """Register operation lifecycle and session management tool."""
 
@@ -1963,6 +2126,7 @@ def register_operations_tools(mcp: FastMCP):
                 ],
             )
 
+
 def register_system_tools(mcp: FastMCP):
     """Register remote system intelligence tool."""
 
@@ -2056,6 +2220,7 @@ def register_system_tools(mcp: FastMCP):
                 {"host": remote_host},
                 str(e),
             )
+
 
 def register_file_tools(mcp: FastMCP):
     """Register advanced file operations tool."""
@@ -2322,6 +2487,7 @@ def register_file_tools(mcp: FastMCP):
                 ],
             )
 
+
 def register_security_tools(mcp: FastMCP):
     """Register security scanning and compliance tool."""
 
@@ -2427,6 +2593,7 @@ def register_security_tools(mcp: FastMCP):
                 500, f"Security audit fail ({action})", {"host": remote_host}, str(e)
             )
 
+
 def get_mcp_instance() -> tuple[Any, Any, Any, Any]:
     """Initialize and return the MCP instance, args, and middlewares."""
     load_dotenv(find_dotenv())
@@ -2457,6 +2624,7 @@ def get_mcp_instance() -> tuple[Any, Any, Any, Any]:
     registered_tags: list[str] = []
     return mcp, args, middlewares, registered_tags
 
+
 def mcp_server() -> None:
     mcp, args, middlewares, registered_tags = get_mcp_instance()
     print(f"{'tunnel-manager'} MCP v{__version__}", file=sys.stderr)
@@ -2474,6 +2642,7 @@ def mcp_server() -> None:
     else:
         logger.error("Invalid transport", extra={"transport": args.transport})
         sys.exit(1)
+
 
 if __name__ == "__main__":
     mcp_server()

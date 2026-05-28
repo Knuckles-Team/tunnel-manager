@@ -12,7 +12,7 @@ import yaml
 
 from .models import CommandResult, HostConfig
 
-__version__ = "1.14.0"
+__version__ = "1.15.0"
 
 
 class HostManager:
@@ -20,8 +20,12 @@ class HostManager:
         if config_file:
             self.config_file = config_file
         else:
-            xdg_config = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-            self.config_file = os.path.join(xdg_config, "agent-utilities", "inventory.yaml")
+            xdg_config = os.environ.get(
+                "XDG_CONFIG_HOME", os.path.expanduser("~/.config")
+            )
+            self.config_file = os.path.join(
+                xdg_config, "agent-utilities", "inventory.yaml"
+            )
 
         self.logger = logging.getLogger(__name__)
         self.hosts = {}
@@ -32,7 +36,7 @@ class HostManager:
             try:
                 with open(self.config_file) as f:
                     raw = yaml.safe_load(f) or {}
-                
+
                 # Check if it's an Ansible-style inventory
                 if "all" in raw and isinstance(raw["all"], dict):
                     flattened = {}
@@ -40,40 +44,76 @@ class HostManager:
                     children = all_group.get("children", {})
                     all_hosts = all_group.get("hosts", {}) or {}
                     all_vars = all_group.get("vars", {}) or {}
-                    
+
                     # Parse hosts at 'all' level
                     for alias, hvars in all_hosts.items():
                         if not hvars:
                             hvars = {}
                         entry = {
                             "hostname": hvars.get("ansible_host", alias),
-                            "user": hvars.get("ansible_user") or all_vars.get("ansible_user", ""),
-                            "password": hvars.get("ansible_ssh_pass") or all_vars.get("ansible_ssh_pass"),
-                            "port": int(hvars.get("ansible_port") or all_vars.get("ansible_port") or 22),
-                            "identity_file": hvars.get("ansible_ssh_private_key_file") or all_vars.get("ansible_ssh_private_key_file"),
-                            "proxy_command": hvars.get("ansible_ssh_common_args") or all_vars.get("ansible_ssh_common_args"),
-                            "key_path": hvars.get("key_path") or all_vars.get("key_path") or hvars.get("ansible_ssh_private_key_file") or all_vars.get("ansible_ssh_private_key_file"),
+                            "user": hvars.get("ansible_user")
+                            or all_vars.get("ansible_user", ""),
+                            "password": hvars.get("ansible_ssh_pass")
+                            or all_vars.get("ansible_ssh_pass"),
+                            "port": int(
+                                hvars.get("ansible_port")
+                                or all_vars.get("ansible_port")
+                                or 22
+                            ),
+                            "identity_file": hvars.get("ansible_ssh_private_key_file")
+                            or all_vars.get("ansible_ssh_private_key_file"),
+                            "proxy_command": hvars.get("ansible_ssh_common_args")
+                            or all_vars.get("ansible_ssh_common_args"),
+                            "key_path": hvars.get("key_path")
+                            or all_vars.get("key_path")
+                            or hvars.get("ansible_ssh_private_key_file")
+                            or all_vars.get("ansible_ssh_private_key_file"),
                         }
                         flattened[alias] = entry
-                    
+
                     # Parse children groups
-                    for group_name, group_data in children.items():
+                    for group_data in children.values():
                         if not isinstance(group_data, dict):
                             continue
                         g_hosts = group_data.get("hosts", {}) or {}
                         g_vars = group_data.get("vars", {}) or {}
-                        
+
                         for alias, hvars in g_hosts.items():
                             if not hvars:
                                 hvars = {}
-                            
-                            user = hvars.get("ansible_user") or g_vars.get("ansible_user") or all_vars.get("ansible_user", "")
-                            password = hvars.get("ansible_ssh_pass") or g_vars.get("ansible_ssh_pass") or all_vars.get("ansible_ssh_pass")
-                            port = hvars.get("ansible_port") or g_vars.get("ansible_port") or all_vars.get("ansible_port", 22)
-                            identity_file = hvars.get("ansible_ssh_private_key_file") or g_vars.get("ansible_ssh_private_key_file") or all_vars.get("ansible_ssh_private_key_file")
-                            proxy_command = hvars.get("ansible_ssh_common_args") or g_vars.get("ansible_ssh_common_args") or all_vars.get("ansible_ssh_common_args")
-                            key_path = hvars.get("key_path") or g_vars.get("key_path") or hvars.get("ansible_ssh_private_key_file") or g_vars.get("ansible_ssh_private_key_file")
-                            
+
+                            user = (
+                                hvars.get("ansible_user")
+                                or g_vars.get("ansible_user")
+                                or all_vars.get("ansible_user", "")
+                            )
+                            password = (
+                                hvars.get("ansible_ssh_pass")
+                                or g_vars.get("ansible_ssh_pass")
+                                or all_vars.get("ansible_ssh_pass")
+                            )
+                            port = (
+                                hvars.get("ansible_port")
+                                or g_vars.get("ansible_port")
+                                or all_vars.get("ansible_port", 22)
+                            )
+                            identity_file = (
+                                hvars.get("ansible_ssh_private_key_file")
+                                or g_vars.get("ansible_ssh_private_key_file")
+                                or all_vars.get("ansible_ssh_private_key_file")
+                            )
+                            proxy_command = (
+                                hvars.get("ansible_ssh_common_args")
+                                or g_vars.get("ansible_ssh_common_args")
+                                or all_vars.get("ansible_ssh_common_args")
+                            )
+                            key_path = (
+                                hvars.get("key_path")
+                                or g_vars.get("key_path")
+                                or hvars.get("ansible_ssh_private_key_file")
+                                or g_vars.get("ansible_ssh_private_key_file")
+                            )
+
                             entry = {
                                 "hostname": hvars.get("ansible_host", alias),
                                 "user": user,
@@ -100,7 +140,9 @@ class HostManager:
     def save_inventory(self):
         try:
             os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
-            if self.config_file.endswith("inventory.yaml") or self.config_file.endswith("inventory.yml"):
+            if self.config_file.endswith("inventory.yaml") or self.config_file.endswith(
+                "inventory.yml"
+            ):
                 existing_raw = {}
                 if os.path.exists(self.config_file):
                     try:
@@ -108,38 +150,33 @@ class HostManager:
                             existing_raw = yaml.safe_load(f) or {}
                     except Exception:
                         pass
-                
+
                 if "all" not in existing_raw:
                     existing_raw = {
-                        "all": {
-                            "children": {
-                                "homelab": {
-                                    "hosts": {},
-                                    "vars": {}
-                                }
-                            }
-                        }
+                        "all": {"children": {"homelab": {"hosts": {}, "vars": {}}}}
                     }
-                
+
                 group_name = "homelab"
                 children = existing_raw["all"].setdefault("children", {})
                 group_data = children.setdefault(group_name, {"hosts": {}, "vars": {}})
                 g_hosts = group_data.setdefault("hosts", {})
                 g_vars = group_data.setdefault("vars", {})
-                
+
                 for alias, entry in self.hosts.items():
                     if isinstance(entry, dict):
                         hostname = entry.get("hostname", alias)
                         user = entry.get("user")
                         password = entry.get("password")
                         port = entry.get("port", 22)
-                        identity_file = entry.get("identity_file") or entry.get("key_path")
-                        
+                        identity_file = entry.get("identity_file") or entry.get(
+                            "key_path"
+                        )
+
                         host_vars = g_hosts.setdefault(alias, {})
                         if not isinstance(host_vars, dict):
                             host_vars = {}
                             g_hosts[alias] = host_vars
-                        
+
                         host_vars["ansible_host"] = hostname
                         if user and user != g_vars.get("ansible_user"):
                             host_vars["ansible_user"] = user
@@ -147,9 +184,11 @@ class HostManager:
                             host_vars["ansible_ssh_pass"] = password
                         if port and port != g_vars.get("ansible_port", 22):
                             host_vars["ansible_port"] = port
-                        if identity_file and identity_file != g_vars.get("ansible_ssh_private_key_file"):
+                        if identity_file and identity_file != g_vars.get(
+                            "ansible_ssh_private_key_file"
+                        ):
                             host_vars["ansible_ssh_private_key_file"] = identity_file
-                
+
                 with open(self.config_file, "w") as f:
                     yaml.dump(existing_raw, f, default_flow_style=False)
             else:
@@ -354,16 +393,19 @@ class Tunnel:
             self.logger.error(f"Connection failed: {str(e)}")
             raise
 
-    def run_command(self, command) -> CommandResult:
+    def run_command(self, command, timeout=None) -> CommandResult:
         """
         Run a shell command on the remote host.
 
         :param command: The command to execute.
+        :param timeout: Optional command execution timeout in seconds.
         :return: CommandResult object.
         """
         self.connect()
         try:
-            stdin, stdout, stderr = self.ssh_client.exec_command(command)  # nosec B601
+            stdin, stdout, stderr = self.ssh_client.exec_command(
+                command, timeout=timeout
+            )  # nosec B601
             out = stdout.read().decode("utf-8").strip()
             err = stderr.read().decode("utf-8").strip()
             exit_status = stdout.channel.recv_exit_status()
@@ -375,7 +417,9 @@ class Tunnel:
             )
         except Exception as e:
             self.logger.error(f"Command execution failed: {str(e)}")
-            return CommandResult(success=False, error_message=str(e), command=command)
+            return CommandResult(
+                success=False, error_message=str(e), stderr=str(e), command=command
+            )
 
     def send_file(self, local_path, remote_path):
         """
@@ -602,7 +646,7 @@ class Tunnel:
 
         try:
             with open(inventory) as f:
-                inventory_data = yaml.safe_load(f)
+                inventory_data = yaml.safe_load(f) or {}
             logger.debug(f"Loaded inventory data: {inventory_data}")
         except FileNotFoundError:
             logger.error(f"Inventory file not found: {inventory}")
@@ -614,18 +658,106 @@ class Tunnel:
             raise
 
         hosts = []
-        if (
-            group in inventory_data
-            and isinstance(inventory_data[group], dict)
-            and "hosts" in inventory_data[group]
-            and isinstance(inventory_data[group]["hosts"], dict)
-        ):
-            for host, vars in inventory_data[group]["hosts"].items():
+
+        # Check if it's an Ansible-style inventory
+        if "all" in inventory_data and isinstance(inventory_data["all"], dict):
+            all_group = inventory_data["all"]
+            all_vars = all_group.get("vars", {}) or {}
+            all_hosts = all_group.get("hosts", {}) or {}
+            children = all_group.get("children", {}) or {}
+
+            # We need to collect hosts belonging to the target group
+            hosts_to_parse = {}  # alias -> (hvars, g_vars)
+
+            if group == "all":
+                # Add direct hosts from 'all'
+                for alias, hvars in all_hosts.items():
+                    hosts_to_parse[alias] = (hvars or {}, {})
+                # Add hosts from all children
+                for child_data in children.values():
+                    if isinstance(child_data, dict):
+                        g_hosts = child_data.get("hosts", {}) or {}
+                        g_vars = child_data.get("vars", {}) or {}
+                        for alias, hvars in g_hosts.items():
+                            hosts_to_parse[alias] = (hvars or {}, g_vars)
+            elif group in children:
+                child_data = children[group]
+                if isinstance(child_data, dict):
+                    g_hosts = child_data.get("hosts", {}) or {}
+                    g_vars = child_data.get("vars", {}) or {}
+                    for alias, hvars in g_hosts.items():
+                        hosts_to_parse[alias] = (hvars or {}, g_vars)
+            else:
+                # Group not found in children. Check if defined as a top-level key outside children
+                if (
+                    group in inventory_data
+                    and isinstance(inventory_data[group], dict)
+                    and "hosts" in inventory_data[group]
+                ):
+                    legacy_hosts = inventory_data[group]["hosts"] or {}
+                    legacy_vars = inventory_data[group].get("vars", {}) or {}
+                    for alias, hvars in legacy_hosts.items():
+                        hosts_to_parse[alias] = (hvars or {}, legacy_vars)
+                else:
+                    logger.error(
+                        f"Group '{group}' not found in inventory or invalid (hosts not a dict)"
+                    )
+                    print(
+                        f"Error: Group '{group}' not found in inventory or invalid (hosts not a dict)",
+                        file=sys.stderr,
+                    )
+                    raise ValueError(
+                        f"Group '{group}' not found in inventory or invalid"
+                    )
+
+            # Now build the host entries
+            for alias, (hvars, g_vars) in hosts_to_parse.items():
+                username = (
+                    hvars.get("ansible_user")
+                    or hvars.get("user")
+                    or g_vars.get("ansible_user")
+                    or g_vars.get("user")
+                    or all_vars.get("ansible_user")
+                    or all_vars.get("user")
+                    or ""
+                )
+                password = (
+                    hvars.get("ansible_ssh_pass")
+                    or hvars.get("password")
+                    or g_vars.get("ansible_ssh_pass")
+                    or g_vars.get("password")
+                    or all_vars.get("ansible_ssh_pass")
+                    or all_vars.get("password")
+                )
+                key_path = (
+                    hvars.get("key_path")
+                    or hvars.get("identity_file")
+                    or hvars.get("ansible_ssh_private_key_file")
+                    or g_vars.get("key_path")
+                    or g_vars.get("identity_file")
+                    or g_vars.get("ansible_ssh_private_key_file")
+                    or all_vars.get("key_path")
+                    or all_vars.get("identity_file")
+                    or all_vars.get("ansible_ssh_private_key_file")
+                )
+                port = (
+                    hvars.get("ansible_port")
+                    or hvars.get("port")
+                    or g_vars.get("ansible_port")
+                    or g_vars.get("port")
+                    or all_vars.get("ansible_port")
+                    or all_vars.get("port")
+                    or 22
+                )
+
                 host_entry = {
-                    "hostname": vars.get("ansible_host", host),
-                    "username": vars.get("ansible_user"),
-                    "password": vars.get("ansible_ssh_pass"),
-                    "key_path": vars.get("ansible_ssh_private_key_file"),
+                    "hostname": hvars.get("ansible_host")
+                    or hvars.get("hostname")
+                    or alias,
+                    "username": username,
+                    "password": password,
+                    "key_path": key_path,
+                    "port": int(port) if port else 22,
                 }
                 if not host_entry["username"]:
                     logger.error(
@@ -638,15 +770,83 @@ class Tunnel:
                     continue
                 logger.debug(f"Added host: {host_entry['hostname']}")
                 hosts.append(host_entry)
+
         else:
-            logger.error(
-                f"Group '{group}' not found in inventory or invalid (hosts not a dict)"
-            )
-            print(
-                f"Error: Group '{group}' not found in inventory or invalid (hosts not a dict)",
-                file=sys.stderr,
-            )
-            raise ValueError(f"Group '{group}' not found in inventory or invalid")
+            # Legacy non-Ansible flat inventory (or key-value flat structure)
+            if group == "all":
+                # Treat the entire inventory_data as flat hosts
+                for alias, hvars in inventory_data.items():
+                    if isinstance(hvars, dict):
+                        username = (
+                            hvars.get("user")
+                            or hvars.get("username")
+                            or hvars.get("ansible_user")
+                            or ""
+                        )
+                        password = hvars.get("password") or hvars.get(
+                            "ansible_ssh_pass"
+                        )
+                        key_path = (
+                            hvars.get("key_path")
+                            or hvars.get("identity_file")
+                            or hvars.get("ansible_ssh_private_key_file")
+                        )
+                        port = hvars.get("port") or hvars.get("ansible_port") or 22
+                        host_entry = {
+                            "hostname": hvars.get("hostname")
+                            or hvars.get("ansible_host")
+                            or alias,
+                            "username": username,
+                            "password": password,
+                            "key_path": key_path,
+                            "port": int(port) if port else 22,
+                        }
+                        if not host_entry["username"]:
+                            logger.error(
+                                f"No username specified for host {host_entry['hostname']}"
+                            )
+                            continue
+                        hosts.append(host_entry)
+            elif (
+                group in inventory_data
+                and isinstance(inventory_data[group], dict)
+                and "hosts" in inventory_data[group]
+                and isinstance(inventory_data[group]["hosts"], dict)
+            ):
+                # Legacy style with group as a top-level key containing 'hosts'
+                for host, vars in inventory_data[group]["hosts"].items():
+                    hvars = vars or {}
+                    host_entry = {
+                        "hostname": hvars.get("ansible_host")
+                        or hvars.get("hostname")
+                        or host,
+                        "username": hvars.get("ansible_user")
+                        or hvars.get("user")
+                        or hvars.get("username"),
+                        "password": hvars.get("ansible_ssh_pass")
+                        or hvars.get("password"),
+                        "key_path": hvars.get("ansible_ssh_private_key_file")
+                        or hvars.get("key_path")
+                        or hvars.get("identity_file"),
+                        "port": int(
+                            hvars.get("ansible_port") or hvars.get("port") or 22
+                        ),
+                    }
+                    if not host_entry["username"]:
+                        logger.error(
+                            f"No username specified for host {host_entry['hostname']}"
+                        )
+                        continue
+                    hosts.append(host_entry)
+            else:
+                logger.error(
+                    f"Group '{group}' not found in inventory or invalid (hosts not a dict)"
+                )
+                print(
+                    f"Error: Group '{group}' not found in inventory or invalid (hosts not a dict)",
+                    file=sys.stderr,
+                )
+                raise ValueError(f"Group '{group}' not found in inventory or invalid")
 
         logger.info(f"Found {len(hosts)} hosts in group '{group}'")
         print(f"Found {len(hosts)} hosts in group '{group}'", file=sys.stderr)
@@ -1262,7 +1462,7 @@ class Tunnel:
 
     @staticmethod
     def run_command_on_inventory(
-        inventory, command, group="all", parallel=False, max_threads=5
+        inventory, command, group="all", parallel=False, max_threads=5, timeout=None
     ):
         """
         Run a shell command on all hosts in the specified group of the YAML inventory.
@@ -1271,9 +1471,12 @@ class Tunnel:
         :param group: Inventory group to target (default: 'all').
         :param parallel: Run in parallel.
         :param max_threads: Max threads for parallel.
+        :param timeout: Optional command execution timeout in seconds.
         """
         logger = logging.getLogger("Tunnel")
-        logger.info(f"Running command '{command}' on group '{group}'")
+        logger.info(
+            f"Running command '{command}' on group '{group}' with timeout {timeout}"
+        )
         print(f"Executing command '{command}' on group '{group}'...", file=sys.stderr)
 
         def run_host(host):
@@ -1286,7 +1489,7 @@ class Tunnel:
                         key_path=host.get("key_path"),
                     )
                 )
-                out, err = tunnel.run_command(command)
+                out, err = tunnel.run_command(command, timeout=timeout)
                 logger.info(
                     f"Host {host['hostname']}: In: {command}, Out: {out}, Err: {err}"
                 )
@@ -1466,10 +1669,15 @@ def tunnel_manager():
     parser = argparse.ArgumentParser(description="Tunnel Manager CLI")
     parser.add_argument("--log-file", help="Log to this file (default: console output)")
 
+    xdg_config = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+    default_inventory = os.path.join(xdg_config, "agent-utilities", "inventory.yaml")
+
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     setup_parser = subparsers.add_parser("setup-all", help="Setup passwordless for all")
-    setup_parser.add_argument("--inventory", help="YAML inventory path")
+    setup_parser.add_argument(
+        "--inventory", default=default_inventory, help="YAML inventory path"
+    )
     setup_parser.add_argument(
         "--shared-key-path",
         default="~/.ssh/id_shared",
@@ -1490,7 +1698,9 @@ def tunnel_manager():
     )
 
     run_parser = subparsers.add_parser("run-command", help="Run command on all")
-    run_parser.add_argument("--inventory", help="YAML inventory path")
+    run_parser.add_argument(
+        "--inventory", default=default_inventory, help="YAML inventory path"
+    )
     run_parser.add_argument("--remote-command", help="Shell command to run")
     run_parser.add_argument(
         "--group", default="all", help="Inventory group to target (default: all)"
@@ -1499,9 +1709,17 @@ def tunnel_manager():
     run_parser.add_argument(
         "--max-threads", type=int, default=5, help="Max threads for parallel execution"
     )
+    run_parser.add_argument(
+        "--timeout",
+        type=int,
+        default=60,
+        help="Command timeout in seconds (default: 60)",
+    )
 
     copy_parser = subparsers.add_parser("copy-config", help="Copy SSH config to all")
-    copy_parser.add_argument("--inventory", help="YAML inventory path")
+    copy_parser.add_argument(
+        "--inventory", default=default_inventory, help="YAML inventory path"
+    )
     copy_parser.add_argument(
         "--local-config-path", default="~/.ssh/config", help="Local SSH config path"
     )
@@ -1519,7 +1737,9 @@ def tunnel_manager():
     )
 
     rotate_parser = subparsers.add_parser("rotate-key", help="Rotate keys for all")
-    rotate_parser.add_argument("--inventory", help="YAML inventory path")
+    rotate_parser.add_argument(
+        "--inventory", default=default_inventory, help="YAML inventory path"
+    )
     rotate_parser.add_argument(
         "--key-prefix",
         default="~/.ssh/id_",
@@ -1544,7 +1764,9 @@ def tunnel_manager():
     send_parser = subparsers.add_parser(
         "send-file", help="Upload file to all hosts in inventory"
     )
-    send_parser.add_argument("--inventory", help="YAML inventory path")
+    send_parser.add_argument(
+        "--inventory", default=default_inventory, help="YAML inventory path"
+    )
     send_parser.add_argument("--local-path", help="Local file path to upload")
     send_parser.add_argument("--remote-path", help="Remote destination path")
     send_parser.add_argument(
@@ -1558,7 +1780,9 @@ def tunnel_manager():
     receive_parser = subparsers.add_parser(
         "receive-file", help="Download file from all hosts in inventory"
     )
-    receive_parser.add_argument("--inventory", help="YAML inventory path")
+    receive_parser.add_argument(
+        "--inventory", default=default_inventory, help="YAML inventory path"
+    )
     receive_parser.add_argument("--remote-path", help="Remote file path to download")
     receive_parser.add_argument(
         "--local-path-prefix", help="Local directory path prefix to save files"
@@ -1627,6 +1851,7 @@ def tunnel_manager():
                 args.group,
                 args.parallel,
                 args.max_threads,
+                timeout=args.timeout,
             )
         elif args.command == "copy-config":
             Tunnel.copy_ssh_config_on_inventory(
@@ -1670,6 +1895,10 @@ def tunnel_manager():
         logger.error(f"Automation failed: {str(e)}")
         print(f"Error: Automation failed: {str(e)}", file=sys.stderr)
         sys.exit(1)
+
+
+def main():
+    tunnel_manager()
 
 
 if __name__ == "__main__":

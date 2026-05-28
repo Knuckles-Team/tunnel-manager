@@ -18,7 +18,9 @@ class TestHostManager:
         """Test HostManager initialization with default config."""
         mock_exists.return_value = False
         hm = HostManager()
-        assert hm.config_file == os.path.expanduser("~/.tunnel_manager/hosts.yaml")
+        xdg_config = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+        expected = os.path.join(xdg_config, "agent-utilities", "inventory.yaml")
+        assert hm.config_file == expected
         assert hm.hosts == {}
 
     def test_init_custom_config(self):
@@ -1006,6 +1008,52 @@ class TestTunnelStaticMethods:
                 inventory_path, test_func, group="all", parallel=True
             )
             assert len(results) == 2
+        finally:
+            os.unlink(inventory_path)
+
+    def test_execute_on_inventory_ansible_nested(self):
+        """Test executing function on Ansible-style nested inventory with children and variables."""
+        inventory_data = {
+            "all": {
+                "children": {
+                    "homelab": {
+                        "hosts": {
+                            "r510": {"ansible_host": "10.0.0.10"},
+                            "r710": {"ansible_host": "10.0.0.11"},
+                        },
+                        "vars": {"ansible_ssh_pass": "group_pass"},
+                    }
+                },
+                "vars": {
+                    "ansible_user": "genius",
+                    "ansible_ssh_private_key_file": "~/.ssh/id_rsa",
+                },
+            }
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(inventory_data, f)
+            inventory_path = f.name
+        try:
+            results = []
+
+            def test_func(host):
+                results.append(host)
+
+            Tunnel.execute_on_inventory(inventory_path, test_func, group="homelab")
+            assert len(results) == 2
+
+            # Check variables inheritance
+            r510 = next(r for r in results if r["hostname"] == "10.0.0.10")
+            assert r510["username"] == "genius"
+            assert r510["password"] == "group_pass"
+            assert r510["key_path"] == "~/.ssh/id_rsa"
+
+            # Check that it works for group="all"
+            all_results = []
+            Tunnel.execute_on_inventory(
+                inventory_path, lambda x: all_results.append(x), group="all"
+            )
+            assert len(all_results) == 2
         finally:
             os.unlink(inventory_path)
 
