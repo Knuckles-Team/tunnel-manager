@@ -12,7 +12,7 @@ import yaml
 
 from .models import CommandResult, HostConfig
 
-__version__ = "1.15.0"
+__version__ = "1.16.0"
 
 
 class HostManager:
