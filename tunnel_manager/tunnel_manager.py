@@ -250,6 +250,12 @@ class Tunnel:
         certificate_file: str = None,
         proxy_command: str = None,
         ssh_config_file: str = os.path.expanduser("~/.ssh/config"),
+        connect_timeout: int = 10,
+        banner_timeout: int = 10,
+        auth_timeout: int = 15,
+        keepalive_interval: int = 30,
+        connect_retries: int = 2,
+        retry_backoff: float = 1.0,
     ):
         """
         Initialize the Tunnel class using either a Pydantic HostConfig model or legacy kwargs.
@@ -277,6 +283,16 @@ class Tunnel:
         self.ssh_client = None
         self.sftp = None
         self.logger = logging.getLogger(__name__)
+
+        # Connection hardening tunables (stability fixes for flaky SSH).
+        # Bounded timeouts prevent indefinite hangs; a small retry/backoff
+        # absorbs transient auth/banner failures on otherwise-reachable hosts.
+        self.connect_timeout = connect_timeout
+        self.banner_timeout = banner_timeout
+        self.auth_timeout = auth_timeout
+        self.keepalive_interval = keepalive_interval
+        self.connect_retries = max(1, connect_retries)
+        self.retry_backoff = retry_backoff
 
         self.ssh_config = paramiko.SSHConfig()
         if os.path.exists(ssh_config_file) and os.path.isfile(ssh_config_file):
@@ -307,13 +323,17 @@ class Tunnel:
                 "Will attempt authentication using local SSH Agent and default keys."
             )
 
-    def connect(self):
+    def connect(self, timeout=None):
         if (
             self.ssh_client
             and self.ssh_client.get_transport()
             and self.ssh_client.get_transport().is_active()
         ):
             return
+
+        import time
+
+        connect_timeout = timeout or self.connect_timeout
 
         self.ssh_client = paramiko.SSHClient()
         self.ssh_client.set_missing_host_key_policy(
@@ -357,41 +377,61 @@ class Tunnel:
             proxy = paramiko.ProxyCommand(cmd_str)
             self.logger.info(f"Using proxy command: {cmd_str}")
 
-        try:
-            private_key = None
-            if expanded_identity:
-                try:
-                    private_key = paramiko.Ed25519Key.from_private_key_file(
-                        expanded_identity
-                    )
-                    self.logger.info(f"Loaded ED25519 key from: {expanded_identity}")
-                except paramiko.ssh_exception.SSHException:
-                    private_key = paramiko.RSAKey.from_private_key_file(
-                        expanded_identity
-                    )
-                    self.logger.info(f"Loaded RSA key from: {expanded_identity}")
+        private_key = None
+        if expanded_identity:
+            try:
+                private_key = paramiko.Ed25519Key.from_private_key_file(
+                    expanded_identity
+                )
+                self.logger.info(f"Loaded ED25519 key from: {expanded_identity}")
+            except paramiko.ssh_exception.SSHException:
+                private_key = paramiko.RSAKey.from_private_key_file(expanded_identity)
+                self.logger.info(f"Loaded RSA key from: {expanded_identity}")
 
-                if expanded_cert:
-                    private_key.load_certificate(expanded_cert)
-                    self.logger.info(f"Loaded certificate: {expanded_cert}")
+            if expanded_cert:
+                private_key.load_certificate(expanded_cert)
+                self.logger.info(f"Loaded certificate: {expanded_cert}")
 
-            # 3. Connection with SSH Agent and user-provided keys
-            # We enable allow_agent=True and look_for_keys=True by default to allow zero-burden fallback.
-            self.ssh_client.connect(
-                self.remote_host,
-                port=self.port,
-                username=self.username,
-                password=self.password,
-                pkey=private_key,
-                sock=proxy,
-                auth_timeout=30,
-                look_for_keys=True,
-                allow_agent=True,
-            )
-            self.logger.info(f"Connected to {self.remote_host}")
-        except Exception as e:
-            self.logger.error(f"Connection failed: {str(e)}")
-            raise
+        # 3. Connection with bounded timeouts + retry/backoff. SSH Agent and
+        # default key discovery stay enabled for zero-burden RSA fallback.
+        last_exc = None
+        for attempt in range(1, self.connect_retries + 1):
+            try:
+                self.ssh_client.connect(
+                    self.remote_host,
+                    port=self.port,
+                    username=self.username,
+                    password=self.password,
+                    pkey=private_key,
+                    sock=proxy,
+                    timeout=connect_timeout,
+                    banner_timeout=self.banner_timeout,
+                    auth_timeout=self.auth_timeout,
+                    look_for_keys=True,
+                    allow_agent=True,
+                )
+                transport = self.ssh_client.get_transport()
+                if transport is not None:
+                    # Detect silently-dropped idle connections.
+                    transport.set_keepalive(self.keepalive_interval)
+                self.logger.info(
+                    f"Connected to {self.remote_host} (attempt {attempt})"
+                )
+                return
+            except Exception as e:
+                last_exc = e
+                self.logger.warning(
+                    f"Connection attempt {attempt}/{self.connect_retries} to "
+                    f"{self.remote_host} failed: {str(e)}"
+                )
+                if attempt < self.connect_retries:
+                    time.sleep(self.retry_backoff * attempt)
+
+        self.logger.error(
+            f"Connection to {self.remote_host} failed after "
+            f"{self.connect_retries} attempts: {str(last_exc)}"
+        )
+        raise last_exc
 
     def run_command(self, command, timeout=None) -> CommandResult:
         """
@@ -401,14 +441,24 @@ class Tunnel:
         :param timeout: Optional command execution timeout in seconds.
         :return: CommandResult object.
         """
-        self.connect()
+        self.connect(timeout=timeout)
         try:
             stdin, stdout, stderr = self.ssh_client.exec_command(
                 command, timeout=timeout
             )  # nosec B601
+            channel = stdout.channel
+            if timeout:
+                channel.settimeout(timeout)
             out = stdout.read().decode("utf-8").strip()
             err = stderr.read().decode("utf-8").strip()
-            exit_status = stdout.channel.recv_exit_status()
+            # Bound the exit-status wait: paramiko's recv_exit_status() is an
+            # unbounded blocking read, so a stalled remote process would hang
+            # the call forever. Gate it on the channel's status_event instead.
+            if timeout and not channel.status_event.wait(timeout):
+                raise TimeoutError(
+                    f"Timed out after {timeout}s waiting for command to exit: {command}"
+                )
+            exit_status = channel.recv_exit_status()
             self.logger.info(
                 f"Command executed: {command}\nOutput: {out}\nError: {err}"
             )
@@ -465,6 +515,7 @@ class Tunnel:
 
             if not self.sftp:
                 self.sftp = self.ssh_client.open_sftp()
+                self.sftp.get_channel().settimeout(self.connect_timeout)
             self.logger.debug(f"Opening SFTP for put: {local_path} -> {remote_path}")
             self.sftp.put(local_path, remote_path)
             self.logger.info(f"File sent: {local_path} -> {remote_path}")
@@ -490,6 +541,7 @@ class Tunnel:
         try:
             if not self.sftp:
                 self.sftp = self.ssh_client.open_sftp()
+                self.sftp.get_channel().settimeout(self.connect_timeout)
             self.sftp.get(remote_path, local_path)
             self.logger.info(f"File received: {remote_path} -> {local_path}")
         except Exception as e:
