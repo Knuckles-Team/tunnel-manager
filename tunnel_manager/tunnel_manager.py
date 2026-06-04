@@ -12,7 +12,7 @@ import yaml
 
 from .models import CommandResult, HostConfig
 
-__version__ = "1.24.0"
+__version__ = "1.25.0"
 
 
 class HostManager:
@@ -414,9 +414,7 @@ class Tunnel:
                 if transport is not None:
                     # Detect silently-dropped idle connections.
                     transport.set_keepalive(self.keepalive_interval)
-                self.logger.info(
-                    f"Connected to {self.remote_host} (attempt {attempt})"
-                )
+                self.logger.info(f"Connected to {self.remote_host} (attempt {attempt})")
                 return
             except Exception as e:
                 last_exc = e
