@@ -22,6 +22,10 @@
 
 *Version: 1.28.0*
 
+> **Documentation** — Installation, deployment, usage across the API, CLI, and MCP
+> and agent interfaces are maintained in the
+> [official documentation](https://knuckles-team.github.io/tunnel-manager/).
+
 ---
 
 ## Overview
@@ -284,6 +288,23 @@ python -m pip install tunnel-manager[all]
 ```
 
 ---
+
+## Documentation
+
+The complete documentation is published as the
+[official documentation site](https://knuckles-team.github.io/tunnel-manager/) and is
+the recommended reference for installation, deployment, and day-to-day operation.
+
+| Page | Contents |
+|---|---|
+| [Installation](https://knuckles-team.github.io/tunnel-manager/installation/) | pip, source, extras, prebuilt Docker image |
+| [Deployment](https://knuckles-team.github.io/tunnel-manager/deployment/) | run the MCP and agent servers, Compose, Caddy + Technitium, env config |
+| [Usage](https://knuckles-team.github.io/tunnel-manager/usage/) | the MCP tools, the `HostManager` / `Tunnel` API, the CLI |
+| [Overview](https://knuckles-team.github.io/tunnel-manager/overview/) | ecosystem role, distributed SSH swarm scaling, MCP configuration |
+| [Teleport Architecture](https://knuckles-team.github.io/tunnel-manager/teleport_architecture/) | certificate, proxy and cross-OS connection model |
+| [Concepts](https://knuckles-team.github.io/tunnel-manager/concepts/) | concept registry (`CONCEPT:TUN-*`) |
+
+`AGENTS.md` is the canonical contributor/agent guidance.
 
 ## Repository Owners
 
