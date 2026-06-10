@@ -20,7 +20,7 @@
 ![PyPI - Wheel](https://img.shields.io/pypi/wheel/tunnel-manager)
 ![PyPI - Implementation](https://img.shields.io/pypi/implementation/tunnel-manager)
 
-*Version: 1.28.0*
+*Version: 1.29.0*
 
 > **Documentation** — Installation, deployment, usage across the API, CLI, and MCP
 > and agent interfaces are maintained in the
