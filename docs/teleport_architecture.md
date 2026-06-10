@@ -14,7 +14,7 @@ Designed for zero-trust environments where resources are protected by an access 
 
 ```mermaid
 graph TD
-    subgraph Local Client (Windows or Linux)
+    subgraph "Local Client (Windows or Linux)"
         TC[Teleport Connect / tsh] -->|Syncs Keys| Agent[ssh-agent]
         TC -->|Writes SSH Config| Config[~/.ssh/config]
     end
@@ -50,7 +50,7 @@ Designed for traditional cloud infrastructure, secure VPC networks, or local/hom
 
 ```mermaid
 graph TD
-    subgraph Local Client (Windows or Linux)
+    subgraph "Local Client (Windows or Linux)"
         Agent[ssh-agent]
         Config[~/.ssh/config]
     end
