@@ -189,6 +189,14 @@ class HostManager:
                         ):
                             host_vars["ansible_ssh_private_key_file"] = identity_file
 
+                # Prune hosts the manager no longer knows about so remove_host()
+                # actually deletes them from the file (the merge above only adds /
+                # updates). load_inventory() flattens every group into self.hosts,
+                # so any alias absent from self.hosts was deliberately removed.
+                for alias in list(g_hosts.keys()):
+                    if alias not in self.hosts:
+                        del g_hosts[alias]
+
                 with open(self.config_file, "w") as f:
                     yaml.dump(existing_raw, f, default_flow_style=False)
             else:
