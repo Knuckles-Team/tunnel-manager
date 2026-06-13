@@ -43,7 +43,7 @@ from tunnel_manager.security_auditor import SecurityAuditor
 from tunnel_manager.system_intelligence import SystemIntelligence
 from tunnel_manager.tunnel_manager import HostManager, Tunnel
 
-__version__ = "1.30.0"
+__version__ = "1.31.0"
 
 # XDG-compliant default paths for tunnel-manager data
 _XDG_CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
