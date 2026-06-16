@@ -5,7 +5,7 @@ Auto-generated from mcp_server.py during ecosystem standardization.
 
 import logging
 
-from agent_utilities.mcp_utilities import ctx_log
+from agent_utilities.mcp_utilities import ctx_log, run_blocking
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
@@ -60,7 +60,9 @@ def register_security_tools(mcp: FastMCP):
             auditor = SecurityAuditor(tunnel)
 
             if action == "security_audit":
-                result = auditor.security_audit(scope if scope else None)
+                result = await run_blocking(
+                    auditor.security_audit, scope if scope else None
+                )
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
                     f"Security audit completed with score: {result['score']}/100",
@@ -70,7 +72,7 @@ def register_security_tools(mcp: FastMCP):
                 )
 
             elif action == "compliance_check":
-                result = auditor.compliance_check(standard)
+                result = await run_blocking(auditor.compliance_check, standard)
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
                     f"Compliance check completed: {result['compliance_percentage']:.1f}% compliant",
@@ -84,7 +86,7 @@ def register_security_tools(mcp: FastMCP):
                 )
 
             elif action == "vulnerability_scan":
-                result = auditor.vulnerability_scan(scan_type)
+                result = await run_blocking(auditor.vulnerability_scan, scan_type)
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
                     f"Vulnerability scan completed: {len(result['vulnerabilities'])} vulnerabilities found",
@@ -98,7 +100,7 @@ def register_security_tools(mcp: FastMCP):
                 )
 
             elif action == "access_control_audit":
-                result = auditor.access_control_audit()
+                result = await run_blocking(auditor.access_control_audit)
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
                     f"Access control audit completed: {result['users_audited']} users audited",

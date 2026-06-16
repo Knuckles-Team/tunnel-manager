@@ -5,7 +5,12 @@ Auto-generated from mcp_server.py during ecosystem standardization.
 
 import logging
 
-from agent_utilities.mcp_utilities import ctx_confirm_destructive, ctx_log, ctx_progress
+from agent_utilities.mcp_utilities import (
+    ctx_confirm_destructive,
+    ctx_log,
+    ctx_progress,
+    run_blocking,
+)
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
@@ -53,7 +58,8 @@ def register_operations_tools(mcp: FastMCP):
                     errors=["Need operation_type"],
                 )
             try:
-                op_id = operation_manager.create_operation(
+                op_id = await run_blocking(
+                    operation_manager.create_operation,
                     operation_type=operation_type,
                     total_steps=total_steps,
                     details=details,
@@ -81,7 +87,9 @@ def register_operations_tools(mcp: FastMCP):
                     errors=["Need operation_id"],
                 )
             try:
-                status = operation_manager.get_operation_status(operation_id)
+                status = await run_blocking(
+                    operation_manager.get_operation_status, operation_id
+                )
                 if status is None:
                     return ResponseBuilder.build(
                         404,
@@ -115,7 +123,9 @@ def register_operations_tools(mcp: FastMCP):
                 return {"status": "cancelled", "message": "Operation cancelled by user"}
             await ctx_progress(ctx, 0, 100)
             try:
-                success = operation_manager.request_cancellation(operation_id)
+                success = await run_blocking(
+                    operation_manager.request_cancellation, operation_id
+                )
                 if success:
                     return ResponseBuilder.build(
                         200,
@@ -147,7 +157,9 @@ def register_operations_tools(mcp: FastMCP):
                     errors=["Need operation_id"],
                 )
             try:
-                metrics = operation_manager.get_resource_metrics(operation_id)
+                metrics = await run_blocking(
+                    operation_manager.get_resource_metrics, operation_id
+                )
                 return ResponseBuilder.build(
                     200,
                     "Resource metrics retrieved",
@@ -168,7 +180,7 @@ def register_operations_tools(mcp: FastMCP):
 
         elif action == "list_sessions":
             try:
-                sessions = operation_manager.list_active_sessions()
+                sessions = await run_blocking(operation_manager.list_active_sessions)
                 return ResponseBuilder.build(
                     200,
                     "Active sessions listed",

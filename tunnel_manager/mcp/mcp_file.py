@@ -5,7 +5,7 @@ Auto-generated from mcp_server.py during ecosystem standardization.
 
 import logging
 
-from agent_utilities.mcp_utilities import ctx_log
+from agent_utilities.mcp_utilities import ctx_log, run_blocking
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
@@ -110,8 +110,12 @@ def register_file_tools(mcp: FastMCP):
                 elif operation == "chown":
                     options["owner"] = owner
                     options["group"] = group
-                result = fm.recursive_file_operations(
-                    operation, source, destination, options
+                result = await run_blocking(
+                    fm.recursive_file_operations,
+                    operation,
+                    source,
+                    destination,
+                    options,
                 )
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
@@ -150,7 +154,9 @@ def register_file_tools(mcp: FastMCP):
                     "recursive": recursive,
                     "max_results": max_results,
                 }
-                result = fm.file_content_search(search_paths, pattern, options)
+                result = await run_blocking(
+                    fm.file_content_search, search_paths, pattern, options
+                )
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
                     "File content search completed",
@@ -182,7 +188,9 @@ def register_file_tools(mcp: FastMCP):
                     identity_file=identity_file or None,
                 )
                 fm = AdvancedFileManager(tunnel)
-                result = fm.file_watch_monitor(watch_paths, duration)
+                result = await run_blocking(
+                    fm.file_watch_monitor, watch_paths, duration
+                )
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
                     "File monitoring completed",
@@ -214,7 +222,9 @@ def register_file_tools(mcp: FastMCP):
                     identity_file=identity_file or None,
                 )
                 fm = AdvancedFileManager(tunnel1)
-                result = fm.file_diff_compare(host1, host2, file_path)
+                result = await run_blocking(
+                    fm.file_diff_compare, host1, host2, file_path
+                )
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
                     "File comparison completed",
@@ -252,7 +262,9 @@ def register_file_tools(mcp: FastMCP):
                 )
                 fm = AdvancedFileManager(tunnel)
                 options = {"compression": compression, "incremental": incremental}
-                result = fm.smart_backup(backup_paths, backup_dest, options)
+                result = await run_blocking(
+                    fm.smart_backup, backup_paths, backup_dest, options
+                )
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
                     "Backup completed",

@@ -5,7 +5,7 @@ Auto-generated from mcp_server.py during ecosystem standardization.
 
 import logging
 
-from agent_utilities.mcp_utilities import ctx_log
+from agent_utilities.mcp_utilities import ctx_log, run_blocking
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
@@ -55,7 +55,7 @@ def register_system_tools(mcp: FastMCP):
             intelligence = SystemIntelligence(tunnel)
 
             if action == "get_info":
-                result = intelligence.get_system_info()
+                result = await run_blocking(intelligence.get_system_info)
                 return ResponseBuilder.build(
                     200,
                     "System information retrieved",
@@ -63,7 +63,7 @@ def register_system_tools(mcp: FastMCP):
                 )
 
             elif action == "discover_services":
-                result = intelligence.discover_services()
+                result = await run_blocking(intelligence.discover_services)
                 return ResponseBuilder.build(
                     200,
                     "Services discovered",
@@ -78,7 +78,9 @@ def register_system_tools(mcp: FastMCP):
                         {"host": remote_host},
                         errors=["Need log_paths and patterns"],
                     )
-                result = intelligence.analyze_logs(log_paths, patterns)
+                result = await run_blocking(
+                    intelligence.analyze_logs, log_paths, patterns
+                )
                 return ResponseBuilder.build(
                     200,
                     "Log analysis completed",
@@ -86,7 +88,7 @@ def register_system_tools(mcp: FastMCP):
                 )
 
             elif action == "network_topology":
-                result = intelligence.network_topology()
+                result = await run_blocking(intelligence.network_topology)
                 return ResponseBuilder.build(
                     200,
                     "Network topology mapped",

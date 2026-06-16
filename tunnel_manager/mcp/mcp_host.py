@@ -5,7 +5,11 @@ Auto-generated from mcp_server.py during ecosystem standardization.
 
 import logging
 
-from agent_utilities.mcp_utilities import ctx_confirm_destructive, ctx_progress
+from agent_utilities.mcp_utilities import (
+    ctx_confirm_destructive,
+    ctx_progress,
+    run_blocking,
+)
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
@@ -39,7 +43,7 @@ def register_host_tools(mcp: FastMCP):
     ) -> dict:
         """Manage the local host alias inventory."""
         if action == "list":
-            return {"hosts": host_manager.list_hosts()}
+            return {"hosts": await run_blocking(host_manager.list_hosts)}
         elif action == "add":
             if not alias or not hostname or not user:
                 return ResponseBuilder.build(
@@ -48,7 +52,8 @@ def register_host_tools(mcp: FastMCP):
                     {"action": action},
                     errors=["Need alias, hostname, user"],
                 )
-            host_manager.add_host(
+            await run_blocking(
+                host_manager.add_host,
                 alias=alias,
                 hostname=hostname,
                 user=user,
@@ -66,7 +71,7 @@ def register_host_tools(mcp: FastMCP):
             if not await ctx_confirm_destructive(ctx, "remove host"):
                 return {"status": "cancelled", "message": "Operation cancelled by user"}
             await ctx_progress(ctx, 0, 100)
-            host_manager.remove_host(alias)
+            await run_blocking(host_manager.remove_host, alias)
             return {"status": "success", "message": f"Host '{alias}' removed."}
         else:
             return ResponseBuilder.build(

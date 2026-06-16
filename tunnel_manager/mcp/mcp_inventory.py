@@ -10,7 +10,7 @@ import os
 import subprocess
 
 from agent_utilities.base_utilities import to_boolean, to_integer
-from agent_utilities.mcp_utilities import ctx_log, ctx_progress
+from agent_utilities.mcp_utilities import ctx_log, ctx_progress, run_blocking
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
@@ -106,7 +106,8 @@ def register_inventory_tools(mcp: FastMCP):
                 pub_key = _key + ".pub"
                 if not os.path.exists(_key):
                     if key_type == "rsa":
-                        subprocess.run(
+                        await run_blocking(
+                            subprocess.run,
                             [
                                 "/usr/bin/ssh-keygen",
                                 "-t",
@@ -121,7 +122,8 @@ def register_inventory_tools(mcp: FastMCP):
                             check=True,
                         )
                     else:
-                        subprocess.run(
+                        await run_blocking(
+                            subprocess.run,
                             [
                                 "/usr/bin/ssh-keygen",
                                 "-t",
@@ -147,14 +149,20 @@ def register_inventory_tools(mcp: FastMCP):
                     kpath = h.get("key_path", _key)
                     try:
                         t = Tunnel(remote_host=host, username=_user, password=_password)
-                        t.remove_host_key()
-                        t.setup_passwordless_ssh(
-                            local_key_path=kpath, key_type=key_type
+                        await run_blocking(t.remove_host_key)
+                        await run_blocking(
+                            t.setup_passwordless_ssh,
+                            local_key_path=kpath,
+                            key_type=key_type,
                         )
-                        t.connect()
-                        t.run_command(f"echo '{pub}' >> ~/.ssh/authorized_keys")
-                        t.run_command("chmod 600 ~/.ssh/authorized_keys")
-                        res, msg = t.test_key_auth(kpath)
+                        await run_blocking(t.connect)
+                        await run_blocking(
+                            t.run_command, f"echo '{pub}' >> ~/.ssh/authorized_keys"
+                        )
+                        await run_blocking(
+                            t.run_command, "chmod 600 ~/.ssh/authorized_keys"
+                        )
+                        res, msg = await run_blocking(t.test_key_auth, kpath)
                         return {
                             "hostname": host,
                             "status": "success",
@@ -170,7 +178,7 @@ def register_inventory_tools(mcp: FastMCP):
                         }
                     finally:
                         if "t" in locals():
-                            t.close()
+                            await run_blocking(t.close)
 
                 results, files, locations, errors = [], [], [], []
                 if parallel:
@@ -317,7 +325,9 @@ def register_inventory_tools(mcp: FastMCP):
                             password=h.get("password"),
                             identity_file=h.get("key_path"),
                         )
-                        out, error = t.run_command(cmd, timeout=timeout)
+                        out, error = await run_blocking(
+                            t.run_command, cmd, timeout=timeout
+                        )
                         return {
                             "hostname": host,
                             "status": "success",
@@ -337,7 +347,7 @@ def register_inventory_tools(mcp: FastMCP):
                         }
                     finally:
                         if "t" in locals():
-                            t.close()
+                            await run_blocking(t.close)
 
                 results, errors = [], []
                 if parallel:
@@ -434,7 +444,7 @@ def register_inventory_tools(mcp: FastMCP):
                             password=h.get("password"),
                             identity_file=h.get("key_path"),
                         )
-                        t.copy_ssh_config(cfg, rmt_cfg)
+                        await run_blocking(t.copy_ssh_config, cfg, rmt_cfg)
                         return {
                             "hostname": h["hostname"],
                             "status": "success",
@@ -450,7 +460,7 @@ def register_inventory_tools(mcp: FastMCP):
                         }
                     finally:
                         if "t" in locals():
-                            t.close()
+                            await run_blocking(t.close)
 
                 if parallel:
                     with concurrent.futures.ThreadPoolExecutor(
@@ -554,7 +564,7 @@ def register_inventory_tools(mcp: FastMCP):
                             password=h.get("password"),
                             identity_file=h.get("key_path"),
                         )
-                        t.rotate_ssh_key(_key, key_type=key_type)
+                        await run_blocking(t.rotate_ssh_key, _key, key_type=key_type)
                         return {
                             "hostname": h["hostname"],
                             "status": "success",
@@ -572,7 +582,7 @@ def register_inventory_tools(mcp: FastMCP):
                         }
                     finally:
                         if "t" in locals():
-                            t.close()
+                            await run_blocking(t.close)
 
                 if parallel:
                     with concurrent.futures.ThreadPoolExecutor(
@@ -689,9 +699,9 @@ def register_inventory_tools(mcp: FastMCP):
                             password=h.get("password"),
                             identity_file=h.get("key_path"),
                         )
-                        t.connect()
+                        await run_blocking(t.connect)
                         assert t.ssh_client is not None
-                        sftp = t.ssh_client.open_sftp()
+                        sftp = await run_blocking(t.ssh_client.open_sftp)
                         transferred = 0
 
                         def progress_callback(transf, total):
@@ -702,8 +712,10 @@ def register_inventory_tools(mcp: FastMCP):
                                     ctx.report_progress(progress=transf, total=total)
                                 )
 
-                        sftp.put(_lpath, _rpath, callback=progress_callback)
-                        sftp.close()
+                        await run_blocking(
+                            sftp.put, _lpath, _rpath, callback=progress_callback
+                        )
+                        await run_blocking(sftp.close)
                         return {
                             "hostname": host,
                             "status": "success",
@@ -719,7 +731,7 @@ def register_inventory_tools(mcp: FastMCP):
                         }
                     finally:
                         if "t" in locals():
-                            t.close()
+                            await run_blocking(t.close)
 
                 results, files, locations, errors = [_lpath], [], [], []
                 if parallel:
@@ -824,10 +836,10 @@ def register_inventory_tools(mcp: FastMCP):
                             password=h.get("password"),
                             identity_file=h.get("key_path"),
                         )
-                        t.connect()
+                        await run_blocking(t.connect)
                         assert t.ssh_client is not None
-                        sftp = t.ssh_client.open_sftp()
-                        sftp.stat(rpath)
+                        sftp = await run_blocking(t.ssh_client.open_sftp)
+                        await run_blocking(sftp.stat, rpath)
                         transferred = 0
 
                         def progress_callback(transf, total):
@@ -838,8 +850,10 @@ def register_inventory_tools(mcp: FastMCP):
                                     ctx.report_progress(progress=transf, total=total)
                                 )
 
-                        sftp.get(rpath, _lpath, callback=progress_callback)
-                        sftp.close()
+                        await run_blocking(
+                            sftp.get, rpath, _lpath, callback=progress_callback
+                        )
+                        await run_blocking(sftp.close)
                         return {
                             "hostname": host,
                             "status": "success",
@@ -857,7 +871,7 @@ def register_inventory_tools(mcp: FastMCP):
                         }
                     finally:
                         if "t" in locals():
-                            t.close()
+                            await run_blocking(t.close)
 
                 results, files, locations, errors = [], [], [], []
                 if parallel:
