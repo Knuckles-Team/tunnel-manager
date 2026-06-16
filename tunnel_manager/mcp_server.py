@@ -35,6 +35,7 @@ from agent_utilities.mcp_utilities import (
     ctx_log,
     ctx_progress,
     resolve_action,
+    run_blocking,
 )
 from dotenv import find_dotenv, load_dotenv
 
@@ -361,7 +362,7 @@ def register_host_tools(mcp: FastMCP):
             return resolved
         action = resolved
         if action == "list":
-            return {"hosts": host_manager.list_hosts()}
+            return {"hosts": await run_blocking(host_manager.list_hosts)}
         elif action == "add":
             if not alias or not hostname or not user:
                 return ResponseBuilder.build(
@@ -370,7 +371,8 @@ def register_host_tools(mcp: FastMCP):
                     {"action": action},
                     errors=["Need alias, hostname, user"],
                 )
-            host_manager.add_host(
+            await run_blocking(
+                host_manager.add_host,
                 alias=alias,
                 hostname=hostname,
                 user=user,
@@ -388,7 +390,7 @@ def register_host_tools(mcp: FastMCP):
             if not await ctx_confirm_destructive(ctx, "remove host"):
                 return {"status": "cancelled", "message": "Operation cancelled by user"}
             await ctx_progress(ctx, 0, 100)
-            host_manager.remove_host(alias)
+            await run_blocking(host_manager.remove_host, alias)
             return {"status": "success", "message": f"Host '{alias}' removed."}
         else:
             return ResponseBuilder.build(
@@ -524,8 +526,8 @@ def register_remote_tools(mcp: FastMCP):
                 )
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
-                t.connect()
-                out, error = t.run_command(cmd, timeout=timeout)
+                await run_blocking(t.connect)
+                out, error = await run_blocking(t.run_command, cmd, timeout=timeout)
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
@@ -546,7 +548,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
             finally:
                 if "t" in locals():
-                    t.close()
+                    await run_blocking(t.close)
 
         elif action == "send_file":
             _logger = logging.getLogger("TunnelServer")
@@ -587,11 +589,11 @@ def register_remote_tools(mcp: FastMCP):
                     proxy_command=conf.get("proxy_command"),
                     ssh_config_file=final_cfg,
                 )
-                t.connect()
+                await run_blocking(t.connect)
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
                 assert t.ssh_client is not None
-                sftp = t.ssh_client.open_sftp()
+                sftp = await run_blocking(t.ssh_client.open_sftp)
                 transferred = 0
 
                 def progress_callback(transf, total):
@@ -602,8 +604,8 @@ def register_remote_tools(mcp: FastMCP):
                             ctx.report_progress(progress=transf, total=total)
                         )
 
-                sftp.put(_lpath, _rpath, callback=progress_callback)
-                sftp.close()
+                await run_blocking(sftp.put, _lpath, _rpath, callback=progress_callback)
+                await run_blocking(sftp.close)
                 return ResponseBuilder.build(
                     200,
                     f"Uploaded to {_rpath}",
@@ -622,7 +624,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
             finally:
                 if "t" in locals():
-                    t.close()
+                    await run_blocking(t.close)
 
         elif action == "receive_file":
             _lpath = os.path.abspath(os.path.expanduser(lpath))
@@ -644,12 +646,12 @@ def register_remote_tools(mcp: FastMCP):
                     proxy_command=proxy,
                     ssh_config_file=cfg,
                 )
-                t.connect()
+                await run_blocking(t.connect)
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
                 assert t.ssh_client is not None
-                sftp = t.ssh_client.open_sftp()
-                sftp.stat(rpath)
+                sftp = await run_blocking(t.ssh_client.open_sftp)
+                await run_blocking(sftp.stat, rpath)
                 transferred = 0
 
                 def progress_callback(transf, total):
@@ -660,10 +662,10 @@ def register_remote_tools(mcp: FastMCP):
                             ctx.report_progress(progress=transf, total=total)
                         )
 
-                sftp.get(rpath, _lpath, callback=progress_callback)
+                await run_blocking(sftp.get, rpath, _lpath, callback=progress_callback)
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
-                sftp.close()
+                await run_blocking(sftp.close)
                 return ResponseBuilder.build(
                     200,
                     f"Downloaded to {_lpath}",
@@ -682,7 +684,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
             finally:
                 if "t" in locals():
-                    t.close()
+                    await run_blocking(t.close)
 
         elif action == "check_ssh":
             if not host:
@@ -712,7 +714,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
-                success, msg = t.check_ssh_server()
+                success, msg = await run_blocking(t.check_ssh_server)
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
@@ -730,7 +732,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
             finally:
                 if "t" in locals():
-                    t.close()
+                    await run_blocking(t.close)
 
         elif action == "test_key_auth":
             _key = key or os.environ.get("TUNNEL_IDENTITY_FILE", "")
@@ -753,7 +755,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
-                success, msg = t.test_key_auth(_key)
+                success, msg = await run_blocking(t.test_key_auth, _key)
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
@@ -807,7 +809,8 @@ def register_remote_tools(mcp: FastMCP):
                 pub_key = _key + ".pub"
                 if not os.path.exists(pub_key):
                     if key_type == "rsa":
-                        subprocess.run(
+                        await run_blocking(
+                            subprocess.run,
                             [
                                 "/usr/bin/ssh-keygen",
                                 "-t",
@@ -822,7 +825,8 @@ def register_remote_tools(mcp: FastMCP):
                             check=True,
                         )
                     else:
-                        subprocess.run(
+                        await run_blocking(
+                            subprocess.run,
                             [
                                 "/usr/bin/ssh-keygen",
                                 "-t",
@@ -834,7 +838,9 @@ def register_remote_tools(mcp: FastMCP):
                             ],
                             check=True,
                         )
-                t.setup_passwordless_ssh(local_key_path=_key, key_type=key_type)
+                await run_blocking(
+                    t.setup_passwordless_ssh, local_key_path=_key, key_type=key_type
+                )
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
@@ -855,7 +861,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
             finally:
                 if "t" in locals():
-                    t.close()
+                    await run_blocking(t.close)
 
         elif action == "copy_ssh_config":
             if not host or not lcfg:
@@ -888,7 +894,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
-                t.copy_ssh_config(lcfg, rcfg)
+                await run_blocking(t.copy_ssh_config, lcfg, rcfg)
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
@@ -909,7 +915,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
             finally:
                 if "t" in locals():
-                    t.close()
+                    await run_blocking(t.close)
 
         elif action == "rotate_key":
             if not host or not new_key:
@@ -953,7 +959,8 @@ def register_remote_tools(mcp: FastMCP):
                 new_public_key = _new_key + ".pub"
                 if not os.path.exists(_new_key):
                     if key_type == "rsa":
-                        subprocess.run(
+                        await run_blocking(
+                            subprocess.run,
                             [
                                 "/usr/bin/ssh-keygen",
                                 "-t",
@@ -968,7 +975,8 @@ def register_remote_tools(mcp: FastMCP):
                             check=True,
                         )
                     else:
-                        subprocess.run(
+                        await run_blocking(
+                            subprocess.run,
                             [
                                 "/usr/bin/ssh-keygen",
                                 "-t",
@@ -980,7 +988,7 @@ def register_remote_tools(mcp: FastMCP):
                             ],
                             check=True,
                         )
-                t.rotate_ssh_key(_new_key, key_type=key_type)
+                await run_blocking(t.rotate_ssh_key, _new_key, key_type=key_type)
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
@@ -1006,7 +1014,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
             finally:
                 if "t" in locals():
-                    t.close()
+                    await run_blocking(t.close)
 
         elif action == "remove_host_key":
             if not host:
@@ -1021,7 +1029,9 @@ def register_remote_tools(mcp: FastMCP):
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
                 _known_hosts = os.path.expanduser(known_hosts)
-                msg = t.remove_host_key(known_hosts_path=_known_hosts)
+                msg = await run_blocking(
+                    t.remove_host_key, known_hosts_path=_known_hosts
+                )
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
@@ -1149,7 +1159,8 @@ def register_inventory_tools(mcp: FastMCP):
                 pub_key = _key + ".pub"
                 if not os.path.exists(_key):
                     if key_type == "rsa":
-                        subprocess.run(
+                        await run_blocking(
+                            subprocess.run,
                             [
                                 "/usr/bin/ssh-keygen",
                                 "-t",
@@ -1164,7 +1175,8 @@ def register_inventory_tools(mcp: FastMCP):
                             check=True,
                         )
                     else:
-                        subprocess.run(
+                        await run_blocking(
+                            subprocess.run,
                             [
                                 "/usr/bin/ssh-keygen",
                                 "-t",
@@ -1190,14 +1202,20 @@ def register_inventory_tools(mcp: FastMCP):
                     kpath = h.get("key_path", _key)
                     try:
                         t = Tunnel(remote_host=host, username=_user, password=_password)
-                        t.remove_host_key()
-                        t.setup_passwordless_ssh(
-                            local_key_path=kpath, key_type=key_type
+                        await run_blocking(t.remove_host_key)
+                        await run_blocking(
+                            t.setup_passwordless_ssh,
+                            local_key_path=kpath,
+                            key_type=key_type,
                         )
-                        t.connect()
-                        t.run_command(f"echo '{pub}' >> ~/.ssh/authorized_keys")
-                        t.run_command("chmod 600 ~/.ssh/authorized_keys")
-                        res, msg = t.test_key_auth(kpath)
+                        await run_blocking(t.connect)
+                        await run_blocking(
+                            t.run_command, f"echo '{pub}' >> ~/.ssh/authorized_keys"
+                        )
+                        await run_blocking(
+                            t.run_command, "chmod 600 ~/.ssh/authorized_keys"
+                        )
+                        res, msg = await run_blocking(t.test_key_auth, kpath)
                         return {
                             "hostname": host,
                             "status": "success",
@@ -1213,7 +1231,7 @@ def register_inventory_tools(mcp: FastMCP):
                         }
                     finally:
                         if "t" in locals():
-                            t.close()
+                            await run_blocking(t.close)
 
                 results, files, locations, errors = [], [], [], []
                 if parallel:
@@ -1360,7 +1378,9 @@ def register_inventory_tools(mcp: FastMCP):
                             password=h.get("password"),
                             identity_file=h.get("key_path"),
                         )
-                        out, error = t.run_command(cmd, timeout=timeout)
+                        out, error = await run_blocking(
+                            t.run_command, cmd, timeout=timeout
+                        )
                         return {
                             "hostname": host,
                             "status": "success",
@@ -1380,7 +1400,7 @@ def register_inventory_tools(mcp: FastMCP):
                         }
                     finally:
                         if "t" in locals():
-                            t.close()
+                            await run_blocking(t.close)
 
                 results, errors = [], []
                 if parallel:
@@ -1477,7 +1497,7 @@ def register_inventory_tools(mcp: FastMCP):
                             password=h.get("password"),
                             identity_file=h.get("key_path"),
                         )
-                        t.copy_ssh_config(cfg, rmt_cfg)
+                        await run_blocking(t.copy_ssh_config, cfg, rmt_cfg)
                         return {
                             "hostname": h["hostname"],
                             "status": "success",
@@ -1493,7 +1513,7 @@ def register_inventory_tools(mcp: FastMCP):
                         }
                     finally:
                         if "t" in locals():
-                            t.close()
+                            await run_blocking(t.close)
 
                 if parallel:
                     with concurrent.futures.ThreadPoolExecutor(
@@ -1597,7 +1617,7 @@ def register_inventory_tools(mcp: FastMCP):
                             password=h.get("password"),
                             identity_file=h.get("key_path"),
                         )
-                        t.rotate_ssh_key(_key, key_type=key_type)
+                        await run_blocking(t.rotate_ssh_key, _key, key_type=key_type)
                         return {
                             "hostname": h["hostname"],
                             "status": "success",
@@ -1615,7 +1635,7 @@ def register_inventory_tools(mcp: FastMCP):
                         }
                     finally:
                         if "t" in locals():
-                            t.close()
+                            await run_blocking(t.close)
 
                 if parallel:
                     with concurrent.futures.ThreadPoolExecutor(
@@ -1732,9 +1752,9 @@ def register_inventory_tools(mcp: FastMCP):
                             password=h.get("password"),
                             identity_file=h.get("key_path"),
                         )
-                        t.connect()
+                        await run_blocking(t.connect)
                         assert t.ssh_client is not None
-                        sftp = t.ssh_client.open_sftp()
+                        sftp = await run_blocking(t.ssh_client.open_sftp)
                         transferred = 0
 
                         def progress_callback(transf, total):
@@ -1745,8 +1765,10 @@ def register_inventory_tools(mcp: FastMCP):
                                     ctx.report_progress(progress=transf, total=total)
                                 )
 
-                        sftp.put(_lpath, _rpath, callback=progress_callback)
-                        sftp.close()
+                        await run_blocking(
+                            sftp.put, _lpath, _rpath, callback=progress_callback
+                        )
+                        await run_blocking(sftp.close)
                         return {
                             "hostname": host,
                             "status": "success",
@@ -1762,7 +1784,7 @@ def register_inventory_tools(mcp: FastMCP):
                         }
                     finally:
                         if "t" in locals():
-                            t.close()
+                            await run_blocking(t.close)
 
                 results, files, locations, errors = [_lpath], [], [], []
                 if parallel:
@@ -1867,10 +1889,10 @@ def register_inventory_tools(mcp: FastMCP):
                             password=h.get("password"),
                             identity_file=h.get("key_path"),
                         )
-                        t.connect()
+                        await run_blocking(t.connect)
                         assert t.ssh_client is not None
-                        sftp = t.ssh_client.open_sftp()
-                        sftp.stat(rpath)
+                        sftp = await run_blocking(t.ssh_client.open_sftp)
+                        await run_blocking(sftp.stat, rpath)
                         transferred = 0
 
                         def progress_callback(transf, total):
@@ -1881,8 +1903,10 @@ def register_inventory_tools(mcp: FastMCP):
                                     ctx.report_progress(progress=transf, total=total)
                                 )
 
-                        sftp.get(rpath, _lpath, callback=progress_callback)
-                        sftp.close()
+                        await run_blocking(
+                            sftp.get, rpath, _lpath, callback=progress_callback
+                        )
+                        await run_blocking(sftp.close)
                         return {
                             "hostname": host,
                             "status": "success",
@@ -1900,7 +1924,7 @@ def register_inventory_tools(mcp: FastMCP):
                         }
                     finally:
                         if "t" in locals():
-                            t.close()
+                            await run_blocking(t.close)
 
                 results, files, locations, errors = [], [], [], []
                 if parallel:
@@ -2036,7 +2060,8 @@ def register_operations_tools(mcp: FastMCP):
                     errors=["Need operation_type"],
                 )
             try:
-                op_id = operation_manager.create_operation(
+                op_id = await run_blocking(
+                    operation_manager.create_operation,
                     operation_type=operation_type,
                     total_steps=total_steps,
                     details=details,
@@ -2064,7 +2089,9 @@ def register_operations_tools(mcp: FastMCP):
                     errors=["Need operation_id"],
                 )
             try:
-                status = operation_manager.get_operation_status(operation_id)
+                status = await run_blocking(
+                    operation_manager.get_operation_status, operation_id
+                )
                 if status is None:
                     return ResponseBuilder.build(
                         404,
@@ -2098,7 +2125,9 @@ def register_operations_tools(mcp: FastMCP):
                 return {"status": "cancelled", "message": "Operation cancelled by user"}
             await ctx_progress(ctx, 0, 100)
             try:
-                success = operation_manager.request_cancellation(operation_id)
+                success = await run_blocking(
+                    operation_manager.request_cancellation, operation_id
+                )
                 if success:
                     return ResponseBuilder.build(
                         200,
@@ -2130,7 +2159,9 @@ def register_operations_tools(mcp: FastMCP):
                     errors=["Need operation_id"],
                 )
             try:
-                metrics = operation_manager.get_resource_metrics(operation_id)
+                metrics = await run_blocking(
+                    operation_manager.get_resource_metrics, operation_id
+                )
                 return ResponseBuilder.build(
                     200,
                     "Resource metrics retrieved",
@@ -2151,7 +2182,7 @@ def register_operations_tools(mcp: FastMCP):
 
         elif action == "list_sessions":
             try:
-                sessions = operation_manager.list_active_sessions()
+                sessions = await run_blocking(operation_manager.list_active_sessions)
                 return ResponseBuilder.build(
                     200,
                     "Active sessions listed",
@@ -2223,7 +2254,7 @@ def register_system_tools(mcp: FastMCP):
             intelligence = SystemIntelligence(tunnel)
 
             if action == "get_info":
-                result = intelligence.get_system_info()
+                result = await run_blocking(intelligence.get_system_info)
                 return ResponseBuilder.build(
                     200,
                     "System information retrieved",
@@ -2231,7 +2262,7 @@ def register_system_tools(mcp: FastMCP):
                 )
 
             elif action == "discover_services":
-                result = intelligence.discover_services()
+                result = await run_blocking(intelligence.discover_services)
                 return ResponseBuilder.build(
                     200,
                     "Services discovered",
@@ -2246,7 +2277,9 @@ def register_system_tools(mcp: FastMCP):
                         {"host": remote_host},
                         errors=["Need log_paths and patterns"],
                     )
-                result = intelligence.analyze_logs(log_paths, patterns)
+                result = await run_blocking(
+                    intelligence.analyze_logs, log_paths, patterns
+                )
                 return ResponseBuilder.build(
                     200,
                     "Log analysis completed",
@@ -2254,7 +2287,7 @@ def register_system_tools(mcp: FastMCP):
                 )
 
             elif action == "network_topology":
-                result = intelligence.network_topology()
+                result = await run_blocking(intelligence.network_topology)
                 return ResponseBuilder.build(
                     200,
                     "Network topology mapped",
@@ -2381,8 +2414,12 @@ def register_file_tools(mcp: FastMCP):
                 elif operation == "chown":
                     options["owner"] = owner
                     options["group"] = group
-                result = fm.recursive_file_operations(
-                    operation, source, destination, options
+                result = await run_blocking(
+                    fm.recursive_file_operations,
+                    operation,
+                    source,
+                    destination,
+                    options,
                 )
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
@@ -2421,7 +2458,9 @@ def register_file_tools(mcp: FastMCP):
                     "recursive": recursive,
                     "max_results": max_results,
                 }
-                result = fm.file_content_search(search_paths, pattern, options)
+                result = await run_blocking(
+                    fm.file_content_search, search_paths, pattern, options
+                )
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
                     "File content search completed",
@@ -2453,7 +2492,9 @@ def register_file_tools(mcp: FastMCP):
                     identity_file=identity_file or None,
                 )
                 fm = AdvancedFileManager(tunnel)
-                result = fm.file_watch_monitor(watch_paths, duration)
+                result = await run_blocking(
+                    fm.file_watch_monitor, watch_paths, duration
+                )
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
                     "File monitoring completed",
@@ -2485,7 +2526,9 @@ def register_file_tools(mcp: FastMCP):
                     identity_file=identity_file or None,
                 )
                 fm = AdvancedFileManager(tunnel1)
-                result = fm.file_diff_compare(host1, host2, file_path)
+                result = await run_blocking(
+                    fm.file_diff_compare, host1, host2, file_path
+                )
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
                     "File comparison completed",
@@ -2523,7 +2566,9 @@ def register_file_tools(mcp: FastMCP):
                 )
                 fm = AdvancedFileManager(tunnel)
                 options = {"compression": compression, "incremental": incremental}
-                result = fm.smart_backup(backup_paths, backup_dest, options)
+                result = await run_blocking(
+                    fm.smart_backup, backup_paths, backup_dest, options
+                )
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
                     "Backup completed",
@@ -2610,7 +2655,9 @@ def register_security_tools(mcp: FastMCP):
             auditor = SecurityAuditor(tunnel)
 
             if action == "security_audit":
-                result = auditor.security_audit(scope if scope else None)
+                result = await run_blocking(
+                    auditor.security_audit, scope if scope else None
+                )
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
                     f"Security audit completed with score: {result['score']}/100",
@@ -2620,7 +2667,7 @@ def register_security_tools(mcp: FastMCP):
                 )
 
             elif action == "compliance_check":
-                result = auditor.compliance_check(standard)
+                result = await run_blocking(auditor.compliance_check, standard)
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
                     f"Compliance check completed: {result['compliance_percentage']:.1f}% compliant",
@@ -2634,7 +2681,7 @@ def register_security_tools(mcp: FastMCP):
                 )
 
             elif action == "vulnerability_scan":
-                result = auditor.vulnerability_scan(scan_type)
+                result = await run_blocking(auditor.vulnerability_scan, scan_type)
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
                     f"Vulnerability scan completed: {len(result['vulnerabilities'])} vulnerabilities found",
@@ -2648,7 +2695,7 @@ def register_security_tools(mcp: FastMCP):
                 )
 
             elif action == "access_control_audit":
-                result = auditor.access_control_audit()
+                result = await run_blocking(auditor.access_control_audit)
                 return ResponseBuilder.build(
                     200 if result["success"] else 500,
                     f"Access control audit completed: {result['users_audited']} users audited",

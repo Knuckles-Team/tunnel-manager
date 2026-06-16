@@ -9,7 +9,12 @@ import os
 import subprocess
 
 from agent_utilities.base_utilities import to_integer
-from agent_utilities.mcp_utilities import ctx_confirm_destructive, ctx_log, ctx_progress
+from agent_utilities.mcp_utilities import (
+    ctx_confirm_destructive,
+    ctx_log,
+    ctx_progress,
+    run_blocking,
+)
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
@@ -126,8 +131,8 @@ def register_remote_tools(mcp: FastMCP):
                 )
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
-                t.connect()
-                out, error = t.run_command(cmd, timeout=timeout)
+                await run_blocking(t.connect)
+                out, error = await run_blocking(t.run_command, cmd, timeout=timeout)
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
@@ -148,7 +153,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
             finally:
                 if "t" in locals():
-                    t.close()
+                    await run_blocking(t.close)
 
         elif action == "send_file":
             _logger = logging.getLogger("TunnelServer")
@@ -189,11 +194,11 @@ def register_remote_tools(mcp: FastMCP):
                     proxy_command=conf.get("proxy_command"),
                     ssh_config_file=final_cfg,
                 )
-                t.connect()
+                await run_blocking(t.connect)
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
                 assert t.ssh_client is not None
-                sftp = t.ssh_client.open_sftp()
+                sftp = await run_blocking(t.ssh_client.open_sftp)
                 transferred = 0
 
                 def progress_callback(transf, total):
@@ -204,8 +209,8 @@ def register_remote_tools(mcp: FastMCP):
                             ctx.report_progress(progress=transf, total=total)
                         )
 
-                sftp.put(_lpath, _rpath, callback=progress_callback)
-                sftp.close()
+                await run_blocking(sftp.put, _lpath, _rpath, callback=progress_callback)
+                await run_blocking(sftp.close)
                 return ResponseBuilder.build(
                     200,
                     f"Uploaded to {_rpath}",
@@ -224,7 +229,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
             finally:
                 if "t" in locals():
-                    t.close()
+                    await run_blocking(t.close)
 
         elif action == "receive_file":
             _lpath = os.path.abspath(os.path.expanduser(lpath))
@@ -246,12 +251,12 @@ def register_remote_tools(mcp: FastMCP):
                     proxy_command=proxy,
                     ssh_config_file=cfg,
                 )
-                t.connect()
+                await run_blocking(t.connect)
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
                 assert t.ssh_client is not None
-                sftp = t.ssh_client.open_sftp()
-                sftp.stat(rpath)
+                sftp = await run_blocking(t.ssh_client.open_sftp)
+                await run_blocking(sftp.stat, rpath)
                 transferred = 0
 
                 def progress_callback(transf, total):
@@ -262,10 +267,10 @@ def register_remote_tools(mcp: FastMCP):
                             ctx.report_progress(progress=transf, total=total)
                         )
 
-                sftp.get(rpath, _lpath, callback=progress_callback)
+                await run_blocking(sftp.get, rpath, _lpath, callback=progress_callback)
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
-                sftp.close()
+                await run_blocking(sftp.close)
                 return ResponseBuilder.build(
                     200,
                     f"Downloaded to {_lpath}",
@@ -284,7 +289,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
             finally:
                 if "t" in locals():
-                    t.close()
+                    await run_blocking(t.close)
 
         elif action == "check_ssh":
             if not host:
@@ -314,7 +319,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
-                success, msg = t.check_ssh_server()
+                success, msg = await run_blocking(t.check_ssh_server)
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
@@ -332,7 +337,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
             finally:
                 if "t" in locals():
-                    t.close()
+                    await run_blocking(t.close)
 
         elif action == "test_key_auth":
             _key = key or os.environ.get("TUNNEL_IDENTITY_FILE", "")
@@ -355,7 +360,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
-                success, msg = t.test_key_auth(_key)
+                success, msg = await run_blocking(t.test_key_auth, _key)
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
@@ -409,7 +414,8 @@ def register_remote_tools(mcp: FastMCP):
                 pub_key = _key + ".pub"
                 if not os.path.exists(pub_key):
                     if key_type == "rsa":
-                        subprocess.run(
+                        await run_blocking(
+                            subprocess.run,
                             [
                                 "/usr/bin/ssh-keygen",
                                 "-t",
@@ -424,7 +430,8 @@ def register_remote_tools(mcp: FastMCP):
                             check=True,
                         )
                     else:
-                        subprocess.run(
+                        await run_blocking(
+                            subprocess.run,
                             [
                                 "/usr/bin/ssh-keygen",
                                 "-t",
@@ -436,7 +443,9 @@ def register_remote_tools(mcp: FastMCP):
                             ],
                             check=True,
                         )
-                t.setup_passwordless_ssh(local_key_path=_key, key_type=key_type)
+                await run_blocking(
+                    t.setup_passwordless_ssh, local_key_path=_key, key_type=key_type
+                )
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
@@ -457,7 +466,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
             finally:
                 if "t" in locals():
-                    t.close()
+                    await run_blocking(t.close)
 
         elif action == "copy_ssh_config":
             if not host or not lcfg:
@@ -490,7 +499,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
-                t.copy_ssh_config(lcfg, rcfg)
+                await run_blocking(t.copy_ssh_config, lcfg, rcfg)
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
@@ -511,7 +520,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
             finally:
                 if "t" in locals():
-                    t.close()
+                    await run_blocking(t.close)
 
         elif action == "rotate_key":
             if not host or not new_key:
@@ -555,7 +564,8 @@ def register_remote_tools(mcp: FastMCP):
                 new_public_key = _new_key + ".pub"
                 if not os.path.exists(_new_key):
                     if key_type == "rsa":
-                        subprocess.run(
+                        await run_blocking(
+                            subprocess.run,
                             [
                                 "/usr/bin/ssh-keygen",
                                 "-t",
@@ -570,7 +580,8 @@ def register_remote_tools(mcp: FastMCP):
                             check=True,
                         )
                     else:
-                        subprocess.run(
+                        await run_blocking(
+                            subprocess.run,
                             [
                                 "/usr/bin/ssh-keygen",
                                 "-t",
@@ -582,7 +593,7 @@ def register_remote_tools(mcp: FastMCP):
                             ],
                             check=True,
                         )
-                t.rotate_ssh_key(_new_key, key_type=key_type)
+                await run_blocking(t.rotate_ssh_key, _new_key, key_type=key_type)
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
@@ -608,7 +619,7 @@ def register_remote_tools(mcp: FastMCP):
                 )
             finally:
                 if "t" in locals():
-                    t.close()
+                    await run_blocking(t.close)
 
         elif action == "remove_host_key":
             if not host:
@@ -623,7 +634,9 @@ def register_remote_tools(mcp: FastMCP):
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
                 _known_hosts = os.path.expanduser(known_hosts)
-                msg = t.remove_host_key(known_hosts_path=_known_hosts)
+                msg = await run_blocking(
+                    t.remove_host_key, known_hosts_path=_known_hosts
+                )
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
