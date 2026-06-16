@@ -34,6 +34,7 @@ from agent_utilities.mcp_utilities import (
     ctx_confirm_destructive,
     ctx_log,
     ctx_progress,
+    resolve_action,
 )
 from dotenv import find_dotenv, load_dotenv
 
@@ -353,6 +354,12 @@ def register_host_tools(mcp: FastMCP):
         ctx: Context = Field(description="MCP context.", default=None),
     ) -> dict:
         """Manage the local host alias inventory."""
+        resolved = resolve_action(
+            action, ["list", "add", "remove"], service="tunnel-manager"
+        )
+        if isinstance(resolved, dict):
+            return resolved
+        action = resolved
         if action == "list":
             return {"hosts": host_manager.list_hosts()}
         elif action == "add":
@@ -468,6 +475,24 @@ def register_remote_tools(mcp: FastMCP):
         ctx: Context = Field(description="MCP context.", default=""),
     ) -> dict:
         """Single-host SSH operations with shared connection params."""
+        resolved = resolve_action(
+            action,
+            [
+                "run_command",
+                "send_file",
+                "receive_file",
+                "check_ssh",
+                "test_key_auth",
+                "setup_passwordless",
+                "copy_ssh_config",
+                "rotate_key",
+                "remove_host_key",
+            ],
+            service="tunnel-manager",
+        )
+        if isinstance(resolved, dict):
+            return resolved
+        action = resolved
         if action == "run_command":
             if not host or not cmd:
                 return ResponseBuilder.build(
@@ -1090,6 +1115,22 @@ def register_inventory_tools(mcp: FastMCP):
         ctx: Context = Field(description="MCP context.", default=""),
     ) -> dict:
         """Bulk inventory operations against YAML host groups."""
+        resolved = resolve_action(
+            action,
+            [
+                "configure_key_auth",
+                "mesh_bootstrap",
+                "run_command",
+                "copy_ssh_config",
+                "rotate_key",
+                "send_file",
+                "receive_file",
+            ],
+            service="tunnel-manager",
+        )
+        if isinstance(resolved, dict):
+            return resolved
+        action = resolved
         if not inventory:
             return ResponseBuilder.build(
                 400, "Need inventory", {"action": action}, errors=["Need inventory"]
@@ -1978,6 +2019,14 @@ def register_operations_tools(mcp: FastMCP):
         ctx: Context = Field(description="MCP context.", default=None),
     ) -> dict:
         """Operation lifecycle and session management."""
+        resolved = resolve_action(
+            action,
+            ["start", "get_progress", "cancel", "get_metrics", "list_sessions"],
+            service="tunnel-manager",
+        )
+        if isinstance(resolved, dict):
+            return resolved
+        action = resolved
         if action == "start":
             if not operation_type:
                 return ResponseBuilder.build(
@@ -2156,6 +2205,14 @@ def register_system_tools(mcp: FastMCP):
         ctx: Context = Field(description="MCP context.", default=None),
     ) -> dict:
         """Remote system intelligence via SSH."""
+        resolved = resolve_action(
+            action,
+            ["get_info", "discover_services", "analyze_logs", "network_topology"],
+            service="tunnel-manager",
+        )
+        if isinstance(resolved, dict):
+            return resolved
+        action = resolved
         try:
             tunnel = Tunnel(
                 remote_host=remote_host,
@@ -2294,6 +2351,14 @@ def register_file_tools(mcp: FastMCP):
         ctx: Context = Field(description="MCP context.", default=None),
     ) -> dict:
         """Advanced file operations on remote hosts."""
+        resolved = resolve_action(
+            action,
+            ["recursive_ops", "content_search", "watch", "diff_compare", "backup"],
+            service="tunnel-manager",
+        )
+        if isinstance(resolved, dict):
+            return resolved
+        action = resolved
         if action == "recursive_ops":
             if not remote_host or not operation or not source:
                 return ResponseBuilder.build(
@@ -2522,6 +2587,19 @@ def register_security_tools(mcp: FastMCP):
         ctx: Context = Field(description="MCP context.", default=None),
     ) -> dict:
         """Security scanning and compliance."""
+        resolved = resolve_action(
+            action,
+            [
+                "security_audit",
+                "compliance_check",
+                "vulnerability_scan",
+                "access_control_audit",
+            ],
+            service="tunnel-manager",
+        )
+        if isinstance(resolved, dict):
+            return resolved
+        action = resolved
         try:
             tunnel = Tunnel(
                 remote_host=remote_host,
