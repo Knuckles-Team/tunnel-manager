@@ -42,7 +42,7 @@ def register_inventory_tools(mcp: FastMCP):
         ),
         inventory: str = Field(
             default=os.environ.get("TUNNEL_INVENTORY", _DEFAULT_INVENTORY_PATH),
-            description="YAML inventory path (default: $XDG_CONFIG_HOME/tunnel-manager/inventory.yml).",
+            description="YAML inventory path (default: $XDG_CONFIG_HOME/agent-utilities/inventory.yaml).",
         ),
         group: str = Field(
             default=os.environ.get("TUNNEL_INVENTORY_GROUP", "all"),

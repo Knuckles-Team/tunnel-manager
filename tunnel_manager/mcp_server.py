@@ -47,10 +47,13 @@ from tunnel_manager.tunnel_manager import HostManager, Tunnel
 
 __version__ = "1.33.0"
 
-# XDG-compliant default paths for tunnel-manager data
+# XDG-compliant default paths. The inventory is shared across the ecosystem
+# (the HostManager library, container-manager-mcp, and the ssh-bootstrap skill all
+# read $XDG_CONFIG_HOME/agent-utilities/inventory.yaml), so the MCP server defaults
+# to the SAME file — one inventory, one location. Override with $TUNNEL_INVENTORY.
 _XDG_CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-_TM_CONFIG_DIR = os.path.join(_XDG_CONFIG_HOME, "tunnel-manager")
-_DEFAULT_INVENTORY_PATH = os.path.join(_TM_CONFIG_DIR, "inventory.yml")
+_TM_CONFIG_DIR = os.path.join(_XDG_CONFIG_HOME, "agent-utilities")
+_DEFAULT_INVENTORY_PATH = os.path.join(_TM_CONFIG_DIR, "inventory.yaml")
 
 # Ensure config directory exists on import
 os.makedirs(_TM_CONFIG_DIR, exist_ok=True)
@@ -1079,7 +1082,7 @@ def register_inventory_tools(mcp: FastMCP):
         ),
         inventory: str = Field(
             default=os.environ.get("TUNNEL_INVENTORY", _DEFAULT_INVENTORY_PATH),
-            description="YAML inventory path (default: $XDG_CONFIG_HOME/tunnel-manager/inventory.yml).",
+            description="YAML inventory path (default: $XDG_CONFIG_HOME/agent-utilities/inventory.yaml).",
         ),
         group: str = Field(
             default=os.environ.get("TUNNEL_INVENTORY_GROUP", "all"),

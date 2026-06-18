@@ -1,0 +1,66 @@
+# tunnel-manager — example inventory
+# =====================================================================
+# Copy this to the default location and edit:
+#
+#     mkdir -p ~/.config/agent-utilities
+#     cp inventory.example.yaml ~/.config/agent-utilities/inventory.yaml
+#
+# Default search path (library, CLI, MCP server, container-manager-mcp, and the
+# ssh-bootstrap skill all read the SAME file):
+#     $XDG_CONFIG_HOME/agent-utilities/inventory.yaml   (== ~/.config/agent-utilities/inventory.yaml)
+#
+# Override the path with:
+#     CLI:  tunnel-manager --inventory /path/to/inventory.yaml ...
+#     MCP:  export TUNNEL_INVENTORY=/path/to/inventory.yaml     (or the tool's `inventory` arg)
+#     API:  HostManager(config_file="/path/to/inventory.yaml")
+#
+# Two formats are accepted. This file shows the RECOMMENDED Ansible-style layout;
+# the flat layout is shown (commented) at the bottom.
+# =====================================================================
+
+# --- Ansible-style (recommended) -------------------------------------
+# Group-level `vars` apply to every host in the group; per-host keys override them.
+all:
+  vars:
+    ansible_user: genius                       # default SSH user for all hosts
+    ansible_ssh_private_key_file: ~/.ssh/id_rsa # default key for all hosts
+    ansible_port: 22
+  hosts:
+    # A host with everything inherited from `all.vars`:
+    r820:
+      ansible_host: 10.0.0.13
+    # A host overriding the user, port, and key:
+    gpu-node:
+      ansible_host: 10.0.0.16
+      ansible_user: ml
+      ansible_port: 2222
+      ansible_ssh_private_key_file: ~/.ssh/gpu_ed25519
+  children:
+    storage:                                    # an arbitrary group of hosts
+      vars:
+        ansible_user: storageadmin
+      hosts:
+        nas:
+          ansible_host: 10.0.0.10
+        backup:
+          ansible_host: 10.0.0.11
+          # Password auth instead of a key (use sparingly; prefer keys):
+          ansible_ssh_pass: "CHANGE_ME"
+
+# Recognized per-host keys (Ansible aliases on the left, native on the right —
+# either works): ansible_host|hostname, ansible_user|user, ansible_port|port,
+# ansible_ssh_private_key_file|identity_file|key_path, ansible_ssh_pass|password,
+# ansible_ssh_common_args|proxy_command.
+
+# --- Flat layout (alternative) ---------------------------------------
+# Top-level keys are host aliases; no `all:` wrapper. Uncomment to use instead:
+#
+# r820:
+#   hostname: 10.0.0.13
+#   user: genius
+#   port: 22
+#   identity_file: ~/.ssh/id_rsa
+# gpu-node:
+#   hostname: 10.0.0.16
+#   user: ml
+#   key_path: ~/.ssh/gpu_ed25519
