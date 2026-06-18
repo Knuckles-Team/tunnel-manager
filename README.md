@@ -313,6 +313,7 @@ the recommended reference for installation, deployment, and day-to-day operation
 | Page | Contents |
 |---|---|
 | [Installation](https://knuckles-team.github.io/tunnel-manager/installation/) | pip, source, extras, prebuilt Docker image |
+| [Inventory](https://knuckles-team.github.io/tunnel-manager/inventory/) | the shared `inventory.yaml` — default location, how to create it, formats, overrides |
 | [Deployment](https://knuckles-team.github.io/tunnel-manager/deployment/) | run the MCP and agent servers, Compose, Caddy + Technitium, env config |
 | [Usage](https://knuckles-team.github.io/tunnel-manager/usage/) | the MCP tools, the `HostManager` / `Tunnel` API, the CLI |
 | [Overview](https://knuckles-team.github.io/tunnel-manager/overview/) | ecosystem role, distributed SSH swarm scaling, MCP configuration |
