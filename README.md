@@ -63,13 +63,13 @@ _Auto-generated from the live MCP server — do not edit by hand._
 
 | MCP Tool | Toggle Env Var | Description |
 |----------|----------------|-------------|
-| `tm_files` | `ADVANCED_FILE_OPERATIONSTOOL` | Advanced file operations on remote hosts. |
-| `tm_hosts` | `HOST_MANAGEMENTTOOL` | Manage the local host alias inventory. |
-| `tm_inventory` | `INVENTORY_OPSTOOL` | Bulk inventory operations against YAML host groups. |
-| `tm_operations` | `OPERATION_MANAGEMENTTOOL` | Operation lifecycle and session management. |
-| `tm_remote` | `REMOTE_ACCESSTOOL` | Single-host SSH operations with shared connection params. |
-| `tm_security` | `SECURITY_AUDITINGTOOL` | Security scanning and compliance. |
-| `tm_system` | `SYSTEM_INTELLIGENCETOOL` | Remote system intelligence via SSH. |
+| `tm_files` | `TM_FILES_TOOL` | Advanced file operations on remote hosts. |
+| `tm_hosts` | `TM_HOSTS_TOOL` | Manage the local host alias inventory. |
+| `tm_inventory` | `TM_INVENTORY_TOOL` | Bulk inventory operations against YAML host groups. |
+| `tm_operations` | `TM_OPERATIONS_TOOL` | Operation lifecycle and session management. |
+| `tm_remote` | `TM_REMOTE_TOOL` | Single-host SSH operations with shared connection params. |
+| `tm_security` | `TM_SECURITY_TOOL` | Security scanning and compliance. |
+| `tm_system` | `TM_SYSTEM_TOOL` | Remote system intelligence via SSH. |
 
 _7 action-routed tools (default `MCP_TOOL_MODE=condensed`). Each is enabled unless its toggle is set false; set `MCP_TOOL_MODE=verbose` (or `both`) for the 1:1 per-operation surface. Auto-generated — do not edit._
 <!-- MCP-TOOLS-TABLE:END -->
