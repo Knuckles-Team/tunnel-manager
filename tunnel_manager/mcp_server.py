@@ -34,10 +34,10 @@ from agent_utilities.mcp_utilities import (
     ctx_confirm_destructive,
     ctx_log,
     ctx_progress,
+    load_config,
     resolve_action,
     run_blocking,
 )
-from dotenv import find_dotenv, load_dotenv
 
 from tunnel_manager.advanced_file_manager import AdvancedFileManager
 from tunnel_manager.operation_manager import operation_manager
@@ -2724,7 +2724,7 @@ def register_security_tools(mcp: FastMCP):
 
 def get_mcp_instance() -> tuple[Any, Any, Any, Any]:
     """Initialize and return the MCP instance, args, and middlewares."""
-    load_dotenv(find_dotenv())
+    load_config()
 
     args, mcp, middlewares = create_mcp_server(
         name="TunnelManagerMCP",
