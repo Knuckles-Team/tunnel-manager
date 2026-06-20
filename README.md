@@ -56,15 +56,23 @@ Detailed instructions on how to use the underlying API wrappers, extended schema
 This server utilizes dynamic Action-Routed tools to optimize token overhead and maximize IDE compatibility.
 
 ### Available MCP Tools
-| Tool Module | Toggle Env Var | Enabled by Default | Description & Nested Methods |
-|-------------|----------------|--------------------|------------------------------|
-| **Host** | `HOST_TOOL` | `True` | Register host inventory management tool. Action-routed methods: `add`, `list`, `remove`. |
-| **Remote** | `REMOTE_TOOL` | `True` | Register single-host SSH operations tool. Action-routed methods: `check_ssh`, `copy_ssh_config`, `receive_file`, `remove_host_key`, `rotate_key`, `run_command`, `send_file`, `setup_passwordless`, `test_key_auth`. |
-| **Inventory** | `INVENTORY_TOOL` | `True` | Register bulk inventory operations tool. Action-routed methods: `configure_key_auth`, `copy_ssh_config`, `mesh_bootstrap`, `receive_file`, `rotate_key`, `run_command`, `send_file`. |
-| **Operations** | `OPERATIONS_TOOL` | `True` | Register operation lifecycle and session management tool. Action-routed methods: `cancel`, `get_metrics`, `get_progress`, `list_sessions`, `start`. |
-| **System** | `SYSTEM_TOOL` | `True` | Register remote system intelligence tool. Action-routed methods: `analyze_logs`, `discover_services`, `get_info`, `network_topology`. |
-| **File** | `FILE_TOOL` | `True` | Register advanced file operations tool. Action-routed methods: `backup`, `content_search`, `diff_compare`, `recursive_ops`, `watch`. |
-| **Security** | `SECURITY_TOOL` | `True` | Register security scanning and compliance tool. Action-routed methods: `access_control_audit`, `compliance_check`, `security_audit`, `vulnerability_scan`. |
+
+_Auto-generated from the live MCP server — do not edit by hand._
+
+<!-- MCP-TOOLS-TABLE:START -->
+
+| MCP Tool | Toggle Env Var | Description |
+|----------|----------------|-------------|
+| `tm_files` | `ADVANCED_FILE_OPERATIONSTOOL` | Advanced file operations on remote hosts. |
+| `tm_hosts` | `HOST_MANAGEMENTTOOL` | Manage the local host alias inventory. |
+| `tm_inventory` | `INVENTORY_OPSTOOL` | Bulk inventory operations against YAML host groups. |
+| `tm_operations` | `OPERATION_MANAGEMENTTOOL` | Operation lifecycle and session management. |
+| `tm_remote` | `REMOTE_ACCESSTOOL` | Single-host SSH operations with shared connection params. |
+| `tm_security` | `SECURITY_AUDITINGTOOL` | Security scanning and compliance. |
+| `tm_system` | `SYSTEM_INTELLIGENCETOOL` | Remote system intelligence via SSH. |
+
+_7 action-routed tools (default `MCP_TOOL_MODE=condensed`). Each is enabled unless its toggle is set false; set `MCP_TOOL_MODE=verbose` (or `both`) for the 1:1 per-operation surface. Auto-generated — do not edit._
+<!-- MCP-TOOLS-TABLE:END -->
 
 Detailed tool schemas, parameter shapes, and validation constraints are preserved in [docs/mcp.md](docs/mcp.md).
 
