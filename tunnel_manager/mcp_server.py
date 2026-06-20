@@ -28,13 +28,14 @@ import sys
 from typing import Any
 
 import yaml
-from agent_utilities.base_utilities import to_boolean, to_integer
+from agent_utilities.core.config import setting
 from agent_utilities.mcp_utilities import (
     create_mcp_server,
     ctx_confirm_destructive,
     ctx_log,
     ctx_progress,
     load_config,
+    register_tool_surface,
     resolve_action,
     run_blocking,
 )
@@ -51,7 +52,7 @@ __version__ = "1.33.0"
 # (the HostManager library, container-manager-mcp, and the ssh-bootstrap skill all
 # read $XDG_CONFIG_HOME/agent-utilities/inventory.yaml), so the MCP server defaults
 # to the SAME file — one inventory, one location. Override with $TUNNEL_INVENTORY.
-_XDG_CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+_XDG_CONFIG_HOME = setting("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
 _TM_CONFIG_DIR = os.path.join(_XDG_CONFIG_HOME, "agent-utilities")
 _DEFAULT_INVENTORY_PATH = os.path.join(_TM_CONFIG_DIR, "inventory.yaml")
 
@@ -63,6 +64,11 @@ logging.basicConfig(
 )
 logger = get_logger("TunnelManager")
 host_manager = HostManager()
+
+
+def get_client() -> HostManager:
+    """Return the process-wide :class:`HostManager` (verbose-surface dependency)."""
+    return host_manager
 
 
 class ResponseBuilder:
@@ -421,28 +427,28 @@ def register_remote_tools(mcp: FastMCP):
             description="Action: 'run_command', 'send_file', 'receive_file', 'check_ssh', 'test_key_auth', 'setup_passwordless', 'copy_ssh_config', 'rotate_key', 'remove_host_key'"
         ),
         host: str = Field(
-            default=os.environ.get("TUNNEL_REMOTE_HOST", ""), description="Remote host."
+            default=setting("TUNNEL_REMOTE_HOST", ""), description="Remote host."
         ),
         user: str | None = Field(
-            default=os.environ.get("TUNNEL_USERNAME", ""), description="Username."
+            default=setting("TUNNEL_USERNAME", ""), description="Username."
         ),
         password: str | None = Field(
-            default=os.environ.get("TUNNEL_PASSWORD", ""), description="Password."
+            default=setting("TUNNEL_PASSWORD", ""), description="Password."
         ),
         port: int = Field(
-            default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
+            default=int(setting("TUNNEL_REMOTE_PORT", 22)),
             description="Port.",
         ),
         id_file: str | None = Field(
-            default=os.environ.get("TUNNEL_IDENTITY_FILE", ""),
+            default=setting("TUNNEL_IDENTITY_FILE", ""),
             description="Private key path.",
         ),
         certificate: str | None = Field(
-            default=os.environ.get("TUNNEL_CERTIFICATE", ""),
+            default=setting("TUNNEL_CERTIFICATE", ""),
             description="Teleport certificate.",
         ),
         proxy: str | None = Field(
-            default=os.environ.get("TUNNEL_PROXY_COMMAND", ""),
+            default=setting("TUNNEL_PROXY_COMMAND", ""),
             description="Teleport proxy.",
         ),
         cfg: str = Field(
@@ -738,7 +744,7 @@ def register_remote_tools(mcp: FastMCP):
                     await run_blocking(t.close)
 
         elif action == "test_key_auth":
-            _key = key or os.environ.get("TUNNEL_IDENTITY_FILE", "")
+            _key = key or setting("TUNNEL_IDENTITY_FILE", "")
             if not host or not _key:
                 return ResponseBuilder.build(
                     400,
@@ -1081,24 +1087,24 @@ def register_inventory_tools(mcp: FastMCP):
             description="Action: 'configure_key_auth', 'mesh_bootstrap', 'run_command', 'copy_ssh_config', 'rotate_key', 'send_file', 'receive_file'"
         ),
         inventory: str = Field(
-            default=os.environ.get("TUNNEL_INVENTORY", _DEFAULT_INVENTORY_PATH),
+            default=setting("TUNNEL_INVENTORY", _DEFAULT_INVENTORY_PATH),
             description="YAML inventory path (default: $XDG_CONFIG_HOME/agent-utilities/inventory.yaml).",
         ),
         group: str = Field(
-            default=os.environ.get("TUNNEL_INVENTORY_GROUP", "all"),
+            default=setting("TUNNEL_INVENTORY_GROUP", "all"),
             description="Target group.",
         ),
         parallel: bool = Field(
-            default=to_boolean(os.environ.get("TUNNEL_PARALLEL", False)),
+            default=bool(setting("TUNNEL_PARALLEL", False)),
             description="Run parallel.",
         ),
         max_threads: int = Field(
-            default=to_integer(os.environ.get("TUNNEL_MAX_THREADS", "6")),
+            default=int(setting("TUNNEL_MAX_THREADS", 6)),
             description="Max threads.",
         ),
         cmd: str = Field(default="", description="Shell command (run_command)."),
         key: str = Field(
-            default=os.environ.get(
+            default=setting(
                 "TUNNEL_IDENTITY_FILE", os.path.expanduser("~/.ssh/id_shared")
             ),
             description="Shared key path (configure_key_auth).",
@@ -2732,24 +2738,24 @@ def get_mcp_instance() -> tuple[Any, Any, Any, Any]:
         instructions="Tunnel Manager MCP Utility — Manage SSH tunnels, managed hosts, and remote execution.",
     )
 
-    if to_boolean(os.getenv("TM_HOSTS_TOOL", "True")):
-        register_host_tools(mcp)
-    if to_boolean(os.getenv("TM_REMOTE_TOOL", "True")):
-        register_remote_tools(mcp)
-    if to_boolean(os.getenv("TM_INVENTORY_TOOL", "True")):
-        register_inventory_tools(mcp)
-    if to_boolean(os.getenv("TM_OPERATIONS_TOOL", "True")):
-        register_operations_tools(mcp)
-    if to_boolean(os.getenv("TM_SYSTEM_TOOL", "True")):
-        register_system_tools(mcp)
-    if to_boolean(os.getenv("TM_FILES_TOOL", "True")):
-        register_file_tools(mcp)
-    if to_boolean(os.getenv("TM_SECURITY_TOOL", "True")):
-        register_security_tools(mcp)
+    registered_tags = register_tool_surface(
+        mcp,
+        client_cls=HostManager,
+        get_client=get_client,
+        service="tunnel-manager",
+        tool_registry=[
+            ("hosts", "TM_HOSTS_TOOL", register_host_tools),
+            ("remote", "TM_REMOTE_TOOL", register_remote_tools),
+            ("inventory", "TM_INVENTORY_TOOL", register_inventory_tools),
+            ("operations", "TM_OPERATIONS_TOOL", register_operations_tools),
+            ("system", "TM_SYSTEM_TOOL", register_system_tools),
+            ("files", "TM_FILES_TOOL", register_file_tools),
+            ("security", "TM_SECURITY_TOOL", register_security_tools),
+        ],
+    )
 
     for mw in middlewares:
         mcp.add_middleware(mw)
-    registered_tags: list[str] = []
     return mcp, args, middlewares, registered_tags
 
 
