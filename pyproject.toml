@@ -29,6 +29,12 @@ tunnel-manager = "tunnel_manager.tunnel_manager:main"
 tunnel-manager-mcp = "tunnel_manager.mcp_server:mcp_server"
 tunnel-manager-agent = "tunnel_manager.agent_server:agent_server"
 
+[project.entry-points."agent_utilities.skill_providers"]
+tunnel-manager = "tunnel_manager.skills"
+
+[project.entry-points."agent_utilities.prompt_providers"]
+tunnel-manager = "tunnel_manager.prompts"
+
 [tool.setuptools]
 include-package-data = true
 
@@ -47,7 +53,7 @@ dev = [
 ]
 
 [tool.setuptools.package-data]
-tunnel_manager = [ "mcp_config.json", "agent_data/**",]
+tunnel_manager = [ "mcp_config.json", "agent_data/**", "prompts/**", "skills/**",]
 
 [tool.ruff.lint]
 select = [ "E", "F", "I", "UP", "B",]
