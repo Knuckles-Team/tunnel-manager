@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   tunnel-manager-mcp:
-    image: knucklessg1/tunnel-manager:latest
+    image: knucklessg1/tunnel-manager:mcp
     container_name: tunnel-manager-mcp
     hostname: tunnel-manager-mcp
     restart: always
