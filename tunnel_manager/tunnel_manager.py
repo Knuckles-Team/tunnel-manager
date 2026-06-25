@@ -15,17 +15,37 @@ from .models import CommandResult, HostConfig
 __version__ = "1.33.0"
 
 
+def default_inventory_path() -> str:
+    """Resolve the shared inventory path.
+
+    The inventory is shared across the ecosystem (the HostManager library, the
+    tunnel-manager CLI/MCP server, container-manager-mcp, and the ssh-bootstrap
+    skill all read the same file). The standard filename is now ``inventory.yml``,
+    but earlier builds wrote ``inventory.yaml``; this resolver keeps both working:
+
+    1. ``$XDG_CONFIG_HOME/agent-utilities/inventory.yml`` if it exists, else
+    2. ``$XDG_CONFIG_HOME/agent-utilities/inventory.yaml`` if it exists (legacy), else
+    3. ``inventory.yml`` (the new standard for a fresh install).
+
+    ``XDG_CONFIG_HOME`` defaults to ``~/.config``.
+    """
+    xdg_config = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+    config_dir = os.path.join(xdg_config, "agent-utilities")
+    yml = os.path.join(config_dir, "inventory.yml")
+    yaml_legacy = os.path.join(config_dir, "inventory.yaml")
+    if os.path.exists(yml):
+        return yml
+    if os.path.exists(yaml_legacy):
+        return yaml_legacy
+    return yml
+
+
 class HostManager:
     def __init__(self, config_file: str = None):
         if config_file:
             self.config_file = config_file
         else:
-            xdg_config = os.environ.get(
-                "XDG_CONFIG_HOME", os.path.expanduser("~/.config")
-            )
-            self.config_file = os.path.join(
-                xdg_config, "agent-utilities", "inventory.yaml"
-            )
+            self.config_file = default_inventory_path()
 
         self.logger = logging.getLogger(__name__)
         self.hosts = {}
@@ -1722,13 +1742,226 @@ class Tunnel:
         )
 
 
+# A well-commented template documenting every supported host field and the
+# Ansible-style group structure. Written verbatim by `tunnel-manager inventory init`.
+INVENTORY_TEMPLATE = """\
+# tunnel-manager / agent-utilities shared inventory
+# ------------------------------------------------------------------------------
+# Maps short host aliases (e.g. `r820`) to their SSH connection details. Every
+# ecosystem surface reads THIS file: the HostManager Python API, the
+# `tunnel-manager` CLI, the tunnel-manager-mcp MCP server, container-manager-mcp
+# (cm_* host aliases), and the ssh-bootstrap skill. Define your fleet once here.
+#
+# Preferred path: $XDG_CONFIG_HOME/agent-utilities/inventory.yml
+#   (~/.config/agent-utilities/inventory.yml on a typical Linux/macOS host).
+#   A legacy inventory.yaml at the same location is still read if no .yml exists.
+#
+# Two layouts are accepted: Ansible-style (recommended, shown below) and flat.
+
+all:
+  # Group-level defaults applied to every host unless a host overrides them.
+  vars:
+    ansible_user: genius                          # default SSH user
+    ansible_ssh_private_key_file: ~/.ssh/id_rsa   # default private key
+
+  # Hosts attached directly to `all`.
+  hosts:
+    r820:
+      ansible_host: 10.0.0.13                      # IP / DNS name (req'd; defaults to alias)
+    gpu-node:
+      ansible_host: 10.0.0.16
+      ansible_user: ml                             # override the group default
+      ansible_port: 2222                           # SSH port (default 22)
+
+  # Named sub-groups. Pass `--group storage` (CLI) or `group` (MCP) to scope ops.
+  children:
+    storage:
+      vars:
+        ansible_user: admin                        # group-scoped default
+      hosts:
+        nas:
+          ansible_host: 10.0.0.10
+          # ansible_ssh_pass: changeme             # password auth (prefer keys)
+          # ansible_ssh_common_args: "-J jump@bastion"  # jump host / extra SSH args
+
+# ------------------------------------------------------------------------------
+# Recognized per-host keys (Ansible alias -> native key -> meaning):
+#   ansible_host                 -> hostname              IP / DNS name (defaults to alias)
+#   ansible_user                 -> user                  SSH user
+#   ansible_port                 -> port                  SSH port (default 22)
+#   ansible_ssh_private_key_file -> identity_file/key_path  path to the private key
+#   ansible_ssh_pass             -> password              password auth (prefer keys)
+#   ansible_ssh_common_args      -> proxy_command         extra SSH args / jump host
+#
+# Flat layout (no `all:` wrapper) is also accepted:
+#   r820:
+#     hostname: 10.0.0.13
+#     user: genius
+#     identity_file: ~/.ssh/id_rsa
+"""
+
+# Per-host keys that must resolve to a value for a host to be usable.
+_REQUIRED_HOST_FIELDS = ("hostname", "user")
+
+
+def _inventory_init(dest: str, force: bool) -> int:
+    """Write the commented template to ``dest`` unless it already exists."""
+    if os.path.exists(dest) and not force:
+        print(
+            f"Refusing to overwrite existing inventory: {dest}\n"
+            f"Re-run with --force to overwrite, or edit the file directly.",
+            file=sys.stderr,
+        )
+        return 1
+    os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+    with open(dest, "w") as f:
+        f.write(INVENTORY_TEMPLATE)
+    print(f"Wrote inventory template to {dest}")
+    print("Edit it to define your hosts, then run: tunnel-manager inventory doctor")
+    return 0
+
+
+def _inventory_doctor(inventory: str, fix: bool) -> int:
+    """Validate the inventory; return a non-zero exit code on hard errors."""
+    xdg_config = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+    config_dir = os.path.join(xdg_config, "agent-utilities")
+    yml_path = os.path.join(config_dir, "inventory.yml")
+    yaml_path = os.path.join(config_dir, "inventory.yaml")
+
+    problems: list[str] = []
+
+    # Legacy-migration check: a .yaml exists but no .yml at the shared location.
+    if os.path.exists(yaml_path) and not os.path.exists(yml_path):
+        if fix:
+            os.rename(yaml_path, yml_path)
+            print(f"Migrated legacy inventory.yaml -> {yml_path}")
+            inventory = yml_path
+        else:
+            print(
+                f"NOTE: legacy {yaml_path} found but no {yml_path}.\n"
+                f"  Fix: re-run `tunnel-manager inventory doctor --fix` to migrate to .yml.",
+            )
+
+    if not os.path.exists(inventory):
+        print(
+            f"ERROR: inventory file not found: {inventory}\n"
+            f"  Fix: run `tunnel-manager inventory init` to create a template.",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        with open(inventory) as f:
+            raw = yaml.safe_load(f) or {}
+    except yaml.YAMLError as e:
+        print(
+            f"ERROR: {inventory} is not valid YAML: {e}\n"
+            f"  Fix: correct the YAML syntax (check indentation and colons).",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not isinstance(raw, dict):
+        print(
+            f"ERROR: {inventory} must be a YAML mapping at the top level, got "
+            f"{type(raw).__name__}.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Reuse the existing parsing so doctor sees exactly what the runtime sees.
+    hm = HostManager(config_file=inventory)
+    hosts = hm.hosts
+
+    if not hosts:
+        problems.append(
+            "no hosts defined — add at least one host under `all.hosts` or a child group."
+        )
+
+    for alias, entry in hosts.items():
+        if not isinstance(entry, dict):
+            problems.append(f"host '{alias}': entry is not a mapping.")
+            continue
+        for field in _REQUIRED_HOST_FIELDS:
+            value = entry.get(field)
+            if value is None or value == "":
+                hint = (
+                    "set `ansible_host` (or `hostname`)"
+                    if field == "hostname"
+                    else "set `ansible_user` (or a group-level `vars.ansible_user`)"
+                )
+                problems.append(
+                    f"host '{alias}': missing required field '{field}' — {hint}."
+                )
+
+    # Groups must reference hosts that actually parse into the inventory.
+    if isinstance(raw.get("all"), dict):
+        children = raw["all"].get("children", {}) or {}
+        for group_name, group_data in children.items():
+            if not isinstance(group_data, dict):
+                problems.append(f"group '{group_name}': entry is not a mapping.")
+                continue
+            for ghost in group_data.get("hosts", {}) or {}:
+                if ghost not in hosts:
+                    problems.append(
+                        f"group '{group_name}': references host '{ghost}' which did "
+                        f"not parse into the inventory — check its definition."
+                    )
+
+    if problems:
+        print(f"Inventory {inventory}: {len(problems)} problem(s) found:")
+        for p in problems:
+            print(f"  - {p}")
+        return 1
+
+    print(f"Inventory {inventory}: OK ({len(hosts)} host(s)).")
+    return 0
+
+
+def _inventory_show(inventory: str) -> int:
+    """Print the resolved path and a parsed host/group summary."""
+    print(f"Resolved inventory path: {inventory}")
+    if not os.path.exists(inventory):
+        print("  (file does not exist — run `tunnel-manager inventory init`)")
+        return 0
+
+    hm = HostManager(config_file=inventory)
+    hosts = hm.hosts
+    print(f"Hosts ({len(hosts)}):")
+    for alias, entry in sorted(hosts.items()):
+        if isinstance(entry, dict):
+            hostname = entry.get("hostname", alias)
+            user = entry.get("user") or "?"
+            port = entry.get("port", 22)
+            print(f"  - {alias}: {user}@{hostname}:{port}")
+        else:
+            print(f"  - {alias}: {entry}")
+
+    try:
+        with open(inventory) as f:
+            raw = yaml.safe_load(f) or {}
+    except yaml.YAMLError:
+        raw = {}
+    if isinstance(raw.get("all"), dict):
+        children = raw["all"].get("children", {}) or {}
+        if children:
+            print(f"Groups ({len(children)}):")
+            for group_name, group_data in sorted(children.items()):
+                g_hosts = (
+                    list((group_data or {}).get("hosts", {}) or {})
+                    if isinstance(group_data, dict)
+                    else []
+                )
+                print(f"  - {group_name}: {', '.join(g_hosts) or '(empty)'}")
+    return 0
+
+
 def tunnel_manager():
     print(f"tunnel_manager v{__version__}", file=sys.stderr)
     parser = argparse.ArgumentParser(description="Tunnel Manager CLI")
     parser.add_argument("--log-file", help="Log to this file (default: console output)")
 
-    xdg_config = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-    default_inventory = os.path.join(xdg_config, "agent-utilities", "inventory.yaml")
+    default_inventory = os.environ.get("TUNNEL_INVENTORY") or default_inventory_path()
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -1855,6 +2088,50 @@ def tunnel_manager():
         "--max-threads", type=int, default=5, help="Max threads for parallel execution"
     )
 
+    inventory_parser = subparsers.add_parser(
+        "inventory", help="Create, validate, or inspect the shared inventory file"
+    )
+    inventory_sub = inventory_parser.add_subparsers(
+        dest="inventory_action", required=True
+    )
+
+    inv_init = inventory_sub.add_parser(
+        "init", help="Write a commented inventory.yml template to the resolved path"
+    )
+    inv_init.add_argument(
+        "--inventory",
+        default=None,
+        help="Destination path (default: resolved shared inventory path)",
+    )
+    inv_init.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing inventory file instead of refusing",
+    )
+
+    inv_doctor = inventory_sub.add_parser(
+        "doctor", help="Validate the inventory and report problems with fixes"
+    )
+    inv_doctor.add_argument(
+        "--inventory",
+        default=None,
+        help="Inventory path to validate (default: resolved shared inventory path)",
+    )
+    inv_doctor.add_argument(
+        "--fix",
+        action="store_true",
+        help="Migrate a legacy inventory.yaml to inventory.yml when applicable",
+    )
+
+    inv_show = inventory_sub.add_parser(
+        "show", help="Print the resolved inventory path and a host/group summary"
+    )
+    inv_show.add_argument(
+        "--inventory",
+        default=None,
+        help="Inventory path to show (default: resolved shared inventory path)",
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -1891,6 +2168,15 @@ def tunnel_manager():
         f"Starting Tunnel Automation with command: {args.command}, args: {vars(args)}"
     )
     print(f"Starting Tunnel Automation with command: {args.command}", file=sys.stderr)
+
+    if args.command == "inventory":
+        target = getattr(args, "inventory", None) or default_inventory_path()
+        if args.inventory_action == "init":
+            sys.exit(_inventory_init(target, args.force))
+        elif args.inventory_action == "doctor":
+            sys.exit(_inventory_doctor(target, args.fix))
+        elif args.inventory_action == "show":
+            sys.exit(_inventory_show(target))
 
     try:
         if args.command == "setup-all":

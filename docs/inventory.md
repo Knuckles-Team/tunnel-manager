@@ -9,12 +9,20 @@ point — the `HostManager` Python API, the `tunnel-manager` CLI, the
 ## Default location
 
 ```
-$XDG_CONFIG_HOME/agent-utilities/inventory.yaml
+$XDG_CONFIG_HOME/agent-utilities/inventory.yml      # preferred
+$XDG_CONFIG_HOME/agent-utilities/inventory.yaml     # legacy fallback
 ```
 
-which is `~/.config/agent-utilities/inventory.yaml` on a typical Linux/macOS host
-(`XDG_CONFIG_HOME` defaults to `~/.config`). If the file does not exist, tunnel-manager
-starts with an empty inventory (no error) and you can add hosts via the API/CLI.
+which is `~/.config/agent-utilities/inventory.yml` on a typical Linux/macOS host
+(`XDG_CONFIG_HOME` defaults to `~/.config`). The path is **resolved** in this order:
+
+1. `inventory.yml` if it exists — the standard for fresh installs, **else**
+2. `inventory.yaml` if it exists — the legacy filename, still fully supported, **else**
+3. `inventory.yml` — the path a fresh `init` writes to.
+
+So existing `.yaml` users keep working untouched, while new installs standardize on
+`.yml`. If neither file exists, tunnel-manager starts with an empty inventory (no error)
+and you can add hosts via the API/CLI.
 
 > **Note:** this is the `agent-utilities` config directory on purpose — the inventory
 > is shared across the ecosystem. Earlier builds of the MCP server defaulted to
@@ -22,16 +30,54 @@ starts with an empty inventory (no error) and you can add hosts via the API/CLI.
 
 ## Create your inventory
 
-The fastest start is to copy the bundled example and edit it:
+The fastest start is the `init` command, which writes a fully-commented template to
+the resolved path:
 
 ```bash
-mkdir -p ~/.config/agent-utilities
-cp inventory.example.yaml ~/.config/agent-utilities/inventory.yaml
-$EDITOR ~/.config/agent-utilities/inventory.yaml
+tunnel-manager inventory init        # writes ~/.config/agent-utilities/inventory.yml
+$EDITOR ~/.config/agent-utilities/inventory.yml
+tunnel-manager inventory doctor      # validate it
 ```
 
-See [`inventory.example.yaml`](https://github.com/Knuckles-Team/tunnel-manager/blob/main/inventory.example.yaml)
-for a fully-commented template.
+`init` refuses to clobber an existing file unless you pass `--force`, and creates the
+parent directory for you. The template documents every supported host field with
+example hosts and group structure (reproduced under [Template](#template) below).
+
+### Inventory CLI commands
+
+| Command | What it does |
+|---|---|
+| `tunnel-manager inventory init [--inventory PATH] [--force]` | Write the commented `inventory.yml` template to the resolved path (or `--inventory`). Refuses to overwrite without `--force`. |
+| `tunnel-manager inventory doctor [--inventory PATH] [--fix]` | Validate: file exists + parses, each host has required fields, groups reference real hosts. Exits non-zero on hard errors. With `--fix`, migrate a legacy `inventory.yaml` to `inventory.yml`. |
+| `tunnel-manager inventory show [--inventory PATH]` | Print the resolved inventory path plus a host/group summary. |
+
+### Template
+
+This is the copy-paste template `tunnel-manager inventory init` writes (comments
+trimmed here for brevity):
+
+```yaml
+all:
+  vars:
+    ansible_user: genius
+    ansible_ssh_private_key_file: ~/.ssh/id_rsa
+  hosts:
+    r820:
+      ansible_host: 10.0.0.13
+    gpu-node:
+      ansible_host: 10.0.0.16
+      ansible_user: ml
+      ansible_port: 2222
+  children:
+    storage:
+      vars:
+        ansible_user: admin
+      hosts:
+        nas:
+          ansible_host: 10.0.0.10
+          # ansible_ssh_pass: changeme
+          # ansible_ssh_common_args: "-J jump@bastion"
+```
 
 ### Format
 
@@ -93,9 +139,9 @@ hm.save_inventory()                     # writes back to the inventory file
 
 | Surface | How |
 |---|---|
-| CLI | `tunnel-manager --inventory /path/to/inventory.yaml <subcommand>` |
-| MCP server | `export TUNNEL_INVENTORY=/path/to/inventory.yaml` (or pass the `inventory` arg to `tm_inventory`) |
-| Python API | `HostManager(config_file="/path/to/inventory.yaml")` |
+| CLI | `tunnel-manager --inventory /path/to/inventory.yml <subcommand>` |
+| MCP server | `export TUNNEL_INVENTORY=/path/to/inventory.yml` (or pass the `inventory` arg to `tm_inventory`) |
+| Python API | `HostManager(config_file="/path/to/inventory.yml")` |
 
 The MCP `tm_inventory` tool also takes an optional `group` arg (default `all`) to
 scope operations to one Ansible group; the env equivalent is `TUNNEL_INVENTORY_GROUP`.
