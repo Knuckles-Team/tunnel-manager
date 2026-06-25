@@ -208,6 +208,30 @@ consumed from a **remote deployment**. The
 
 ---
 
+## Inventory
+
+tunnel-manager works from a single shared YAML **inventory** that maps short host
+aliases (e.g. `r820`) to their SSH connection details. Every ecosystem surface reads
+the **same file** — the `HostManager` API, the `tunnel-manager` CLI, the MCP server,
+**container-manager-mcp** (its `cm_*` host aliases), and the `ssh-bootstrap` skill — so
+you define your fleet once.
+
+- **Location** — `~/.config/agent-utilities/inventory.yml` (`.yml` preferred). A legacy
+  `inventory.yaml` at the same path is still read when no `.yml` exists, so existing
+  installs keep working. Override with `TUNNEL_INVENTORY`.
+- **Manage it** with the `inventory` subcommand:
+
+  ```bash
+  tunnel-manager inventory init     # write a commented inventory.yml template (--force to overwrite)
+  tunnel-manager inventory doctor   # validate hosts/groups; --fix migrates legacy .yaml -> .yml
+  tunnel-manager inventory show     # print the resolved path + host/group summary
+  ```
+
+Full schema, every host field, the copy-paste template, and override options live in the
+[Inventory guide](docs/inventory.md).
+
+---
+
 ## Environment Variables
 
 <!-- ENV-VARS-TABLE:START -->
@@ -276,7 +300,7 @@ for a copy-paste starting point.
 ### Inventory & parallelism
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TUNNEL_INVENTORY` | Path to the shared `inventory.yaml` | `~/.config/agent_utilities/inventory.yaml` |
+| `TUNNEL_INVENTORY` | Path to the shared inventory (`.yml` preferred, `.yaml` legacy fallback) | `~/.config/agent-utilities/inventory.yml` |
 | `TUNNEL_INVENTORY_GROUP` | Default inventory host group | — |
 | `TUNNEL_PARALLEL` | Run bulk operations in parallel | — |
 | `TUNNEL_MAX_THREADS` | Max concurrent SSH worker threads | — |

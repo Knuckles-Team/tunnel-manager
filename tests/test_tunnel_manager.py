@@ -15,11 +15,15 @@ class TestHostManager:
 
     @patch("os.path.exists")
     def test_init_default_config(self, mock_exists):
-        """Test HostManager initialization with default config."""
+        """Test HostManager initialization with default config.
+
+        With neither file present, the resolver falls through to the new
+        ``inventory.yml`` standard.
+        """
         mock_exists.return_value = False
         hm = HostManager()
         xdg_config = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-        expected = os.path.join(xdg_config, "agent-utilities", "inventory.yaml")
+        expected = os.path.join(xdg_config, "agent-utilities", "inventory.yml")
         assert hm.config_file == expected
         assert hm.hosts == {}
 
