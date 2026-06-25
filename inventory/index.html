@@ -606,6 +606,28 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#inventory-cli-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inventory CLI commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Template
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#format" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -831,6 +853,28 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#inventory-cli-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inventory CLI commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Template
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#format" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -917,27 +961,60 @@ point — the <code>HostManager</code> Python API, the <code>tunnel-manager</cod
 <code>tunnel-manager-mcp</code> MCP server, <strong>and</strong> <code>container-manager-mcp</code> and the
 <code>ssh-bootstrap</code> skill — reads the <strong>same file</strong>, so you define your fleet once.</p>
 <h2 id="default-location">Default location<a class="headerlink" href="#default-location" title="Permanent link">&para;</a></h2>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>$XDG_CONFIG_HOME/agent-utilities/inventory.yaml
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>$XDG_CONFIG_HOME/agent-utilities/inventory.yml      # preferred
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>$XDG_CONFIG_HOME/agent-utilities/inventory.yaml     # legacy fallback
 </span></code></pre></div>
-<p>which is <code>~/.config/agent-utilities/inventory.yaml</code> on a typical Linux/macOS host
-(<code>XDG_CONFIG_HOME</code> defaults to <code>~/.config</code>). If the file does not exist, tunnel-manager
-starts with an empty inventory (no error) and you can add hosts via the API/CLI.</p>
+<p>which is <code>~/.config/agent-utilities/inventory.yml</code> on a typical Linux/macOS host
+(<code>XDG_CONFIG_HOME</code> defaults to <code>~/.config</code>). The path is <strong>resolved</strong> in this order:</p>
+<ol>
+<li><code>inventory.yml</code> if it exists — the standard for fresh installs, <strong>else</strong></li>
+<li><code>inventory.yaml</code> if it exists — the legacy filename, still fully supported, <strong>else</strong></li>
+<li><code>inventory.yml</code> — the path a fresh <code>init</code> writes to.</li>
+</ol>
+<p>So existing <code>.yaml</code> users keep working untouched, while new installs standardize on
+<code>.yml</code>. If neither file exists, tunnel-manager starts with an empty inventory (no error)
+and you can add hosts via the API/CLI.</p>
 <blockquote>
 <p><strong>Note:</strong> this is the <code>agent-utilities</code> config directory on purpose — the inventory
 is shared across the ecosystem. Earlier builds of the MCP server defaulted to
 <code>~/.config/tunnel-manager/inventory.yml</code>; that has been unified to the path above.</p>
 </blockquote>
 <h2 id="create-your-inventory">Create your inventory<a class="headerlink" href="#create-your-inventory" title="Permanent link">&para;</a></h2>
-<p>The fastest start is to copy the bundled example and edit it:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>~/.config/agent-utilities
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>cp<span class="w"> </span>inventory.example.yaml<span class="w"> </span>~/.config/agent-utilities/inventory.yaml
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nv">$EDITOR</span><span class="w"> </span>~/.config/agent-utilities/inventory.yaml
+<p>The fastest start is the <code>init</code> command, which writes a fully-commented template to
+the resolved path:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>tunnel-manager<span class="w"> </span>inventory<span class="w"> </span>init<span class="w">        </span><span class="c1"># writes ~/.config/agent-utilities/inventory.yml</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nv">$EDITOR</span><span class="w"> </span>~/.config/agent-utilities/inventory.yml
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>tunnel-manager<span class="w"> </span>inventory<span class="w"> </span>doctor<span class="w">      </span><span class="c1"># validate it</span>
 </span></code></pre></div>
-<p>See <a href="https://github.com/Knuckles-Team/tunnel-manager/blob/main/inventory.example.yaml"><code>inventory.example.yaml</code></a>
-for a fully-commented template.</p>
-<h3 id="format">Format<a class="headerlink" href="#format" title="Permanent link">&para;</a></h3>
-<p>Two layouts are accepted:</p>
-<p><strong>Ansible-style (recommended)</strong> — supports group-level <code>vars</code> and <code>children</code> groups:</p>
+<p><code>init</code> refuses to clobber an existing file unless you pass <code>--force</code>, and creates the
+parent directory for you. The template documents every supported host field with
+example hosts and group structure (reproduced under <a href="#template">Template</a> below).</p>
+<h3 id="inventory-cli-commands">Inventory CLI commands<a class="headerlink" href="#inventory-cli-commands" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tunnel-manager inventory init [--inventory PATH] [--force]</code></td>
+<td>Write the commented <code>inventory.yml</code> template to the resolved path (or <code>--inventory</code>). Refuses to overwrite without <code>--force</code>.</td>
+</tr>
+<tr>
+<td><code>tunnel-manager inventory doctor [--inventory PATH] [--fix]</code></td>
+<td>Validate: file exists + parses, each host has required fields, groups reference real hosts. Exits non-zero on hard errors. With <code>--fix</code>, migrate a legacy <code>inventory.yaml</code> to <code>inventory.yml</code>.</td>
+</tr>
+<tr>
+<td><code>tunnel-manager inventory show [--inventory PATH]</code></td>
+<td>Print the resolved inventory path plus a host/group summary.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="template">Template<a class="headerlink" href="#template" title="Permanent link">&para;</a></h3>
+<p>This is the copy-paste template <code>tunnel-manager inventory init</code> writes (comments
+trimmed here for brevity):</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">all</span><span class="p">:</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">vars</span><span class="p">:</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">genius</span>
@@ -951,14 +1028,38 @@ for a fully-commented template.</p>
 </span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">      </span><span class="nt">ansible_port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2222</span>
 </span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="nt">children</span><span class="p">:</span>
 </span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="nt">storage</span><span class="p">:</span>
-</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">      </span><span class="nt">hosts</span><span class="p">:</span>
-</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">        </span><span class="nt">nas</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> ansible_host</span><span class="p">:</span><span class="w"> </span><span class="nv">10.0.0.10</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">      </span><span class="nt">vars</span><span class="p">:</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">        </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
+</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">      </span><span class="nt">hosts</span><span class="p">:</span>
+</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">        </span><span class="nt">nas</span><span class="p">:</span>
+</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">          </span><span class="nt">ansible_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0.0.10</span>
+</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">          </span><span class="c1"># ansible_ssh_pass: changeme</span>
+</span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">          </span><span class="c1"># ansible_ssh_common_args: &quot;-J jump@bastion&quot;</span>
+</span></code></pre></div>
+<h3 id="format">Format<a class="headerlink" href="#format" title="Permanent link">&para;</a></h3>
+<p>Two layouts are accepted:</p>
+<p><strong>Ansible-style (recommended)</strong> — supports group-level <code>vars</code> and <code>children</code> groups:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">all</span><span class="p">:</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">vars</span><span class="p">:</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">genius</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">ansible_ssh_private_key_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">~/.ssh/id_rsa</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">hosts</span><span class="p">:</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="nt">r820</span><span class="p">:</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">      </span><span class="nt">ansible_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0.0.13</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="nt">gpu-node</span><span class="p">:</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">      </span><span class="nt">ansible_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0.0.16</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">      </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ml</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">      </span><span class="nt">ansible_port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2222</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">  </span><span class="nt">children</span><span class="p">:</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">    </span><span class="nt">storage</span><span class="p">:</span>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">      </span><span class="nt">hosts</span><span class="p">:</span>
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">        </span><span class="nt">nas</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> ansible_host</span><span class="p">:</span><span class="w"> </span><span class="nv">10.0.0.10</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span></code></pre></div>
 <p><strong>Flat</strong> — top-level keys are aliases (no <code>all:</code> wrapper):</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">r820</span><span class="p">:</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">hostname</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0.0.13</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">genius</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">identity_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">~/.ssh/id_rsa</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">r820</span><span class="p">:</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">hostname</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0.0.13</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">genius</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">identity_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">~/.ssh/id_rsa</span>
 </span></code></pre></div>
 <h3 id="recognized-per-host-keys">Recognized per-host keys<a class="headerlink" href="#recognized-per-host-keys" title="Permanent link">&para;</a></h3>
 <table>
@@ -1004,11 +1105,11 @@ for a fully-commented template.</p>
 </table>
 <p>Group-level <code>vars</code> apply to all hosts in the group; per-host values override them.</p>
 <h3 id="build-it-programmatically-instead">Build it programmatically instead<a class="headerlink" href="#build-it-programmatically-instead" title="Permanent link">&para;</a></h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">tunnel_manager.tunnel_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">HostManager</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">hm</span> <span class="o">=</span> <span class="n">HostManager</span><span class="p">()</span>                      <span class="c1"># uses the default path</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">hm</span><span class="o">.</span><span class="n">add_host</span><span class="p">(</span><span class="s2">&quot;r820&quot;</span><span class="p">,</span> <span class="n">hostname</span><span class="o">=</span><span class="s2">&quot;10.0.0.13&quot;</span><span class="p">,</span> <span class="n">user</span><span class="o">=</span><span class="s2">&quot;genius&quot;</span><span class="p">,</span> <span class="n">identity_file</span><span class="o">=</span><span class="s2">&quot;~/.ssh/id_rsa&quot;</span><span class="p">)</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">hm</span><span class="o">.</span><span class="n">save_inventory</span><span class="p">()</span>                     <span class="c1"># writes back to the inventory file</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">tunnel_manager.tunnel_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">HostManager</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">hm</span> <span class="o">=</span> <span class="n">HostManager</span><span class="p">()</span>                      <span class="c1"># uses the default path</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">hm</span><span class="o">.</span><span class="n">add_host</span><span class="p">(</span><span class="s2">&quot;r820&quot;</span><span class="p">,</span> <span class="n">hostname</span><span class="o">=</span><span class="s2">&quot;10.0.0.13&quot;</span><span class="p">,</span> <span class="n">user</span><span class="o">=</span><span class="s2">&quot;genius&quot;</span><span class="p">,</span> <span class="n">identity_file</span><span class="o">=</span><span class="s2">&quot;~/.ssh/id_rsa&quot;</span><span class="p">)</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">hm</span><span class="o">.</span><span class="n">save_inventory</span><span class="p">()</span>                     <span class="c1"># writes back to the inventory file</span>
 </span></code></pre></div>
 <h2 id="override-the-default-location">Override the default location<a class="headerlink" href="#override-the-default-location" title="Permanent link">&para;</a></h2>
 <table>
@@ -1021,15 +1122,15 @@ for a fully-commented template.</p>
 <tbody>
 <tr>
 <td>CLI</td>
-<td><code>tunnel-manager --inventory /path/to/inventory.yaml &lt;subcommand&gt;</code></td>
+<td><code>tunnel-manager --inventory /path/to/inventory.yml &lt;subcommand&gt;</code></td>
 </tr>
 <tr>
 <td>MCP server</td>
-<td><code>export TUNNEL_INVENTORY=/path/to/inventory.yaml</code> (or pass the <code>inventory</code> arg to <code>tm_inventory</code>)</td>
+<td><code>export TUNNEL_INVENTORY=/path/to/inventory.yml</code> (or pass the <code>inventory</code> arg to <code>tm_inventory</code>)</td>
 </tr>
 <tr>
 <td>Python API</td>
-<td><code>HostManager(config_file="/path/to/inventory.yaml")</code></td>
+<td><code>HostManager(config_file="/path/to/inventory.yml")</code></td>
 </tr>
 </tbody>
 </table>
@@ -1037,11 +1138,11 @@ for a fully-commented template.</p>
 scope operations to one Ansible group; the env equivalent is <code>TUNNEL_INVENTORY_GROUP</code>.</p>
 <h2 id="use-it-ssh-mesh-bootstrap">Use it: SSH mesh bootstrap<a class="headerlink" href="#use-it-ssh-mesh-bootstrap" title="Permanent link">&para;</a></h2>
 <p>Once the inventory exists, establish passwordless full-mesh SSH across the fleet:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># CLI</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>tunnel-manager<span class="w"> </span>setup-all<span class="w"> </span>--parallel
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># CLI</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>tunnel-manager<span class="w"> </span>setup-all<span class="w"> </span>--parallel
 </span></code></pre></div>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>// MCP (tm_inventory)
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>{ &quot;action&quot;: &quot;mesh_bootstrap&quot; }   // inventory defaults to the XDG path above
+<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>// MCP (tm_inventory)
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>{ &quot;action&quot;: &quot;mesh_bootstrap&quot; }   // inventory defaults to the XDG path above
 </span></code></pre></div>
 <p>This is exactly what the <code>ssh-bootstrap</code> skill drives. From there, remote command
 execution, key rotation, and config copy all resolve hosts by their inventory alias.</p>
