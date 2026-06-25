@@ -15,7 +15,6 @@
     - `system_intelligence.py`: Remote system discovery and intelligence gathering.
     - `advanced_file_manager.py`: Advanced file operations including recursive ops, search, monitoring, and backup.
     - `security_auditor.py`: Security and compliance auditing capabilities.
-    - `agent_data/`: Agent configuration, identity, and knowledge graph data.
     - `tests/`: Comprehensive test suite for tunnel management and MCP server functionality.
 
 ### Architecture Diagram
@@ -86,7 +85,6 @@ tunnel_manager.agent:agent_server
 - MCP Entry Point → `mcp_server.py`
 - Agent Entry Point → `agent_server.py`
 - Core Library → `tunnel_manager/tunnel_manager.py`
-- Agent Data → `tunnel_manager/agent_data/`
 - Tests → `tests/`
 
 ## Enhanced Capabilities
@@ -168,29 +166,6 @@ Security and compliance auditing capabilities:
 └── tunnel_manager
     ├── __init__.py
     ├── __main__.py
-    ├── agent
-    │   ├── AGENTS.md
-    │   ├── CRON.md
-    │   ├── CRON_LOG.md
-    │   ├── HEARTBEAT.md
-    │   ├── IDENTITY.md
-    │   ├── MEMORY.md
-    │   ├── USER.md
-    │   ├── mcp_config.json
-    │   └── templates.py
-    ├── agent_data
-    │   ├── CRON.md
-    │   ├── CRON_LOG.md
-    │   ├── HEARTBEAT.md
-    │   ├── IDENTITY.md
-    │   ├── MEMORY.md
-    │   ├── NODE_AGENTS.md
-    │   ├── USER.md
-    │   ├── mcp_config.json
-    │   ├── main_agent.md
-    │   ├── icon.png
-    │   ├── knowledge_graph.db
-    │   └── chats
     ├── agent_server.py
     ├── advanced_file_manager.py
     ├── mcp_server.py
