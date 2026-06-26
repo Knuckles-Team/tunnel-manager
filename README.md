@@ -61,17 +61,35 @@ _Auto-generated from the live MCP server — do not edit by hand._
 
 <!-- MCP-TOOLS-TABLE:START -->
 
+#### Condensed action-routed tools (default — `MCP_TOOL_MODE=condensed`)
+
 | MCP Tool | Toggle Env Var | Description |
 |----------|----------------|-------------|
-| `tm_files` | `TM_FILES_TOOL` | Advanced file operations on remote hosts. |
-| `tm_hosts` | `TM_HOSTS_TOOL` | Manage the local host alias inventory. |
-| `tm_inventory` | `TM_INVENTORY_TOOL` | Bulk inventory operations against YAML host groups. |
-| `tm_operations` | `TM_OPERATIONS_TOOL` | Operation lifecycle and session management. |
-| `tm_remote` | `TM_REMOTE_TOOL` | Single-host SSH operations with shared connection params. |
-| `tm_security` | `TM_SECURITY_TOOL` | Security scanning and compliance. |
-| `tm_system` | `TM_SYSTEM_TOOL` | Remote system intelligence via SSH. |
+| `tm_files` | `FILETOOL` | Advanced file operations on remote hosts. |
+| `tm_hosts` | `HOSTTOOL` | Manage the local host alias inventory. |
+| `tm_inventory` | `INVENTORYTOOL` | Bulk inventory operations against YAML host groups. |
+| `tm_operations` | `OPERATIONSTOOL` | Operation lifecycle and session management. |
+| `tm_remote` | `REMOTETOOL` | Single-host SSH operations with shared connection params. |
+| `tm_security` | `SECURITYTOOL` | Security scanning and compliance. |
+| `tm_system` | `SYSTEMTOOL` | Remote system intelligence via SSH. |
 
-_7 action-routed tools (default `MCP_TOOL_MODE=condensed`). Each is enabled unless its toggle is set false; set `MCP_TOOL_MODE=verbose` (or `both`) for the 1:1 per-operation surface. Auto-generated — do not edit._
+#### Verbose 1:1 API-mapped tools (`MCP_TOOL_MODE=verbose` or `both`)
+
+<details>
+<summary>6 per-operation tools — one per public API method (click to expand)</summary>
+
+| MCP Tool | Toggle Env Var | Description |
+|----------|----------------|-------------|
+| `tunnel_manager_add_host` | `HOST_MANAGERTOOL` | Invoke the add_host operation. |
+| `tunnel_manager_get_host` | `HOST_MANAGERTOOL` | Invoke the get_host operation. |
+| `tunnel_manager_list_hosts` | `HOST_MANAGERTOOL` | Invoke the list_hosts operation. |
+| `tunnel_manager_load_inventory` | `HOST_MANAGERTOOL` | Invoke the load_inventory operation. |
+| `tunnel_manager_remove_host` | `HOST_MANAGERTOOL` | Invoke the remove_host operation. |
+| `tunnel_manager_save_inventory` | `HOST_MANAGERTOOL` | Invoke the save_inventory operation. |
+
+</details>
+
+_7 action-routed tool(s) (default) · 6 verbose 1:1 tool(s). Each is enabled unless its `<DOMAIN>TOOL` toggle is set false; `MCP_TOOL_MODE` selects the surface (`condensed` default · `verbose` 1:1 · `both`). Auto-generated — do not edit._
 <!-- MCP-TOOLS-TABLE:END -->
 
 Detailed tool schemas, parameter shapes, and validation constraints are preserved in [docs/mcp.md](docs/mcp.md).
@@ -254,13 +272,24 @@ Full schema, every host field, the copy-paste template, and override options liv
 | `TUNNEL_IDENTITY_FILE` | `~/.ssh/id_ed25519` |  |
 | `DEBUG` | `False` |  |
 | `PYTHONUNBUFFERED` | `1` |  |
-| `TM_HOSTS_TOOL` | `True` |  |
-| `TM_REMOTE_TOOL` | `True` |  |
-| `TM_INVENTORY_TOOL` | `True` |  |
-| `TM_OPERATIONS_TOOL` | `True` |  |
-| `TM_SYSTEM_TOOL` | `True` |  |
-| `TM_FILES_TOOL` | `True` |  |
-| `TM_SECURITY_TOOL` | `True` |  |
+| `TUNNEL_REMOTE_HOST` | — | default remote host (e.g. 192.168.1.10) |
+| `TUNNEL_REMOTE_PORT` | `22` | default SSH port |
+| `TUNNEL_USERNAME` | — | default SSH username |
+| `TUNNEL_PASSWORD` | — | default SSH password (prefer key-based auth) |
+| `TUNNEL_CERTIFICATE` | — | path to an SSH certificate file |
+| `TUNNEL_PROXY_COMMAND` | — | SSH ProxyCommand for jump-host/bastion connections |
+| `TUNNEL_INVENTORY` | — | path to the inventory file (defaults to XDG config path) |
+| `TUNNEL_INVENTORY_GROUP` | `all` | inventory host group to target |
+| `TUNNEL_PARALLEL` | `False` | run host operations in parallel |
+| `TUNNEL_MAX_THREADS` | `6` | max worker threads when TUNNEL_PARALLEL=True |
+| `XDG_CONFIG_HOME` | — | base config dir (defaults to ~/.config) for inventory resolution |
+| `HOSTTOOL` | `True` | Grouped condensed-surface toggles, one per register_<tag>_tools registrar. |
+| `REMOTETOOL` | `True` |  |
+| `INVENTORYTOOL` | `True` |  |
+| `OPERATIONSTOOL` | `True` |  |
+| `SYSTEMTOOL` | `True` |  |
+| `FILETOOL` | `True` |  |
+| `SECURITYTOOL` | `True` |  |
 
 #### Inherited agent-utilities variables (apply to every connector)
 
@@ -279,7 +308,7 @@ Full schema, every host field, the copy-paste template, and override options liv
 | `MODEL_ID` | `gpt-4o` | Model id for the agent |
 | `ENABLE_WEB_UI` | `True` | Serve the AG-UI web interface |
 
-_21 package + 12 inherited variable(s). Auto-generated from `.env.example` + the shared agent-utilities set — do not edit._
+_32 package + 12 inherited variable(s). Auto-generated from `.env.example` + the shared agent-utilities set — do not edit._
 <!-- ENV-VARS-TABLE:END -->
 
 
@@ -321,8 +350,8 @@ for a copy-paste starting point.
 ### Tool toggles
 Each action-routed tool can be disabled individually via its toggle env var (set to `false`).
 The full list is in the [Available MCP Tools](#available-mcp-tools) table above
-(`TM_HOSTS_TOOL`, `TM_REMOTE_TOOL`, `TM_INVENTORY_TOOL`, `TM_OPERATIONS_TOOL`,
-`TM_SYSTEM_TOOL`, `TM_FILES_TOOL`, `TM_SECURITY_TOOL`).
+(`HOSTTOOL`, `REMOTETOOL`, `INVENTORYTOOL`, `OPERATIONSTOOL`,
+`SYSTEMTOOL`, `FILETOOL`, `SECURITYTOOL`).
 
 ### Telemetry & governance
 | Variable | Description | Default |

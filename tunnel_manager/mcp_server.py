@@ -2746,13 +2746,13 @@ def get_mcp_instance() -> tuple[Any, Any, Any, Any]:
         get_client=get_client,
         service="tunnel-manager",
         tool_registry=[
-            ("hosts", "TM_HOSTS_TOOL", register_host_tools),
-            ("remote", "TM_REMOTE_TOOL", register_remote_tools),
-            ("inventory", "TM_INVENTORY_TOOL", register_inventory_tools),
-            ("operations", "TM_OPERATIONS_TOOL", register_operations_tools),
-            ("system", "TM_SYSTEM_TOOL", register_system_tools),
-            ("files", "TM_FILES_TOOL", register_file_tools),
-            ("security", "TM_SECURITY_TOOL", register_security_tools),
+            ("hosts", "HOSTTOOL", register_host_tools),
+            ("remote", "REMOTETOOL", register_remote_tools),
+            ("inventory", "INVENTORYTOOL", register_inventory_tools),
+            ("operations", "OPERATIONSTOOL", register_operations_tools),
+            ("system", "SYSTEMTOOL", register_system_tools),
+            ("files", "FILETOOL", register_file_tools),
+            ("security", "SECURITYTOOL", register_security_tools),
         ],
     )
 
