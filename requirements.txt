@@ -1,4 +1,4 @@
-agent-utilities>=0.51.0
+agent-utilities>=1.0.0
 fastmcp>=3.0.0b1
 paramiko>=4.0.0
 asyncssh>=2.14.0
