@@ -46,7 +46,7 @@ from tunnel_manager.security_auditor import SecurityAuditor
 from tunnel_manager.system_intelligence import SystemIntelligence
 from tunnel_manager.tunnel_manager import HostManager, Tunnel, default_inventory_path
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 # XDG-compliant default paths. The inventory is shared across the ecosystem
 # (the HostManager library, container-manager-mcp, and the ssh-bootstrap skill all
