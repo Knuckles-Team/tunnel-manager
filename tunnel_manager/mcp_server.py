@@ -373,7 +373,16 @@ def register_host_tools(mcp: FastMCP):
             return resolved
         action = resolved
         if action == "list":
-            return {"hosts": await run_blocking(host_manager.list_hosts)}
+            hosts = await run_blocking(host_manager.list_hosts)
+            # Native KG ingestion — default-on, best-effort, never fatal.
+            if setting("TUNNEL_KG_INGEST", "true").lower() not in ("false", "0", "no"):
+                try:
+                    from tunnel_manager.kg_ingest import ingest_hosts
+
+                    await run_blocking(ingest_hosts, hosts, group="all")
+                except Exception as e:  # noqa: BLE001 — ingestion must not break list
+                    logger.debug("tm_hosts: KG ingest skipped: %s", e)
+            return {"hosts": hosts}
         elif action == "add":
             if not alias or not hostname or not user:
                 return ResponseBuilder.build(
@@ -2730,6 +2739,44 @@ def register_security_tools(mcp: FastMCP):
             )
 
 
+def register_ingest_tools(mcp: FastMCP):
+    """Register the Wire-First native KG ingestion tool."""
+
+    @mcp.tool(
+        annotations={
+            "title": "Ingest Hosts to Knowledge Graph",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+        tags={"kg_ingest"},
+    )
+    async def tunnel_ingest_hosts(
+        group: str = Field(
+            default="all",
+            description="HostGroup name to attach the ingested hosts to.",
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """List the managed SSH inventory and push it into the epistemic-graph KG.
+
+        Maps each alias → a typed ``:Host`` node (+ ``:HostGroup`` / ``:SshKey`` and
+        their ``:inGroup`` / ``:usesKey`` links). Best-effort: no-ops cleanly when no
+        KG engine is reachable.
+        """
+        from tunnel_manager.kg_ingest import ingest_hosts
+
+        hosts = await run_blocking(host_manager.list_hosts)
+        result = await run_blocking(ingest_hosts, hosts, group=group or "all")
+        if result is None:
+            return {
+                "status": "skipped",
+                "message": "No KG engine reachable (or empty inventory).",
+                "hosts": len(hosts),
+            }
+        return {"status": "success", "hosts": len(hosts), **result}
+
+
 def get_mcp_instance() -> tuple[Any, Any, Any, Any]:
     """Initialize and return the MCP instance, args, and middlewares."""
     load_config()
@@ -2753,6 +2800,7 @@ def get_mcp_instance() -> tuple[Any, Any, Any, Any]:
             ("system", "SYSTEMTOOL", register_system_tools),
             ("files", "FILETOOL", register_file_tools),
             ("security", "SECURITYTOOL", register_security_tools),
+            ("ingest", "INGESTTOOL", register_ingest_tools),
         ],
     )
 

@@ -1,0 +1,16 @@
+{
+  "_comment": "Tier-1 mcp_tool source preset(s) for tunnel-manager (AU-KG.ingest.mcp-tool-connector). Declarative: server + tool + field map. Contributed presets win over the central MCP_TOOL_PRESETS. tm_hosts 'list' returns {'hosts': {alias: HostConfig}}; each host maps to a :Host node.",
+  "tunnel-hosts": {
+    "server": "tunnel-manager-mcp",
+    "tool": "tm_hosts",
+    "action": "list",
+    "params": {"action": "list"},
+    "records_path": "hosts",
+    "records_is_mapping": true,
+    "id_field": "hostname",
+    "title_field": "hostname",
+    "text_field": "hostname",
+    "updated_field": null,
+    "doc_type": "Host"
+  }
+}

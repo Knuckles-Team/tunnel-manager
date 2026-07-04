@@ -1,0 +1,137 @@
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix dc: <http://purl.org/dc/terms/> .
+@prefix : <http://knuckles.team/kg#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Tunnel Manager ontology — SSH host inventory, tunnels/connections, remote command
+# execution, file transfers, key material, tracked operations and security audits.
+# All classes and properties live in the shared `:` (kg#) namespace; only the
+# owl:Ontology node gets the per-package IRI. Backs the tunnel-manager MCP tool surface
+# (tm_hosts / tm_remote / tm_inventory / tm_operations / tm_system / tm_security).
+
+# --- classes (owl:Class) ---
+
+:Host a owl:Class ;
+    rdfs:label "Host" ;
+    rdfs:comment "A managed SSH host / inventory alias with a hostname, user, port and identity (tm_hosts)." .
+
+:HostGroup a owl:Class ;
+    rdfs:label "Host Group" ;
+    rdfs:comment "An inventory group that collects hosts for fleet-wide operations (e.g. 'all', 'homelab')." .
+
+:Tunnel a owl:Class ;
+    rdfs:label "Tunnel" ;
+    rdfs:comment "An SSH connection/tunnel opened to a Host to run commands or transfer files (tm_remote)." .
+
+:SshKey a owl:Class ;
+    rdfs:label "SSH Key" ;
+    rdfs:comment "An SSH identity / private-key file used to authenticate to hosts (identity_file, tm_inventory rotate_key)." .
+
+:CommandExecution a owl:Class ;
+    rdfs:label "Command Execution" ;
+    rdfs:comment "A single remote shell command run over a Tunnel plus its result (tm_remote run_command)." .
+
+:FileTransfer a owl:Class ;
+    rdfs:label "File Transfer" ;
+    rdfs:comment "A send or receive of a file between local and a Host (tm_remote send_file / receive_file)." .
+
+:Operation a owl:Class ;
+    rdfs:label "Operation" ;
+    rdfs:comment "A tracked long-running tunnel-manager operation with progress and a session (tm_operations)." .
+
+:SecurityAudit a owl:Class ;
+    rdfs:label "Security Audit" ;
+    rdfs:comment "A security scan, compliance check or vulnerability report against a Host (tm_security)." .
+
+# --- links (owl:ObjectProperty) ---
+
+:inGroup a owl:ObjectProperty ;
+    rdfs:label "in group" ;
+    rdfs:comment "Links a Host to a HostGroup it is a member of." ;
+    rdfs:domain :Host ;
+    rdfs:range :HostGroup .
+
+:tunnelsTo a owl:ObjectProperty ;
+    rdfs:label "tunnels to" ;
+    rdfs:comment "Links a Tunnel to the Host it connects to." ;
+    rdfs:domain :Tunnel ;
+    rdfs:range :Host .
+
+:proxiesThrough a owl:ObjectProperty ;
+    rdfs:label "proxies through" ;
+    rdfs:comment "Links a Host to a jump/proxy Host it is reached through (proxy_command)." ;
+    rdfs:domain :Host ;
+    rdfs:range :Host .
+
+:usesKey a owl:ObjectProperty ;
+    rdfs:label "uses key" ;
+    rdfs:comment "Links a Host or Tunnel to the SshKey used to authenticate." ;
+    rdfs:range :SshKey .
+
+:ranOnHost a owl:ObjectProperty ;
+    rdfs:label "ran on host" ;
+    rdfs:comment "Links a CommandExecution, FileTransfer or SecurityAudit to the Host it targeted." ;
+    rdfs:range :Host .
+
+:accessedBy a owl:ObjectProperty ;
+    rdfs:label "accessed by" ;
+    rdfs:comment "Links a Host to the Person/account (SSH user) that authenticates to it." ;
+    rdfs:domain :Host ;
+    rdfs:range :Person .
+
+# --- fields (owl:DatatypeProperty) ---
+
+:hostname a owl:DatatypeProperty ;
+    rdfs:label "hostname" ;
+    rdfs:comment "Real hostname or IP address of a Host." ;
+    rdfs:domain :Host ;
+    rdfs:range xsd:string .
+
+:sshUser a owl:DatatypeProperty ;
+    rdfs:label "ssh user" ;
+    rdfs:comment "Login username used to connect to a Host." ;
+    rdfs:range xsd:string .
+
+:sshPort a owl:DatatypeProperty ;
+    rdfs:label "ssh port" ;
+    rdfs:comment "TCP port of the SSH service on a Host (default 22)." ;
+    rdfs:domain :Host ;
+    rdfs:range xsd:integer .
+
+:identityFile a owl:DatatypeProperty ;
+    rdfs:label "identity file" ;
+    rdfs:comment "Filesystem path to the private key used to authenticate to a Host." ;
+    rdfs:range xsd:string .
+
+:proxyCommand a owl:DatatypeProperty ;
+    rdfs:label "proxy command" ;
+    rdfs:comment "SSH ProxyCommand / jump specification used to reach a Host." ;
+    rdfs:domain :Host ;
+    rdfs:range xsd:string .
+
+:connectionStatus a owl:DatatypeProperty ;
+    rdfs:label "connection status" ;
+    rdfs:comment "Result of a Tunnel connect / SSH reachability check (up, down, refused, timeout)." ;
+    rdfs:range xsd:string .
+
+:exitStatus a owl:DatatypeProperty ;
+    rdfs:label "exit status" ;
+    rdfs:comment "Success flag or exit code of a CommandExecution or FileTransfer." ;
+    rdfs:range xsd:string .
+
+:auditStandard a owl:DatatypeProperty ;
+    rdfs:label "audit standard" ;
+    rdfs:comment "Compliance standard a SecurityAudit was evaluated against (cis_benchmark, pci_dss, hipaa)." ;
+    rdfs:domain :SecurityAudit ;
+    rdfs:range xsd:string .
+
+<http://knuckles.team/kg/tunnel> a owl:Ontology ;
+    rdfs:label "Tunnel Manager Ontology" ;
+    rdfs:comment """Tunnel Manager SSH-access model — hosts and host groups, tunnels /
+    connections, SSH key material, remote command executions, file transfers, tracked
+    operations and security audits, with their access and provenance relationships —
+    federated into the agent-utilities knowledge-graph hub.""" ;
+    owl:imports <http://knuckles.team/kg> .
