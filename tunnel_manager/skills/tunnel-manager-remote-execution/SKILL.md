@@ -1,5 +1,6 @@
 ---
 name: tunnel-manager-remote-execution
+skill_type: skill
 description: >-
   Run shell commands and transfer files over SSH via the tunnel-manager MCP
   server — on a single host (tm_remote) or fanned out across an inventory group

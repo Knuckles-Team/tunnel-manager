@@ -1,5 +1,6 @@
 ---
 name: tunnel-manager-host-inventory
+skill_type: skill
 description: >-
   Manage the shared SSH host inventory via the tunnel-manager MCP server — list,
   add, and remove host aliases (hostname, user, port, identity_file) and push the

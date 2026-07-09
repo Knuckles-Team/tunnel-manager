@@ -1,5 +1,6 @@
 ---
 name: tunnel-manager-ssh-hardening
+skill_type: skill
 description: >-
   Harden and audit SSH access across a host fleet via the tunnel-manager MCP
   server — set up passwordless key auth, build a full-mesh trust, rotate SSH keys
