@@ -258,12 +258,51 @@ class HostManager:
         else:
             self.logger.warning(f"Host not found: {alias}")
 
+    def _entitled(self, namespace: str, names: list[str]) -> list[str]:
+        """Filter a resource-name list to what the calling identity may reach.
+
+        Routes the names through agent-utilities' shared identity-scoped resolver
+        (CONCEPT:AU-OS.identity.identity-scoped-resource-autoload): a caller's
+        Okta/Keycloak groups decide which SSH host aliases auto-load for them.
+        The ambient ``SYSTEM_ACTOR`` (unauthenticated/local) holds ``admin`` →
+        sees all, so behaviour is unchanged until a real identity scopes it
+        down. Degrades to the full list if agent-utilities predates the
+        resolver.
+        """
+        try:
+            from agent_utilities.security.entitlements import (
+                identity_scoped_resources,
+            )
+        except Exception:
+            return list(names)
+        return list(identity_scoped_resources(namespace, names))
+
     def list_hosts(self) -> dict[str, HostConfig]:
-        return {k: HostConfig(**v) for k, v in self.hosts.items()}
+        """List the host aliases the CALLER is entitled to.
+
+        Scoped to the caller's Okta/Keycloak identity
+        (CONCEPT:AU-OS.identity.identity-scoped-resource-autoload); an
+        unauthenticated/local caller (SYSTEM_ACTOR) sees all — unchanged from
+        today.
+        """
+        entitled = self._entitled("ssh", list(self.hosts.keys()))
+        return {k: HostConfig(**self.hosts[k]) for k in entitled}
 
     def get_host(self, alias: str) -> HostConfig | None:
+        """Get a host config by alias, denying an alias the caller isn't entitled to.
+
+        Returns ``None`` when the alias is simply unknown (unchanged, callers
+        fall back to raw connection params), but raises ``PermissionError``
+        when the alias exists and the caller's identity is not entitled to it.
+        """
         data = self.hosts.get(alias)
-        return HostConfig(**data) if data else None
+        if data is None:
+            return None
+        if alias not in self._entitled("ssh", [alias]):
+            raise PermissionError(
+                f"Your identity is not entitled to the ssh host '{alias}'."
+            )
+        return HostConfig(**data)
 
 
 class Tunnel:
