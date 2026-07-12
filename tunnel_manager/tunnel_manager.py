@@ -12,7 +12,7 @@ import yaml
 
 from .models import CommandResult, HostConfig
 
-__version__ = "2.0.1"
+__version__ = "2.1.0"
 
 
 def default_inventory_path() -> str:
