@@ -202,7 +202,9 @@ def _ssh_connect_ms(
     start = time.perf_counter()
     try:
         tunnel.connect()
-    except Exception as e:  # noqa: BLE001 — unreachable/auth failure is a data point, not a crash
+    except (
+        Exception
+    ) as e:  # noqa: BLE001 — unreachable/auth failure is a data point, not a crash
         logger.debug("ssh_connect_ms unavailable: %s", e)
         return None
     finally:
@@ -397,7 +399,9 @@ def _notify(message: str) -> None:
             ).encode(),
             headers={"Content-Type": "application/json"},
         )
-        urllib.request.urlopen(req, timeout=5)  # noqa: S310  # nosec B310 — operator-configured URL
+        urllib.request.urlopen(
+            req, timeout=5
+        )  # noqa: S310  # nosec B310 — operator-configured URL
     except Exception as e:  # noqa: BLE001 — notification is best-effort
         logger.debug("notify skipped: %s", e)
 
