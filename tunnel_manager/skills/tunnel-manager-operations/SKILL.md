@@ -1,5 +1,6 @@
 ---
 name: tunnel-manager-operations
+skill_type: skill
 description: >-
   Operate tunnel-manager through its governed MCP and GraphOS capabilities, including tunnel manager host inventory, tunnel manager remote execution, tunnel manager ssh hardening. Use when a request requires this provider's read, change, automation, ingestion, troubleshooting, or evidence workflows.
 ---
