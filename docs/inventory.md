@@ -1,7 +1,7 @@
 # Inventory — setup, creation & overrides
 
 tunnel-manager works from a single YAML **inventory** that maps short host aliases
-(e.g. `r820`) to their connection details (IP, SSH user, port, key). Every entry
+(for example, `managed-node`) to connection metadata. Every entry
 point — the `HostManager` Python API, the `tunnel-manager` CLI, the
 `tunnel-manager-mcp` MCP server, **and** `container-manager-mcp` and the
 `ssh-bootstrap` skill — reads the **same file**, so you define your fleet once.
@@ -59,13 +59,14 @@ trimmed here for brevity):
 ```yaml
 all:
   vars:
-    ansible_user: genius
+    ansible_user: operator
     ansible_ssh_private_key_file: ~/.ssh/id_rsa
+    ansible_ssh_known_hosts_file: ~/.ssh/known_hosts
   hosts:
-    r820:
-      ansible_host: 10.0.0.13
-    gpu-node:
-      ansible_host: 10.0.0.16
+    managed-node:
+      ansible_host: 192.0.2.13
+    managed-node-secondary:
+      ansible_host: 192.0.2.16
       ansible_user: ml
       ansible_port: 2222
   children:
@@ -73,9 +74,9 @@ all:
       vars:
         ansible_user: admin
       hosts:
-        nas:
-          ansible_host: 10.0.0.10
-          # ansible_ssh_pass: changeme
+        storage-node:
+          ansible_host: 192.0.2.10
+          # ansible_ssh_pass_ref: vault://ssh/storage/password
           # ansible_ssh_common_args: "-J jump@bastion"
 ```
 
@@ -88,28 +89,30 @@ Two layouts are accepted:
 ```yaml
 all:
   vars:
-    ansible_user: genius
+    ansible_user: operator
     ansible_ssh_private_key_file: ~/.ssh/id_rsa
+    ansible_ssh_known_hosts_file: ~/.ssh/known_hosts
   hosts:
-    r820:
-      ansible_host: 10.0.0.13
-    gpu-node:
-      ansible_host: 10.0.0.16
+    managed-node:
+      ansible_host: 192.0.2.13
+    managed-node-secondary:
+      ansible_host: 192.0.2.16
       ansible_user: ml
       ansible_port: 2222
   children:
     storage:
       hosts:
-        nas: { ansible_host: 10.0.0.10 }
+        storage-node: { ansible_host: 192.0.2.10 }
 ```
 
 **Flat** — top-level keys are aliases (no `all:` wrapper):
 
 ```yaml
-r820:
-  hostname: 10.0.0.13
-  user: genius
+managed-node:
+  hostname: 192.0.2.13
+  user: operator
   identity_file: ~/.ssh/id_rsa
+  known_hosts_file: ~/.ssh/known_hosts
 ```
 
 ### Recognized per-host keys
@@ -120,7 +123,8 @@ r820:
 | `ansible_user` | `user` | SSH user. |
 | `ansible_port` | `port` | SSH port (default 22). |
 | `ansible_ssh_private_key_file` | `identity_file` / `key_path` | Path to the private key. |
-| `ansible_ssh_pass` | `password` | Password auth (prefer keys). |
+| `ansible_ssh_pass_ref` | `password_ref` | Secret-manager reference for password auth. |
+| `ansible_ssh_known_hosts_file` | `known_hosts_file` | Verified SSH server-key trust store. |
 | `ansible_ssh_common_args` | `proxy_command` | Extra SSH args / jump host. |
 
 Group-level `vars` apply to all hosts in the group; per-host values override them.
@@ -131,7 +135,13 @@ Group-level `vars` apply to all hosts in the group; per-host values override the
 from tunnel_manager.tunnel_manager import HostManager
 
 hm = HostManager()                      # uses the default path
-hm.add_host("r820", hostname="10.0.0.13", user="genius", identity_file="~/.ssh/id_rsa")
+hm.add_host(
+    "managed-node",
+    hostname="192.0.2.13",
+    user="operator",
+    identity_file="~/.ssh/id_ed25519",
+    known_hosts_file="~/.ssh/known_hosts",
+)
 hm.save_inventory()                     # writes back to the inventory file
 ```
 
@@ -148,7 +158,10 @@ scope operations to one Ansible group; the env equivalent is `TUNNEL_INVENTORY_G
 
 ## Use it: SSH mesh bootstrap
 
-Once the inventory exists, establish passwordless full-mesh SSH across the fleet:
+Before any connection, provision each server's verified public host key in the
+configured `known_hosts` file. Tunnel Manager never accepts an unknown key and
+never treats `ssh-keyscan` output as trusted. Once that trust input exists, key
+authentication can be distributed across the fleet:
 
 ```bash
 # CLI
@@ -160,5 +173,6 @@ tunnel-manager setup-all --parallel
 { "action": "mesh_bootstrap" }   // inventory defaults to the XDG path above
 ```
 
-This is exactly what the `ssh-bootstrap` skill drives. From there, remote command
-execution, key rotation, and config copy all resolve hosts by their inventory alias.
+This operation distributes authentication keys; it does not manufacture host-key
+trust. Each peer still needs a governed `known_hosts` entry before it can connect.
+Remote command execution, rotation, and config copy then resolve inventory aliases.

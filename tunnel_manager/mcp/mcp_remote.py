@@ -3,21 +3,26 @@
 Auto-generated from mcp_server.py during ecosystem standardization.
 """
 
-import asyncio
 import logging
 import os
 import subprocess
 
 from agent_utilities.base_utilities import to_integer
-from agent_utilities.mcp_utilities import (
+from agent_utilities.core.config import setting
+from agent_utilities.mcp.concurrency import run_blocking
+from agent_utilities.mcp.context_helpers import (
     ctx_confirm_destructive,
     ctx_log,
     ctx_progress,
-    run_blocking,
 )
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
+from tunnel_manager.connection_security import (
+    max_transfer_bytes,
+    resolve_secret_ref,
+    validate_timeout,
+)
 from tunnel_manager.mcp_server import ResponseBuilder, _resolve_host
 from tunnel_manager.tunnel_manager import Tunnel
 
@@ -41,28 +46,29 @@ def register_remote_tools(mcp: FastMCP):
             description="Action: 'run_command', 'send_file', 'receive_file', 'check_ssh', 'test_key_auth', 'setup_passwordless', 'copy_ssh_config', 'rotate_key', 'remove_host_key'"
         ),
         host: str = Field(
-            default=os.environ.get("TUNNEL_REMOTE_HOST", ""), description="Remote host."
+            default=setting("TUNNEL_REMOTE_HOST", ""), description="Remote host."
         ),
         user: str | None = Field(
-            default=os.environ.get("TUNNEL_USERNAME", ""), description="Username."
+            default=setting("TUNNEL_USERNAME", ""), description="Username."
         ),
-        password: str | None = Field(
-            default=os.environ.get("TUNNEL_PASSWORD", ""), description="Password."
+        password_ref: str | None = Field(
+            default=setting("TUNNEL_PASSWORD_REF", ""),
+            description="Runtime secret reference for the SSH password.",
         ),
         port: int = Field(
-            default=to_integer(os.environ.get("TUNNEL_REMOTE_PORT", "22")),
+            default=to_integer(setting("TUNNEL_REMOTE_PORT", "22")),
             description="Port.",
         ),
         id_file: str | None = Field(
-            default=os.environ.get("TUNNEL_IDENTITY_FILE", ""),
+            default=setting("TUNNEL_IDENTITY_FILE", ""),
             description="Private key path.",
         ),
         certificate: str | None = Field(
-            default=os.environ.get("TUNNEL_CERTIFICATE", ""),
+            default=setting("TUNNEL_CERTIFICATE", ""),
             description="Teleport certificate.",
         ),
         proxy: str | None = Field(
-            default=os.environ.get("TUNNEL_PROXY_COMMAND", ""),
+            default=setting("TUNNEL_PROXY_COMMAND", ""),
             description="Teleport proxy.",
         ),
         cfg: str = Field(
@@ -100,6 +106,21 @@ def register_remote_tools(mcp: FastMCP):
         ctx: Context = Field(description="MCP context.", default=""),
     ) -> dict:
         """Single-host SSH operations with shared connection params."""
+        try:
+            password = resolve_secret_ref(password_ref)
+        except ValueError:
+            return ResponseBuilder.build(
+                400,
+                "Invalid SSH credential configuration",
+                {"credential_ref_configured": bool(password_ref)},
+                errors=["A supported runtime secret reference is required"],
+            )
+        try:
+            timeout = validate_timeout(timeout, default=60)
+        except ValueError:
+            return ResponseBuilder.build(
+                400, "Invalid SSH timeout", {}, errors=["Invalid SSH timeout"]
+            )
         if action == "run_command":
             if not host or not cmd:
                 return ResponseBuilder.build(
@@ -127,6 +148,7 @@ def register_remote_tools(mcp: FastMCP):
                     identity_file=conf["identity_file"],
                     certificate_file=conf.get("certificate_file"),
                     proxy_command=conf.get("proxy_command"),
+                    known_hosts_file=conf.get("known_hosts_file"),
                     ssh_config_file=final_cfg,
                 )
                 if ctx:
@@ -146,10 +168,10 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Cmd fail: {e}")
+                ctx_log(ctx, logger, "error", "Cmd fail")
                 await ctx_progress(ctx, 100, 100)
                 return ResponseBuilder.build(
-                    500, f"Cmd fail: {e}", {"host": host, "cmd": cmd}, str(e)
+                    500, "Cmd fail", {"host": host, "cmd": cmd}, type(e).__name__
                 )
             finally:
                 if "t" in locals():
@@ -173,6 +195,13 @@ def register_remote_tools(mcp: FastMCP):
                     {"host": host, "lpath": _lpath, "rpath": _rpath},
                     errors=[f"Invalid file: {_lpath}"],
                 )
+            if os.path.getsize(_lpath) > max_transfer_bytes():
+                return ResponseBuilder.build(
+                    400,
+                    "Managed file transfer limit exceeded",
+                    {},
+                    errors=["Managed file transfer limit exceeded"],
+                )
             try:
                 conf, final_cfg = _resolve_host(
                     host_alias=host,
@@ -192,25 +221,14 @@ def register_remote_tools(mcp: FastMCP):
                     identity_file=conf["identity_file"],
                     certificate_file=conf.get("certificate_file"),
                     proxy_command=conf.get("proxy_command"),
+                    known_hosts_file=conf.get("known_hosts_file"),
                     ssh_config_file=final_cfg,
                 )
-                await run_blocking(t.connect)
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
-                assert t.ssh_client is not None
-                sftp = await run_blocking(t.ssh_client.open_sftp)
-                transferred = 0
-
-                def progress_callback(transf, total):
-                    nonlocal transferred
-                    transferred = transf
-                    if ctx:
-                        asyncio.ensure_future(
-                            ctx.report_progress(progress=transf, total=total)
-                        )
-
-                await run_blocking(sftp.put, _lpath, _rpath, callback=progress_callback)
-                await run_blocking(sftp.close)
+                await run_blocking(t.send_file, _lpath, _rpath)
+                if ctx:
+                    await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
                     200,
                     f"Uploaded to {_rpath}",
@@ -220,12 +238,12 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[],
                 )
             except Exception as e:
-                ctx_log(ctx, _logger, "error", f"Upload fail: {e}")
+                ctx_log(ctx, _logger, "error", "Upload fail")
                 return ResponseBuilder.build(
                     500,
-                    f"Upload fail: {e}",
+                    "Upload fail",
                     {"host": host, "lpath": _lpath, "rpath": _rpath},
-                    str(e),
+                    type(e).__name__,
                 )
             finally:
                 if "t" in locals():
@@ -241,9 +259,9 @@ def register_remote_tools(mcp: FastMCP):
                     errors=["Need host, rpath, lpath"],
                 )
             try:
-                t = Tunnel(
-                    remote_host=host,
-                    username=user,
+                conf, final_cfg = _resolve_host(
+                    host_alias=host,
+                    user=user,
                     password=password,
                     port=port,
                     identity_file=id_file,
@@ -251,26 +269,22 @@ def register_remote_tools(mcp: FastMCP):
                     proxy_command=proxy,
                     ssh_config_file=cfg,
                 )
-                await run_blocking(t.connect)
+                t = Tunnel(
+                    remote_host=conf["hostname"],
+                    username=conf["user"],
+                    password=conf["password"],
+                    port=conf["port"],
+                    identity_file=conf["identity_file"],
+                    certificate_file=conf.get("certificate_file"),
+                    proxy_command=conf.get("proxy_command"),
+                    known_hosts_file=conf.get("known_hosts_file"),
+                    ssh_config_file=final_cfg,
+                )
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
-                assert t.ssh_client is not None
-                sftp = await run_blocking(t.ssh_client.open_sftp)
-                await run_blocking(sftp.stat, rpath)
-                transferred = 0
-
-                def progress_callback(transf, total):
-                    nonlocal transferred
-                    transferred = transf
-                    if ctx:
-                        asyncio.ensure_future(
-                            ctx.report_progress(progress=transf, total=total)
-                        )
-
-                await run_blocking(sftp.get, rpath, _lpath, callback=progress_callback)
+                await run_blocking(t.receive_file, rpath, _lpath)
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
-                await run_blocking(sftp.close)
                 return ResponseBuilder.build(
                     200,
                     f"Downloaded to {_lpath}",
@@ -280,12 +294,12 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Download fail: {e}")
+                ctx_log(ctx, logger, "error", "Download fail")
                 return ResponseBuilder.build(
                     500,
-                    f"Download fail: {e}",
+                    "Download fail",
                     {"host": host, "rpath": rpath, "lpath": _lpath},
-                    str(e),
+                    type(e).__name__,
                 )
             finally:
                 if "t" in locals():
@@ -315,6 +329,7 @@ def register_remote_tools(mcp: FastMCP):
                     identity_file=conf["identity_file"],
                     certificate_file=conf.get("certificate_file"),
                     proxy_command=conf.get("proxy_command"),
+                    known_hosts_file=conf.get("known_hosts_file"),
                     ssh_config_file=final_cfg,
                 )
                 if ctx:
@@ -331,16 +346,16 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[] if success else [msg],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Check fail: {e}")
+                ctx_log(ctx, logger, "error", "Check fail")
                 return ResponseBuilder.build(
-                    500, f"Check fail: {e}", {"host": host}, str(e)
+                    500, "Check fail", {"host": host}, type(e).__name__
                 )
             finally:
                 if "t" in locals():
                     await run_blocking(t.close)
 
         elif action == "test_key_auth":
-            _key = key or os.environ.get("TUNNEL_IDENTITY_FILE", "")
+            _key = key or setting("TUNNEL_IDENTITY_FILE", "")
             if not host or not _key:
                 return ResponseBuilder.build(
                     400,
@@ -356,6 +371,7 @@ def register_remote_tools(mcp: FastMCP):
                     remote_host=conf["hostname"],
                     username=conf["user"],
                     port=conf["port"],
+                    known_hosts_file=conf.get("known_hosts_file"),
                     ssh_config_file=final_cfg,
                 )
                 if ctx:
@@ -372,9 +388,9 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[] if success else [msg],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Key test fail: {e}")
+                ctx_log(ctx, logger, "error", "Key test fail")
                 return ResponseBuilder.build(
-                    500, f"Key test fail: {e}", {"host": host, "key": _key}, str(e)
+                    500, "Key test fail", {"host": host, "key": _key}, type(e).__name__
                 )
 
         elif action == "setup_passwordless":
@@ -382,9 +398,9 @@ def register_remote_tools(mcp: FastMCP):
             if not host or not password:
                 return ResponseBuilder.build(
                     400,
-                    "Need host, password",
+                    "Need host, password_ref",
                     {"host": host},
-                    errors=["Need host, password"],
+                    errors=["Need host, password_ref"],
                 )
             if key_type not in ["rsa", "ed25519"]:
                 return ResponseBuilder.build(
@@ -406,6 +422,7 @@ def register_remote_tools(mcp: FastMCP):
                     username=conf["user"],
                     password=conf["password"],
                     port=conf["port"],
+                    known_hosts_file=conf.get("known_hosts_file"),
                     ssh_config_file=final_cfg,
                 )
                 if ctx:
@@ -428,6 +445,10 @@ def register_remote_tools(mcp: FastMCP):
                                 "",
                             ],
                             check=True,
+                            timeout=30,
+                            stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
                         )
                     else:
                         await run_blocking(
@@ -442,6 +463,10 @@ def register_remote_tools(mcp: FastMCP):
                                 "",
                             ],
                             check=True,
+                            timeout=30,
+                            stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
                         )
                 await run_blocking(
                     t.setup_passwordless_ssh, local_key_path=_key, key_type=key_type
@@ -457,12 +482,12 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"SSH setup fail: {e}")
+                ctx_log(ctx, logger, "error", "SSH setup fail")
                 return ResponseBuilder.build(
                     500,
-                    f"SSH setup fail: {e}",
+                    "SSH setup fail",
                     {"host": host, "key_type": key_type},
-                    str(e),
+                    type(e).__name__,
                 )
             finally:
                 if "t" in locals():
@@ -495,6 +520,7 @@ def register_remote_tools(mcp: FastMCP):
                     identity_file=conf["identity_file"],
                     certificate_file=conf.get("certificate_file"),
                     proxy_command=conf.get("proxy_command"),
+                    known_hosts_file=conf.get("known_hosts_file"),
                     ssh_config_file=final_cfg,
                 )
                 if ctx:
@@ -511,12 +537,12 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Copy cfg fail: {e}")
+                ctx_log(ctx, logger, "error", "Copy cfg fail")
                 return ResponseBuilder.build(
                     500,
-                    f"Copy cfg fail: {e}",
+                    "Copy cfg fail",
                     {"host": host, "lcfg": lcfg, "rcfg": rcfg},
-                    str(e),
+                    type(e).__name__,
                 )
             finally:
                 if "t" in locals():
@@ -556,6 +582,7 @@ def register_remote_tools(mcp: FastMCP):
                     identity_file=conf["identity_file"],
                     certificate_file=conf.get("certificate_file"),
                     proxy_command=conf.get("proxy_command"),
+                    known_hosts_file=conf.get("known_hosts_file"),
                     ssh_config_file=final_cfg,
                 )
                 if ctx:
@@ -578,6 +605,10 @@ def register_remote_tools(mcp: FastMCP):
                                 "",
                             ],
                             check=True,
+                            timeout=30,
+                            stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
                         )
                     else:
                         await run_blocking(
@@ -592,6 +623,10 @@ def register_remote_tools(mcp: FastMCP):
                                 "",
                             ],
                             check=True,
+                            timeout=30,
+                            stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
                         )
                 await run_blocking(t.rotate_ssh_key, _new_key, key_type=key_type)
                 if ctx:
@@ -610,12 +645,12 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Rotate fail: {e}")
+                ctx_log(ctx, logger, "error", "Rotate fail")
                 return ResponseBuilder.build(
                     500,
-                    f"Rotate fail: {e}",
+                    "Rotate fail",
                     {"host": host, "new_key": new_key, "key_type": key_type},
-                    str(e),
+                    type(e).__name__,
                 )
             finally:
                 if "t" in locals():
@@ -648,12 +683,12 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[] if "Removed" in msg else [msg],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Remove fail: {e}")
+                ctx_log(ctx, logger, "error", "Remove fail")
                 return ResponseBuilder.build(
                     500,
-                    f"Remove fail: {e}",
+                    "Remove fail",
                     {"host": host, "known_hosts": known_hosts},
-                    str(e),
+                    type(e).__name__,
                 )
         else:
             return ResponseBuilder.build(

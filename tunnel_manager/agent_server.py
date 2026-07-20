@@ -1,10 +1,11 @@
 #!/usr/bin/python
 import logging
-import os
 import sys
 import warnings
 
-__version__ = "2.0.1"
+from agent_utilities.core.config import setting
+
+__version__ = "2.1.0"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,17 +32,17 @@ def agent_server():
     global DEFAULT_AGENT_NAME, DEFAULT_AGENT_DESCRIPTION, DEFAULT_AGENT_SYSTEM_PROMPT
     initialize_workspace()
     meta = load_identity()
-    DEFAULT_AGENT_NAME = os.getenv(
+    DEFAULT_AGENT_NAME = setting(
         "DEFAULT_AGENT_NAME", meta.get("name", "Tunnel Manager")
     )
-    DEFAULT_AGENT_DESCRIPTION = os.getenv(
+    DEFAULT_AGENT_DESCRIPTION = setting(
         "AGENT_DESCRIPTION",
         meta.get(
             "description",
             "AI agent for Tunnel Manager operations.",
         ),
     )
-    DEFAULT_AGENT_SYSTEM_PROMPT = os.getenv(
+    DEFAULT_AGENT_SYSTEM_PROMPT = setting(
         "AGENT_SYSTEM_PROMPT",
         meta.get("content") or build_system_prompt_from_workspace(),
     )

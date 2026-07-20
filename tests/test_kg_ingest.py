@@ -8,6 +8,9 @@ CONCEPT:AU-KG.ingest.enterprise-source-extractor.
 
 from __future__ import annotations
 
+import pytest
+from agent_utilities.knowledge_graph.memory.native_ingest import NativeIngestError
+
 from tunnel_manager.kg_ingest import (
     ingest_documents,
     ingest_entities,
@@ -18,6 +21,7 @@ from tunnel_manager.kg_ingest import (
 class _FakeTxn:
     def __init__(self):
         self.nodes = {}
+        self.edges = []
         self.committed = False
         self.graph = None
 
@@ -28,33 +32,27 @@ class _FakeTxn:
     def add_node(self, txn, node_id, props):
         self.nodes[node_id] = props
 
+    def add_edge(self, txn, source, target, props):
+        self.edges.append((source, target, props))
+
     def commit(self, txn):
         self.committed = True
         return True
 
 
-class _FakeEdges:
-    def __init__(self):
-        self.edges = []
-
-    def add(self, src, dst, props):
-        self.edges.append((src, dst, props))
-
-
 class _FakeClient:
     def __init__(self):
         self.txn = _FakeTxn()
-        self.edges = _FakeEdges()
 
 
 def test_ingest_entities_writes_nodes_and_edges():
     c = _FakeClient()
     res = ingest_entities(
         [
-            {"id": "a", "type": "Host", "name": "box"},
-            {"id": "g", "type": "HostGroup"},
+            {"id": "a", "node_type": "Host", "name": "box"},
+            {"id": "g", "node_type": "HostGroup"},
         ],
-        [{"source": "a", "target": "g", "type": "inGroup"}],
+        [{"source": "a", "target": "g", "relationship": "inGroup"}],
         client=c,
         graph="__commons__",
     )
@@ -64,43 +62,47 @@ def test_ingest_entities_writes_nodes_and_edges():
     # provenance is stamped
     assert c.txn.nodes["a"]["source"] == "tunnel-manager"
     assert c.txn.nodes["a"]["domain"] == "tunnel"
-    assert c.edges.edges == [("a", "g", {"type": "inGroup"})]
+    assert c.txn.edges == [("a", "g", {"relationship": "inGroup"})]
 
 
 def test_ingest_hosts_maps_host_group_and_key():
     c = _FakeClient()
     res = ingest_hosts(
         {
-            "rw710": {
-                "hostname": "10.0.0.14",
-                "user": "genius",
+            "app-node": {
+                "hostname": "192.0.2.14",
+                "user": "operator",
                 "port": 22,
                 "identity_file": "~/.ssh/id_shared",
             }
         },
-        group="homelab",
+        group="example-fleet",
         client=c,
         graph="__commons__",
     )
     # 3 nodes: group + host + key; 2 edges: inGroup + usesKey
     assert res == {"nodes": 3, "edges": 2}
-    host = c.txn.nodes["tunnel:host:rw710"]
-    assert host["type"] == "Host"
-    assert host["hostname"] == "10.0.0.14"
-    assert host["sshUser"] == "genius"
+    host = c.txn.nodes["tunnel:host:app-node"]
+    assert host["node_type"] == "Host"
+    assert host["hostname"] == "192.0.2.14"
+    assert host["sshUser"] == "operator"
     assert host["sshPort"] == 22
     assert host["identityFile"] == "~/.ssh/id_shared"
-    assert host["externalToolId"] == "rw710"
-    assert c.txn.nodes["tunnel:group:homelab"]["type"] == "HostGroup"
-    assert c.txn.nodes["tunnel:sshkey:~/.ssh/id_shared"]["type"] == "SshKey"
-    assert ("tunnel:host:rw710", "tunnel:group:homelab", {"type": "inGroup"}) in (
-        c.edges.edges
+    assert host["externalToolId"] == "app-node"
+    assert c.txn.nodes["tunnel:group:example-fleet"]["node_type"] == "HostGroup"
+    assert c.txn.nodes["tunnel:sshkey:~/.ssh/id_shared"]["node_type"] == "SshKey"
+    assert (
+        "tunnel:host:app-node",
+        "tunnel:group:example-fleet",
+        {"relationship": "inGroup"},
+    ) in (
+        c.txn.edges
     )
     assert (
-        "tunnel:host:rw710",
+        "tunnel:host:app-node",
         "tunnel:sshkey:~/.ssh/id_shared",
-        {"type": "usesKey"},
-    ) in c.edges.edges
+        {"relationship": "usesKey"},
+    ) in c.txn.edges
 
 
 def test_ingest_hosts_dedups_shared_key():
@@ -138,16 +140,15 @@ def test_ingest_documents_tags_document_type():
         graph="__commons__",
     )
     assert res == {"nodes": 1, "edges": 0}
-    assert c.txn.nodes["d1"]["type"] == "Document"
+    assert c.txn.nodes["d1"]["node_type"] == "Document"
     assert c.txn.nodes["d1"]["text"] == "audit report"
 
 
-def test_ingest_noops_without_engine():
-    # No injected client + no reachable engine -> clean no-op.
-    assert ingest_entities([{"id": "a", "type": "Host"}]) is None
+def test_retired_structural_alias_is_rejected():
+    with pytest.raises(NativeIngestError, match="canonical node_type"):
+        ingest_entities([{"id": "a", "type": "Host"}], client=_FakeClient())
 
 
-def test_ingest_empty_is_noop():
-    assert ingest_entities([], client=_FakeClient()) is None
-    assert ingest_hosts({}, client=_FakeClient()) is None
-    assert ingest_documents([], client=_FakeClient()) is None
+def test_empty_native_ingest_is_rejected():
+    with pytest.raises(NativeIngestError, match="at least one entity"):
+        ingest_entities([], client=_FakeClient())

@@ -23,30 +23,46 @@ import asyncio
 import concurrent.futures
 import logging
 import os
+import shlex
 import subprocess
 import sys
 from typing import Any
 
 import yaml
-from agent_utilities.core.config import setting
-from agent_utilities.mcp_utilities import (
-    create_mcp_server,
+from agent_utilities.core.config import load_config, setting
+from agent_utilities.mcp.action_dispatch import resolve_action
+from agent_utilities.mcp.concurrency import run_blocking
+from agent_utilities.mcp.context_helpers import (
     ctx_confirm_destructive,
     ctx_log,
     ctx_progress,
-    load_config,
-    register_tool_surface,
-    resolve_action,
-    run_blocking,
 )
+from agent_utilities.mcp.server_factory import create_mcp_server
+from agent_utilities.mcp.verbose_tools import register_tool_surface
+from agent_utilities.security.persistence_privacy import sanitize_for_persistence
 
 from tunnel_manager.advanced_file_manager import AdvancedFileManager
+from tunnel_manager.connection_security import (
+    max_concurrency,
+    max_fleet_hosts,
+    max_transfer_bytes,
+    resolve_secret_ref,
+    validate_public_key,
+    validate_secret_ref,
+    validate_timeout,
+)
+from tunnel_manager.models import HostConfig
 from tunnel_manager.operation_manager import operation_manager
 from tunnel_manager.security_auditor import SecurityAuditor
 from tunnel_manager.system_intelligence import SystemIntelligence
-from tunnel_manager.tunnel_manager import HostManager, Tunnel, default_inventory_path
+from tunnel_manager.tunnel_manager import (
+    HostManager,
+    Tunnel,
+    _known_hosts_file,
+    default_inventory_path,
+)
 
-__version__ = "2.0.1"
+__version__ = "2.1.0"
 
 # XDG-compliant default paths. The inventory is shared across the ecosystem
 # (the HostManager library, container-manager-mcp, and the ssh-bootstrap skill all
@@ -85,16 +101,40 @@ class ResponseBuilder:
         locations: list | None = None,
         errors: list | None = None,
     ) -> dict:
-        return {
-            "status_code": status,
-            "message": msg,
-            "stdout": stdout,
-            "stderr": error,
-            "files_copied": files or [],
-            "locations_copied_to": locations or [],
-            "details": details,
-            "errors": errors or ([error] if error else []),
-        }
+        safe_payload, _ = sanitize_for_persistence(
+            {
+                "status_code": status,
+                "message": msg,
+                "stdout": stdout,
+                "stderr": error,
+                "files_copied": files or [],
+                "locations_copied_to": locations or [],
+                "details": details,
+                "errors": errors or ([error] if error else []),
+            }
+        )
+        return safe_payload
+
+
+def _inventory_password_ref(*sources: dict) -> str | None:
+    """Return a validated reference and reject plaintext inventory secrets."""
+
+    reference = None
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        if "ansible_ssh_pass" in source or "password" in source:
+            raise ValueError(
+                "plaintext inventory passwords are unsupported; configure password_ref"
+            )
+        reference = (
+            reference
+            or source.get("ansible_ssh_pass_ref")
+            or source.get("password_ref")
+        )
+    if not reference:
+        return None
+    return validate_secret_ref(str(reference))
 
 
 def load_inventory(
@@ -147,9 +187,9 @@ def load_inventory(
                 else:
                     return [], ResponseBuilder.build(
                         400,
-                        f"Group '{group}' invalid",
+                        "Configured inventory group is invalid",
                         {"inventory": inventory, "group": group},
-                        errors=[f"Group '{group}' invalid"],
+                        errors=["Configured inventory group is invalid"],
                     )
 
             # Now build the host entries
@@ -163,14 +203,7 @@ def load_inventory(
                     or all_vars.get("user")
                     or ""
                 )
-                password = (
-                    hvars.get("ansible_ssh_pass")
-                    or hvars.get("password")
-                    or g_vars.get("ansible_ssh_pass")
-                    or g_vars.get("password")
-                    or all_vars.get("ansible_ssh_pass")
-                    or all_vars.get("password")
-                )
+                password_ref = _inventory_password_ref(hvars, g_vars, all_vars)
                 key_path = (
                     hvars.get("key_path")
                     or hvars.get("identity_file")
@@ -197,12 +230,13 @@ def load_inventory(
                     or hvars.get("hostname")
                     or alias,
                     "username": username,
-                    "password": password,
+                    "password_ref": password_ref,
+                    "known_hosts_file": _known_hosts_file(hvars, g_vars, all_vars),
                     "key_path": key_path,
                     "port": int(port) if port else 22,
                 }
                 if not entry["username"]:
-                    logger.error(f"Skip {entry['hostname']}: no username")
+                    logger.error("Skipping inventory host without a username")
                     continue
                 hosts.append(entry)
 
@@ -218,9 +252,7 @@ def load_inventory(
                             or hvars.get("ansible_user")
                             or ""
                         )
-                        password = hvars.get("password") or hvars.get(
-                            "ansible_ssh_pass"
-                        )
+                        password_ref = _inventory_password_ref(hvars)
                         key_path = (
                             hvars.get("key_path")
                             or hvars.get("identity_file")
@@ -232,12 +264,13 @@ def load_inventory(
                             or hvars.get("ansible_host")
                             or alias,
                             "username": username,
-                            "password": password,
+                            "password_ref": password_ref,
+                            "known_hosts_file": _known_hosts_file(hvars),
                             "key_path": key_path,
                             "port": int(port) if port else 22,
                         }
                         if not entry["username"]:
-                            logger.error(f"Skip {entry['hostname']}: no username")
+                            logger.error("Skipping inventory host without a username")
                             continue
                         hosts.append(entry)
             elif (
@@ -256,8 +289,8 @@ def load_inventory(
                         "username": hvars.get("ansible_user")
                         or hvars.get("user")
                         or hvars.get("username"),
-                        "password": hvars.get("ansible_ssh_pass")
-                        or hvars.get("password"),
+                        "password_ref": _inventory_password_ref(hvars),
+                        "known_hosts_file": _known_hosts_file(hvars),
                         "key_path": hvars.get("ansible_ssh_private_key_file")
                         or hvars.get("key_path")
                         or hvars.get("identity_file"),
@@ -266,32 +299,39 @@ def load_inventory(
                         ),
                     }
                     if not entry["username"]:
-                        logger.error(f"Skip {entry['hostname']}: no username")
+                        logger.error("Skipping inventory host without a username")
                         continue
                     hosts.append(entry)
             else:
                 return [], ResponseBuilder.build(
                     400,
-                    f"Group '{group}' invalid",
+                    "Configured inventory group is invalid",
                     {"inventory": inventory, "group": group},
-                    errors=[f"Group '{group}' invalid"],
+                    errors=["Configured inventory group is invalid"],
                 )
 
         if not hosts:
             return [], ResponseBuilder.build(
                 400,
-                f"No hosts in group '{group}'",
+                "No hosts in configured inventory group",
                 {"inventory": inventory, "group": group},
-                errors=[f"No hosts in group '{group}'"],
+                errors=["No hosts in configured inventory group"],
+            )
+        if len(hosts) > max_fleet_hosts():
+            return [], ResponseBuilder.build(
+                400,
+                "Configured inventory exceeds the fleet limit",
+                {"host_count": len(hosts)},
+                errors=["Configured inventory exceeds the fleet limit"],
             )
         return hosts, {}
     except Exception as e:
-        logger.error(f"Load inv fail: {e}")
+        logger.error("Load inv fail")
         return [], ResponseBuilder.build(
             500,
-            f"Load inv fail: {e}",
+            "Load inv fail",
             {"inventory": inventory, "group": group},
-            str(e),
+            type(e).__name__,
         )
 
 
@@ -311,9 +351,11 @@ def _resolve_host(
     """
     host_config = host_manager.get_host(host_alias)
     if host_config:
-        logger.debug(f"Resolved host alias '{host_alias}' to config: {host_config}")
+        logger.debug("Resolved configured host alias")
 
         final_config = host_config.model_dump()
+        final_config["password"] = host_config.resolved_password()
+        final_config.pop("password_ref", None)
         if user:
             final_config["user"] = user
         if password:
@@ -328,7 +370,7 @@ def _resolve_host(
             final_config["proxy_command"] = proxy_command
 
     else:
-        logger.debug(f"Host alias '{host_alias}' not found, using provided params.")
+        logger.debug("Configured host alias was not found; using request parameters")
         final_config = {
             "hostname": host_alias,
             "user": user,
@@ -361,7 +403,12 @@ def register_host_tools(mcp: FastMCP):
         user: str = Field(default="", description="Username."),
         port: int = Field(default=22, description="SSH port."),
         identity_file: str = Field(default="", description="Path to private key."),
-        password: str = Field(default="", description="Password (if no key)."),
+        password_ref: str = Field(
+            default="", description="Secret-manager reference for an SSH password."
+        ),
+        known_hosts_file: str = Field(
+            default="", description="Verified SSH server-key trust store path."
+        ),
         proxy_command: str = Field(default="", description="Proxy command."),
         ctx: Context = Field(description="MCP context.", default=None),
     ) -> dict:
@@ -381,7 +428,7 @@ def register_host_tools(mcp: FastMCP):
 
                     await run_blocking(ingest_hosts, hosts, group="all")
                 except Exception as e:  # noqa: BLE001 — ingestion must not break list
-                    logger.debug("tm_hosts: KG ingest skipped: %s", e)
+                    logger.debug("Operation failed: error_type=%s", type(e).__name__)
             return {"hosts": hosts}
         elif action == "add":
             if not alias or not hostname or not user:
@@ -398,10 +445,11 @@ def register_host_tools(mcp: FastMCP):
                 user=user,
                 port=port,
                 identity_file=identity_file or None,
-                password=password or None,
+                password_ref=password_ref or None,
+                known_hosts_file=known_hosts_file or None,
                 proxy_command=proxy_command or None,
             )
-            return {"status": "success", "message": f"Host '{alias}' added."}
+            return {"status": "success", "message": "Host added."}
         elif action == "remove":
             if not alias:
                 return ResponseBuilder.build(
@@ -411,7 +459,7 @@ def register_host_tools(mcp: FastMCP):
                 return {"status": "cancelled", "message": "Operation cancelled by user"}
             await ctx_progress(ctx, 0, 100)
             await run_blocking(host_manager.remove_host, alias)
-            return {"status": "success", "message": f"Host '{alias}' removed."}
+            return {"status": "success", "message": "Host removed."}
         else:
             return ResponseBuilder.build(
                 400,
@@ -443,8 +491,9 @@ def register_remote_tools(mcp: FastMCP):
         user: str | None = Field(
             default=setting("TUNNEL_USERNAME", ""), description="Username."
         ),
-        password: str | None = Field(
-            default=setting("TUNNEL_PASSWORD", ""), description="Password."
+        password_ref: str | None = Field(
+            default=setting("TUNNEL_PASSWORD_REF", ""),
+            description="Runtime secret reference for the SSH password.",
         ),
         port: int = Field(
             default=int(setting("TUNNEL_REMOTE_PORT", 22)),
@@ -515,6 +564,21 @@ def register_remote_tools(mcp: FastMCP):
         if isinstance(resolved, dict):
             return resolved
         action = resolved
+        try:
+            password = resolve_secret_ref(password_ref)
+        except ValueError:
+            return ResponseBuilder.build(
+                400,
+                "Invalid SSH credential configuration",
+                {"credential_ref_configured": bool(password_ref)},
+                errors=["A supported runtime secret reference is required"],
+            )
+        try:
+            timeout = validate_timeout(timeout, default=60)
+        except ValueError:
+            return ResponseBuilder.build(
+                400, "Invalid SSH timeout", {}, errors=["Invalid SSH timeout"]
+            )
         if action == "run_command":
             if not host or not cmd:
                 return ResponseBuilder.build(
@@ -542,6 +606,7 @@ def register_remote_tools(mcp: FastMCP):
                     identity_file=conf["identity_file"],
                     certificate_file=conf.get("certificate_file"),
                     proxy_command=conf.get("proxy_command"),
+                    known_hosts_file=conf.get("known_hosts_file"),
                     ssh_config_file=final_cfg,
                 )
                 if ctx:
@@ -561,10 +626,10 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Cmd fail: {e}")
+                ctx_log(ctx, logger, "error", "Cmd fail")
                 await ctx_progress(ctx, 100, 100)
                 return ResponseBuilder.build(
-                    500, f"Cmd fail: {e}", {"host": host, "cmd": cmd}, str(e)
+                    500, "Cmd fail", {"host": host, "cmd": cmd}, type(e).__name__
                 )
             finally:
                 if "t" in locals():
@@ -588,6 +653,13 @@ def register_remote_tools(mcp: FastMCP):
                     {"host": host, "lpath": _lpath, "rpath": _rpath},
                     errors=[f"Invalid file: {_lpath}"],
                 )
+            if os.path.getsize(_lpath) > max_transfer_bytes():
+                return ResponseBuilder.build(
+                    400,
+                    "Managed file transfer limit exceeded",
+                    {},
+                    errors=["Managed file transfer limit exceeded"],
+                )
             try:
                 conf, final_cfg = _resolve_host(
                     host_alias=host,
@@ -607,25 +679,14 @@ def register_remote_tools(mcp: FastMCP):
                     identity_file=conf["identity_file"],
                     certificate_file=conf.get("certificate_file"),
                     proxy_command=conf.get("proxy_command"),
+                    known_hosts_file=conf.get("known_hosts_file"),
                     ssh_config_file=final_cfg,
                 )
-                await run_blocking(t.connect)
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
-                assert t.ssh_client is not None
-                sftp = await run_blocking(t.ssh_client.open_sftp)
-                transferred = 0
-
-                def progress_callback(transf, total):
-                    nonlocal transferred
-                    transferred = transf
-                    if ctx:
-                        asyncio.ensure_future(
-                            ctx.report_progress(progress=transf, total=total)
-                        )
-
-                await run_blocking(sftp.put, _lpath, _rpath, callback=progress_callback)
-                await run_blocking(sftp.close)
+                await run_blocking(t.send_file, _lpath, _rpath)
+                if ctx:
+                    await ctx.report_progress(progress=100, total=100)
                 return ResponseBuilder.build(
                     200,
                     f"Uploaded to {_rpath}",
@@ -635,12 +696,12 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[],
                 )
             except Exception as e:
-                ctx_log(ctx, _logger, "error", f"Upload fail: {e}")
+                ctx_log(ctx, _logger, "error", "Upload fail")
                 return ResponseBuilder.build(
                     500,
-                    f"Upload fail: {e}",
+                    "Upload fail",
                     {"host": host, "lpath": _lpath, "rpath": _rpath},
-                    str(e),
+                    type(e).__name__,
                 )
             finally:
                 if "t" in locals():
@@ -656,9 +717,9 @@ def register_remote_tools(mcp: FastMCP):
                     errors=["Need host, rpath, lpath"],
                 )
             try:
-                t = Tunnel(
-                    remote_host=host,
-                    username=user,
+                conf, final_cfg = _resolve_host(
+                    host_alias=host,
+                    user=user,
                     password=password,
                     port=port,
                     identity_file=id_file,
@@ -666,26 +727,22 @@ def register_remote_tools(mcp: FastMCP):
                     proxy_command=proxy,
                     ssh_config_file=cfg,
                 )
-                await run_blocking(t.connect)
+                t = Tunnel(
+                    remote_host=conf["hostname"],
+                    username=conf["user"],
+                    password=conf["password"],
+                    port=conf["port"],
+                    identity_file=conf["identity_file"],
+                    certificate_file=conf.get("certificate_file"),
+                    proxy_command=conf.get("proxy_command"),
+                    known_hosts_file=conf.get("known_hosts_file"),
+                    ssh_config_file=final_cfg,
+                )
                 if ctx:
                     await ctx.report_progress(progress=0, total=100)
-                assert t.ssh_client is not None
-                sftp = await run_blocking(t.ssh_client.open_sftp)
-                await run_blocking(sftp.stat, rpath)
-                transferred = 0
-
-                def progress_callback(transf, total):
-                    nonlocal transferred
-                    transferred = transf
-                    if ctx:
-                        asyncio.ensure_future(
-                            ctx.report_progress(progress=transf, total=total)
-                        )
-
-                await run_blocking(sftp.get, rpath, _lpath, callback=progress_callback)
+                await run_blocking(t.receive_file, rpath, _lpath)
                 if ctx:
                     await ctx.report_progress(progress=100, total=100)
-                await run_blocking(sftp.close)
                 return ResponseBuilder.build(
                     200,
                     f"Downloaded to {_lpath}",
@@ -695,12 +752,12 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Download fail: {e}")
+                ctx_log(ctx, logger, "error", "Download fail")
                 return ResponseBuilder.build(
                     500,
-                    f"Download fail: {e}",
+                    "Download fail",
                     {"host": host, "rpath": rpath, "lpath": _lpath},
-                    str(e),
+                    type(e).__name__,
                 )
             finally:
                 if "t" in locals():
@@ -730,6 +787,7 @@ def register_remote_tools(mcp: FastMCP):
                     identity_file=conf["identity_file"],
                     certificate_file=conf.get("certificate_file"),
                     proxy_command=conf.get("proxy_command"),
+                    known_hosts_file=conf.get("known_hosts_file"),
                     ssh_config_file=final_cfg,
                 )
                 if ctx:
@@ -746,9 +804,9 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[] if success else [msg],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Check fail: {e}")
+                ctx_log(ctx, logger, "error", "Check fail")
                 return ResponseBuilder.build(
-                    500, f"Check fail: {e}", {"host": host}, str(e)
+                    500, "Check fail", {"host": host}, type(e).__name__
                 )
             finally:
                 if "t" in locals():
@@ -771,6 +829,7 @@ def register_remote_tools(mcp: FastMCP):
                     remote_host=conf["hostname"],
                     username=conf["user"],
                     port=conf["port"],
+                    known_hosts_file=conf.get("known_hosts_file"),
                     ssh_config_file=final_cfg,
                 )
                 if ctx:
@@ -787,9 +846,9 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[] if success else [msg],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Key test fail: {e}")
+                ctx_log(ctx, logger, "error", "Key test fail")
                 return ResponseBuilder.build(
-                    500, f"Key test fail: {e}", {"host": host, "key": _key}, str(e)
+                    500, "Key test fail", {"host": host, "key": _key}, type(e).__name__
                 )
 
         elif action == "setup_passwordless":
@@ -797,9 +856,9 @@ def register_remote_tools(mcp: FastMCP):
             if not host or not password:
                 return ResponseBuilder.build(
                     400,
-                    "Need host, password",
+                    "Need host, password_ref",
                     {"host": host},
-                    errors=["Need host, password"],
+                    errors=["Need host, password_ref"],
                 )
             if key_type not in ["rsa", "ed25519"]:
                 return ResponseBuilder.build(
@@ -821,6 +880,7 @@ def register_remote_tools(mcp: FastMCP):
                     username=conf["user"],
                     password=conf["password"],
                     port=conf["port"],
+                    known_hosts_file=conf.get("known_hosts_file"),
                     ssh_config_file=final_cfg,
                 )
                 if ctx:
@@ -843,6 +903,10 @@ def register_remote_tools(mcp: FastMCP):
                                 "",
                             ],
                             check=True,
+                            timeout=30,
+                            stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
                         )
                     else:
                         await run_blocking(
@@ -857,6 +921,10 @@ def register_remote_tools(mcp: FastMCP):
                                 "",
                             ],
                             check=True,
+                            timeout=30,
+                            stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
                         )
                 await run_blocking(
                     t.setup_passwordless_ssh, local_key_path=_key, key_type=key_type
@@ -872,12 +940,12 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"SSH setup fail: {e}")
+                ctx_log(ctx, logger, "error", "SSH setup fail")
                 return ResponseBuilder.build(
                     500,
-                    f"SSH setup fail: {e}",
+                    "SSH setup fail",
                     {"host": host, "key_type": key_type},
-                    str(e),
+                    type(e).__name__,
                 )
             finally:
                 if "t" in locals():
@@ -910,6 +978,7 @@ def register_remote_tools(mcp: FastMCP):
                     identity_file=conf["identity_file"],
                     certificate_file=conf.get("certificate_file"),
                     proxy_command=conf.get("proxy_command"),
+                    known_hosts_file=conf.get("known_hosts_file"),
                     ssh_config_file=final_cfg,
                 )
                 if ctx:
@@ -926,12 +995,12 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Copy cfg fail: {e}")
+                ctx_log(ctx, logger, "error", "Copy cfg fail")
                 return ResponseBuilder.build(
                     500,
-                    f"Copy cfg fail: {e}",
+                    "Copy cfg fail",
                     {"host": host, "lcfg": lcfg, "rcfg": rcfg},
-                    str(e),
+                    type(e).__name__,
                 )
             finally:
                 if "t" in locals():
@@ -971,6 +1040,7 @@ def register_remote_tools(mcp: FastMCP):
                     identity_file=conf["identity_file"],
                     certificate_file=conf.get("certificate_file"),
                     proxy_command=conf.get("proxy_command"),
+                    known_hosts_file=conf.get("known_hosts_file"),
                     ssh_config_file=final_cfg,
                 )
                 if ctx:
@@ -993,6 +1063,10 @@ def register_remote_tools(mcp: FastMCP):
                                 "",
                             ],
                             check=True,
+                            timeout=30,
+                            stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
                         )
                     else:
                         await run_blocking(
@@ -1007,6 +1081,10 @@ def register_remote_tools(mcp: FastMCP):
                                 "",
                             ],
                             check=True,
+                            timeout=30,
+                            stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
                         )
                 await run_blocking(t.rotate_ssh_key, _new_key, key_type=key_type)
                 if ctx:
@@ -1025,12 +1103,12 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Rotate fail: {e}")
+                ctx_log(ctx, logger, "error", "Rotate fail")
                 return ResponseBuilder.build(
                     500,
-                    f"Rotate fail: {e}",
+                    "Rotate fail",
                     {"host": host, "new_key": new_key, "key_type": key_type},
-                    str(e),
+                    type(e).__name__,
                 )
             finally:
                 if "t" in locals():
@@ -1063,12 +1141,12 @@ def register_remote_tools(mcp: FastMCP):
                     errors=[] if "Removed" in msg else [msg],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Remove fail: {e}")
+                ctx_log(ctx, logger, "error", "Remove fail")
                 return ResponseBuilder.build(
                     500,
-                    f"Remove fail: {e}",
+                    "Remove fail",
                     {"host": host, "known_hosts": known_hosts},
-                    str(e),
+                    type(e).__name__,
                 )
         else:
             return ResponseBuilder.build(
@@ -1161,6 +1239,20 @@ def register_inventory_tools(mcp: FastMCP):
         if isinstance(resolved, dict):
             return resolved
         action = resolved
+        if isinstance(max_threads, bool):
+            return ResponseBuilder.build(
+                400,
+                "Invalid fleet concurrency",
+                {},
+                errors=["Invalid fleet concurrency"],
+            )
+        max_threads = max(1, min(int(max_threads), max_concurrency()))
+        try:
+            timeout = validate_timeout(timeout, default=60)
+        except ValueError:
+            return ResponseBuilder.build(
+                400, "Invalid SSH timeout", {}, errors=["Invalid SSH timeout"]
+            )
         if not inventory:
             return ResponseBuilder.build(
                 400, "Need inventory", {"action": action}, errors=["Need inventory"]
@@ -1193,6 +1285,10 @@ def register_inventory_tools(mcp: FastMCP):
                                 "",
                             ],
                             check=True,
+                            timeout=30,
+                            stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
                         )
                     else:
                         await run_blocking(
@@ -1207,9 +1303,13 @@ def register_inventory_tools(mcp: FastMCP):
                                 "",
                             ],
                             check=True,
+                            timeout=30,
+                            stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
                         )
                 with open(pub_key) as f:
-                    pub = f.read().strip()
+                    pub = validate_public_key(f.read())
                 hosts, error = load_inventory(inventory, group, logger)
                 if error:
                     return error
@@ -1218,11 +1318,18 @@ def register_inventory_tools(mcp: FastMCP):
                     await ctx.report_progress(progress=0, total=total)
 
                 async def setup_host(h: dict, ctx: Context) -> dict:
-                    host, _user, _password = h["hostname"], h["username"], h["password"]
+                    host, _user = h["hostname"], h["username"]
                     kpath = h.get("key_path", _key)
                     try:
-                        t = Tunnel(remote_host=host, username=_user, password=_password)
-                        await run_blocking(t.remove_host_key)
+                        t = Tunnel(
+                            config=HostConfig(
+                                hostname=host,
+                                user=_user,
+                                port=h.get("port", 22),
+                                password_ref=h.get("password_ref"),
+                                known_hosts_file=h.get("known_hosts_file"),
+                            )
+                        )
                         await run_blocking(
                             t.setup_passwordless_ssh,
                             local_key_path=kpath,
@@ -1230,7 +1337,8 @@ def register_inventory_tools(mcp: FastMCP):
                         )
                         await run_blocking(t.connect)
                         await run_blocking(
-                            t.run_command, f"echo '{pub}' >> ~/.ssh/authorized_keys"
+                            t.run_command,
+                            f"printf '%s\\n' {shlex.quote(pub)} >> ~/.ssh/authorized_keys",
                         )
                         await run_blocking(
                             t.run_command, "chmod 600 ~/.ssh/authorized_keys"
@@ -1246,8 +1354,8 @@ def register_inventory_tools(mcp: FastMCP):
                         return {
                             "hostname": host,
                             "status": "failed",
-                            "message": f"Setup fail: {e}",
-                            "errors": [str(e)],
+                            "message": "Setup fail",
+                            "errors": [type(e).__name__],
                         }
                     finally:
                         if "t" in locals():
@@ -1282,11 +1390,11 @@ def register_inventory_tools(mcp: FastMCP):
                                     {
                                         "hostname": "unknown",
                                         "status": "failed",
-                                        "message": f"Parallel error: {e}",
-                                        "errors": [str(e)],
+                                        "message": "Parallel error",
+                                        "errors": [type(e).__name__],
                                     }
                                 )
-                                errors.append(str(e))
+                                errors.append(type(e).__name__)
                 else:
                     for i, h in enumerate(hosts, 1):
                         r = await setup_host(h, ctx)
@@ -1320,12 +1428,12 @@ def register_inventory_tools(mcp: FastMCP):
                     errors=errors,
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Setup all fail: {e}")
+                ctx_log(ctx, logger, "error", "Setup all fail")
                 return ResponseBuilder.build(
                     500,
-                    f"Setup all fail: {e}",
+                    "Setup all fail",
                     {"inventory": inventory, "group": group, "key_type": key_type},
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "mesh_bootstrap":
@@ -1367,12 +1475,12 @@ def register_inventory_tools(mcp: FastMCP):
                     errors=res["errors"],
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Mesh bootstrap fail: {e}")
+                ctx_log(ctx, logger, "error", "Mesh bootstrap fail")
                 return ResponseBuilder.build(
                     500,
-                    f"Mesh bootstrap fail: {e}",
+                    "Mesh bootstrap fail",
                     {"inventory": inventory, "group": group, "key_type": key_type},
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "run_command":
@@ -1393,10 +1501,14 @@ def register_inventory_tools(mcp: FastMCP):
                     host = h["hostname"]
                     try:
                         t = Tunnel(
-                            remote_host=host,
-                            username=h["username"],
-                            password=h.get("password"),
-                            identity_file=h.get("key_path"),
+                            config=HostConfig(
+                                hostname=host,
+                                user=h["username"],
+                                port=h.get("port", 22),
+                                password_ref=h.get("password_ref"),
+                                identity_file=h.get("key_path"),
+                                known_hosts_file=h.get("known_hosts_file"),
+                            )
                         )
                         out, error = await run_blocking(
                             t.run_command, cmd, timeout=timeout
@@ -1413,10 +1525,10 @@ def register_inventory_tools(mcp: FastMCP):
                         return {
                             "hostname": host,
                             "status": "failed",
-                            "message": f"Cmd fail: {e}",
+                            "message": "Cmd fail",
                             "stdout": "",
-                            "stderr": str(e),
-                            "errors": [str(e)],
+                            "stderr": type(e).__name__,
+                            "errors": [type(e).__name__],
                         }
                     finally:
                         if "t" in locals():
@@ -1445,13 +1557,13 @@ def register_inventory_tools(mcp: FastMCP):
                                     {
                                         "hostname": "unknown",
                                         "status": "failed",
-                                        "message": f"Parallel error: {e}",
+                                        "message": "Parallel error",
                                         "stdout": "",
-                                        "stderr": str(e),
-                                        "errors": [str(e)],
+                                        "stderr": type(e).__name__,
+                                        "errors": [type(e).__name__],
                                     }
                                 )
-                                errors.append(str(e))
+                                errors.append(type(e).__name__)
                 else:
                     for i, h in enumerate(hosts, 1):
                         r = await run_host(h, ctx)
@@ -1479,13 +1591,13 @@ def register_inventory_tools(mcp: FastMCP):
                     errors=errors,
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Cmd all fail: {e}")
+                ctx_log(ctx, logger, "error", "Cmd all fail")
                 await ctx_progress(ctx, 100, 100)
                 return ResponseBuilder.build(
                     500,
-                    f"Cmd all fail: {e}",
+                    "Cmd all fail",
                     {"inventory": inventory, "group": group, "cmd": cmd},
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "copy_ssh_config":
@@ -1512,10 +1624,14 @@ def register_inventory_tools(mcp: FastMCP):
                 async def copy_host(h: dict) -> dict:
                     try:
                         t = Tunnel(
-                            remote_host=h["hostname"],
-                            username=h["username"],
-                            password=h.get("password"),
-                            identity_file=h.get("key_path"),
+                            config=HostConfig(
+                                hostname=h["hostname"],
+                                user=h["username"],
+                                port=h.get("port", 22),
+                                password_ref=h.get("password_ref"),
+                                identity_file=h.get("key_path"),
+                                known_hosts_file=h.get("known_hosts_file"),
+                            )
                         )
                         await run_blocking(t.copy_ssh_config, cfg, rmt_cfg)
                         return {
@@ -1528,8 +1644,8 @@ def register_inventory_tools(mcp: FastMCP):
                         return {
                             "hostname": h["hostname"],
                             "status": "failed",
-                            "message": f"Copy fail: {e}",
-                            "errors": [str(e)],
+                            "message": "Copy fail",
+                            "errors": [type(e).__name__],
                         }
                     finally:
                         if "t" in locals():
@@ -1561,11 +1677,11 @@ def register_inventory_tools(mcp: FastMCP):
                                     {
                                         "hostname": "unknown",
                                         "status": "failed",
-                                        "message": f"Parallel error: {e}",
-                                        "errors": [str(e)],
+                                        "message": "Parallel error",
+                                        "errors": [type(e).__name__],
                                     }
                                 )
-                                errors.append(str(e))
+                                errors.append(type(e).__name__)
                 else:
                     for i, h in enumerate(hosts, 1):
                         r = await copy_host(h)
@@ -1598,17 +1714,17 @@ def register_inventory_tools(mcp: FastMCP):
                     errors=errors,
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Copy all fail: {e}")
+                ctx_log(ctx, logger, "error", "Copy all fail")
                 return ResponseBuilder.build(
                     500,
-                    f"Copy all fail: {e}",
+                    "Copy all fail",
                     {
                         "inventory": inventory,
                         "group": group,
                         "cfg": cfg,
                         "rmt_cfg": rmt_cfg,
                     },
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "rotate_key":
@@ -1632,10 +1748,14 @@ def register_inventory_tools(mcp: FastMCP):
                     _key = os.path.expanduser(key_pfx + h["hostname"])
                     try:
                         t = Tunnel(
-                            remote_host=h["hostname"],
-                            username=h["username"],
-                            password=h.get("password"),
-                            identity_file=h.get("key_path"),
+                            config=HostConfig(
+                                hostname=h["hostname"],
+                                user=h["username"],
+                                port=h.get("port", 22),
+                                password_ref=h.get("password_ref"),
+                                identity_file=h.get("key_path"),
+                                known_hosts_file=h.get("known_hosts_file"),
+                            )
                         )
                         await run_blocking(t.rotate_ssh_key, _key, key_type=key_type)
                         return {
@@ -1649,8 +1769,8 @@ def register_inventory_tools(mcp: FastMCP):
                         return {
                             "hostname": h["hostname"],
                             "status": "failed",
-                            "message": f"Rotate fail: {e}",
-                            "errors": [str(e)],
+                            "message": "Rotate fail",
+                            "errors": [type(e).__name__],
                             "new_key_path": _key,
                         }
                     finally:
@@ -1685,12 +1805,12 @@ def register_inventory_tools(mcp: FastMCP):
                                     {
                                         "hostname": "unknown",
                                         "status": "failed",
-                                        "message": f"Parallel error: {e}",
-                                        "errors": [str(e)],
+                                        "message": "Parallel error",
+                                        "errors": [type(e).__name__],
                                         "new_key_path": None,
                                     }
                                 )
-                                errors.append(str(e))
+                                errors.append(type(e).__name__)
                 else:
                     for i, h in enumerate(hosts, 1):
                         r = await rotate_host(h)
@@ -1725,17 +1845,17 @@ def register_inventory_tools(mcp: FastMCP):
                     errors=errors,
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Rotate all fail: {e}")
+                ctx_log(ctx, logger, "error", "Rotate all fail")
                 return ResponseBuilder.build(
                     500,
-                    f"Rotate all fail: {e}",
+                    "Rotate all fail",
                     {
                         "inventory": inventory,
                         "group": group,
                         "key_pfx": key_pfx,
                         "key_type": key_type,
                     },
-                    error=str(e),
+                    error=type(e).__name__,
                 )
 
         elif action == "send_file":
@@ -1755,6 +1875,13 @@ def register_inventory_tools(mcp: FastMCP):
                     {"action": action},
                     errors=[f"Invalid file: {_lpath}"],
                 )
+            if os.path.getsize(_lpath) > max_transfer_bytes():
+                return ResponseBuilder.build(
+                    400,
+                    "Managed file transfer limit exceeded",
+                    {},
+                    errors=["Managed file transfer limit exceeded"],
+                )
             try:
                 hosts, error = load_inventory(inventory, group, logger)
                 if error:
@@ -1767,28 +1894,16 @@ def register_inventory_tools(mcp: FastMCP):
                     host = h["hostname"]
                     try:
                         t = Tunnel(
-                            remote_host=host,
-                            username=h["username"],
-                            password=h.get("password"),
-                            identity_file=h.get("key_path"),
+                            config=HostConfig(
+                                hostname=host,
+                                user=h["username"],
+                                port=h.get("port", 22),
+                                password_ref=h.get("password_ref"),
+                                identity_file=h.get("key_path"),
+                                known_hosts_file=h.get("known_hosts_file"),
+                            )
                         )
-                        await run_blocking(t.connect)
-                        assert t.ssh_client is not None
-                        sftp = await run_blocking(t.ssh_client.open_sftp)
-                        transferred = 0
-
-                        def progress_callback(transf, total):
-                            nonlocal transferred
-                            transferred = transf
-                            if ctx:
-                                asyncio.ensure_future(
-                                    ctx.report_progress(progress=transf, total=total)
-                                )
-
-                        await run_blocking(
-                            sftp.put, _lpath, _rpath, callback=progress_callback
-                        )
-                        await run_blocking(sftp.close)
+                        await run_blocking(t.send_file, _lpath, _rpath)
                         return {
                             "hostname": host,
                             "status": "success",
@@ -1799,8 +1914,8 @@ def register_inventory_tools(mcp: FastMCP):
                         return {
                             "hostname": host,
                             "status": "failed",
-                            "message": f"Upload fail: {e}",
-                            "errors": [str(e)],
+                            "message": "Upload fail",
+                            "errors": [type(e).__name__],
                         }
                     finally:
                         if "t" in locals():
@@ -1832,11 +1947,11 @@ def register_inventory_tools(mcp: FastMCP):
                                     {
                                         "hostname": "unknown",
                                         "status": "failed",
-                                        "message": f"Parallel error: {e}",
-                                        "errors": [str(e)],
+                                        "message": "Parallel error",
+                                        "errors": [type(e).__name__],
                                     }
                                 )
-                                errors.append(str(e))
+                                errors.append(type(e).__name__)
                 else:
                     for i, h in enumerate(hosts, 1):
                         r = await send_host(h)
@@ -1868,17 +1983,17 @@ def register_inventory_tools(mcp: FastMCP):
                     errors=errors,
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Upload all fail: {e}")
+                ctx_log(ctx, logger, "error", "Upload all fail")
                 return ResponseBuilder.build(
                     500,
-                    f"Upload all fail: {e}",
+                    "Upload all fail",
                     {
                         "inventory": inventory,
                         "group": group,
                         "lpath": _lpath,
                         "rpath": _rpath,
                     },
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "receive_file":
@@ -1904,29 +2019,16 @@ def register_inventory_tools(mcp: FastMCP):
                     os.makedirs(os.path.dirname(_lpath), exist_ok=True)
                     try:
                         t = Tunnel(
-                            remote_host=host,
-                            username=h["username"],
-                            password=h.get("password"),
-                            identity_file=h.get("key_path"),
+                            config=HostConfig(
+                                hostname=host,
+                                user=h["username"],
+                                port=h.get("port", 22),
+                                password_ref=h.get("password_ref"),
+                                identity_file=h.get("key_path"),
+                                known_hosts_file=h.get("known_hosts_file"),
+                            )
                         )
-                        await run_blocking(t.connect)
-                        assert t.ssh_client is not None
-                        sftp = await run_blocking(t.ssh_client.open_sftp)
-                        await run_blocking(sftp.stat, rpath)
-                        transferred = 0
-
-                        def progress_callback(transf, total):
-                            nonlocal transferred
-                            transferred = transf
-                            if ctx:
-                                asyncio.ensure_future(
-                                    ctx.report_progress(progress=transf, total=total)
-                                )
-
-                        await run_blocking(
-                            sftp.get, rpath, _lpath, callback=progress_callback
-                        )
-                        await run_blocking(sftp.close)
+                        await run_blocking(t.receive_file, rpath, _lpath)
                         return {
                             "hostname": host,
                             "status": "success",
@@ -1938,8 +2040,8 @@ def register_inventory_tools(mcp: FastMCP):
                         return {
                             "hostname": host,
                             "status": "failed",
-                            "message": f"Download fail: {e}",
-                            "errors": [str(e)],
+                            "message": "Download fail",
+                            "errors": [type(e).__name__],
                             "local_path": _lpath,
                         }
                     finally:
@@ -1973,12 +2075,12 @@ def register_inventory_tools(mcp: FastMCP):
                                     {
                                         "hostname": "unknown",
                                         "status": "failed",
-                                        "message": f"Parallel error: {e}",
-                                        "errors": [str(e)],
+                                        "message": "Parallel error",
+                                        "errors": [type(e).__name__],
                                         "local_path": None,
                                     }
                                 )
-                                errors.append(str(e))
+                                errors.append(type(e).__name__)
                 else:
                     for i, h in enumerate(hosts, 1):
                         r = await receive_host(h)
@@ -2011,17 +2113,17 @@ def register_inventory_tools(mcp: FastMCP):
                     errors=errors,
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Download all fail: {e}")
+                ctx_log(ctx, logger, "error", "Download all fail")
                 return ResponseBuilder.build(
                     500,
-                    f"Download all fail: {e}",
+                    "Download all fail",
                     {
                         "inventory": inventory,
                         "group": group,
                         "rpath": rpath,
                         "lpath_prefix": lpath_prefix,
                     },
-                    str(e),
+                    type(e).__name__,
                 )
         else:
             return ResponseBuilder.build(
@@ -2092,12 +2194,12 @@ def register_operations_tools(mcp: FastMCP):
                     {"operation_id": op_id, "operation_type": operation_type},
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Failed to start operation: {e}")
+                ctx_log(ctx, logger, "error", "Failed to start operation")
                 return ResponseBuilder.build(
                     500,
                     "Failed to start operation",
                     {"operation_type": operation_type},
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "get_progress":
@@ -2125,12 +2227,12 @@ def register_operations_tools(mcp: FastMCP):
                     {"operation_id": operation_id, "status": status},
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Failed to get operation progress: {e}")
+                ctx_log(ctx, logger, "error", "Failed to get operation progress")
                 return ResponseBuilder.build(
                     500,
                     "Failed to get operation progress",
                     {"operation_id": operation_id},
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "cancel":
@@ -2162,12 +2264,12 @@ def register_operations_tools(mcp: FastMCP):
                         errors=["Operation not found or already completed"],
                     )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Failed to cancel operation: {e}")
+                ctx_log(ctx, logger, "error", "Failed to cancel operation")
                 return ResponseBuilder.build(
                     500,
                     "Failed to cancel operation",
                     {"operation_id": operation_id},
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "get_metrics":
@@ -2192,12 +2294,12 @@ def register_operations_tools(mcp: FastMCP):
                     },
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Failed to get resource metrics: {e}")
+                ctx_log(ctx, logger, "error", "Failed to get resource metrics")
                 return ResponseBuilder.build(
                     500,
                     "Failed to get resource metrics",
                     {"operation_id": operation_id},
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "list_sessions":
@@ -2212,9 +2314,9 @@ def register_operations_tools(mcp: FastMCP):
                     },
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Failed to list active sessions: {e}")
+                ctx_log(ctx, logger, "error", "Failed to list active sessions")
                 return ResponseBuilder.build(
-                    500, "Failed to list active sessions", {}, str(e)
+                    500, "Failed to list active sessions", {}, type(e).__name__
                 )
         else:
             return ResponseBuilder.build(
@@ -2245,7 +2347,9 @@ def register_system_tools(mcp: FastMCP):
         ),
         remote_host: str = Field(description="Remote host."),
         username: str = Field(default="", description="SSH username."),
-        password: str = Field(default="", description="SSH password."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
         identity_file: str = Field(default="", description="SSH identity file path."),
         log_paths: list[str] = Field(
             default=[], description="Log file paths (analyze_logs)."
@@ -2265,6 +2369,7 @@ def register_system_tools(mcp: FastMCP):
             return resolved
         action = resolved
         try:
+            password = resolve_secret_ref(password_ref)
             tunnel = Tunnel(
                 remote_host=remote_host,
                 username=username or None,
@@ -2323,12 +2428,12 @@ def register_system_tools(mcp: FastMCP):
                     ],
                 )
         except Exception as e:
-            ctx_log(ctx, logger, "error", f"System intelligence fail ({action}): {e}")
+            ctx_log(ctx, logger, "error", "System intelligence fail ({action})")
             return ResponseBuilder.build(
                 500,
                 f"System intelligence fail ({action})",
                 {"host": remote_host},
-                str(e),
+                type(e).__name__,
             )
 
 
@@ -2350,7 +2455,9 @@ def register_file_tools(mcp: FastMCP):
         ),
         remote_host: str = Field(default="", description="Remote host."),
         username: str = Field(default="", description="SSH username."),
-        password: str = Field(default="", description="SSH password."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
         identity_file: str = Field(default="", description="SSH identity file path."),
         operation: str = Field(
             default="",
@@ -2412,6 +2519,15 @@ def register_file_tools(mcp: FastMCP):
         if isinstance(resolved, dict):
             return resolved
         action = resolved
+        try:
+            password = resolve_secret_ref(password_ref)
+        except ValueError:
+            return ResponseBuilder.build(
+                400,
+                "Invalid SSH credential configuration",
+                {"credential_ref_configured": bool(password_ref)},
+                errors=["A supported runtime secret reference is required"],
+            )
         if action == "recursive_ops":
             if not remote_host or not operation or not source:
                 return ResponseBuilder.build(
@@ -2449,12 +2565,12 @@ def register_file_tools(mcp: FastMCP):
                     errors=result.get("errors", []),
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Recursive file ops fail: {e}")
+                ctx_log(ctx, logger, "error", "Recursive file ops fail")
                 return ResponseBuilder.build(
                     500,
                     "Recursive file ops fail",
                     {"host": remote_host, "operation": operation},
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "content_search":
@@ -2488,12 +2604,12 @@ def register_file_tools(mcp: FastMCP):
                     error=result.get("error", ""),
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"File content search fail: {e}")
+                ctx_log(ctx, logger, "error", "File content search fail")
                 return ResponseBuilder.build(
                     500,
                     "File content search fail",
                     {"host": remote_host, "pattern": pattern},
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "watch":
@@ -2522,12 +2638,12 @@ def register_file_tools(mcp: FastMCP):
                     error=result.get("error", ""),
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"File watch fail: {e}")
+                ctx_log(ctx, logger, "error", "File watch fail")
                 return ResponseBuilder.build(
                     500,
                     "File watch fail",
                     {"host": remote_host, "watch_paths": watch_paths},
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "diff_compare":
@@ -2561,12 +2677,12 @@ def register_file_tools(mcp: FastMCP):
                     error=result.get("error", ""),
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"File diff fail: {e}")
+                ctx_log(ctx, logger, "error", "File diff fail")
                 return ResponseBuilder.build(
                     500,
                     "File diff fail",
                     {"file": file_path, "host1": host1, "host2": host2},
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "backup":
@@ -2600,12 +2716,12 @@ def register_file_tools(mcp: FastMCP):
                     error=result.get("error", ""),
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Backup fail: {e}")
+                ctx_log(ctx, logger, "error", "Backup fail")
                 return ResponseBuilder.build(
                     500,
                     "Backup fail",
                     {"host": remote_host, "backup_paths": backup_paths},
-                    str(e),
+                    type(e).__name__,
                 )
         else:
             return ResponseBuilder.build(
@@ -2636,7 +2752,9 @@ def register_security_tools(mcp: FastMCP):
         ),
         remote_host: str = Field(description="Remote host to audit."),
         username: str = Field(default="", description="SSH username."),
-        password: str = Field(default="", description="SSH password."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
         identity_file: str = Field(default="", description="SSH identity file path."),
         scope: list[str] = Field(
             default=[], description="Security areas to audit (security_audit)."
@@ -2666,6 +2784,7 @@ def register_security_tools(mcp: FastMCP):
             return resolved
         action = resolved
         try:
+            password = resolve_secret_ref(password_ref)
             tunnel = Tunnel(
                 remote_host=remote_host,
                 username=username or None,
@@ -2733,9 +2852,12 @@ def register_security_tools(mcp: FastMCP):
                     ],
                 )
         except Exception as e:
-            ctx_log(ctx, logger, "error", f"Security audit fail ({action}): {e}")
+            ctx_log(ctx, logger, "error", "Security audit fail ({action})")
             return ResponseBuilder.build(
-                500, f"Security audit fail ({action})", {"host": remote_host}, str(e)
+                500,
+                f"Security audit fail ({action})",
+                {"host": remote_host},
+                type(e).__name__,
             )
 
 
@@ -2817,12 +2939,38 @@ def mcp_server() -> None:
     print(f"  Auth: {args.auth_type}", file=sys.stderr)
     print(f"  Dynamic Tags Loaded: {len(set(registered_tags))}", file=sys.stderr)
 
+    from agent_utilities.mcp.server_factory import (
+        mcp_network_run_kwargs,
+        protect_stdio_jsonrpc,
+    )
+    from agent_utilities.security.request_identity import (
+        apply_served_security_profile,
+    )
+
+    apply_served_security_profile(
+        args.transport,
+        transport_auth_configured=(
+            str(getattr(args, "auth_type", "none") or "none").lower() != "none"
+        ),
+    )
+
     if args.transport == "stdio":
+        protect_stdio_jsonrpc()
         mcp.run(transport="stdio")
     elif args.transport == "streamable-http":
-        mcp.run(transport="streamable-http", host=args.host, port=args.port)
+        mcp.run(
+            transport="streamable-http",
+            host=args.host,
+            port=args.port,
+            **mcp_network_run_kwargs(args),
+        )
     elif args.transport == "sse":
-        mcp.run(transport="sse", host=args.host, port=args.port)
+        mcp.run(
+            transport="sse",
+            host=args.host,
+            port=args.port,
+            **mcp_network_run_kwargs(args),
+        )
     else:
         logger.error("Invalid transport", extra={"transport": args.transport})
         sys.exit(1)

@@ -2,12 +2,28 @@
 
 import os
 import tempfile
+from importlib import import_module
 from unittest.mock import Mock, mock_open, patch
 
 import pytest
 import yaml
 
+from tunnel_manager.models import CommandResult
 from tunnel_manager.tunnel_manager import HostManager, Tunnel
+
+_tunnel_module = import_module("tunnel_manager.tunnel_manager")
+
+
+@pytest.fixture(autouse=True)
+def _unit_identity_path(monkeypatch):
+    """Keep legacy client mocks focused on SSH behavior, not path-policy tests."""
+
+    monkeypatch.setattr(_tunnel_module, "validate_identity_path", lambda value: value)
+    monkeypatch.setattr(
+        _tunnel_module,
+        "validated_known_hosts_path",
+        lambda value=None: value or "/mock/known_hosts",
+    )
 
 
 class TestHostManager:
@@ -52,6 +68,29 @@ class TestHostManager:
         finally:
             os.unlink(config_path)
 
+    def test_load_inventory_inherits_known_hosts_file(self):
+        """Ansible trust-store settings survive flattening without key material."""
+
+        inventory = {
+            "all": {
+                "vars": {
+                    "ansible_user": "operator",
+                    "ansible_ssh_known_hosts_file": "~/.ssh/known_hosts",
+                },
+                "hosts": {"managed-node": {"ansible_host": "192.0.2.10"}},
+            }
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.safe_dump(inventory, f)
+            config_path = f.name
+        try:
+            hm = HostManager(config_file=config_path)
+            assert hm.hosts["managed-node"]["known_hosts_file"] == (
+                "~/.ssh/known_hosts"
+            )
+        finally:
+            os.unlink(config_path)
+
     def test_load_inventory_nonexistent_file(self):
         """Test loading inventory from nonexistent file."""
         with tempfile.NamedTemporaryFile(suffix=".yaml", delete=True) as f:
@@ -92,22 +131,24 @@ class TestHostManager:
             config_path = f.name
         try:
             hm = HostManager(config_file=config_path)
-            hm.add_host(
-                alias="test",
-                hostname="example.com",
-                user="testuser",
-                port=2222,
-                identity_file="/path/to/key",
-                password="testpass",
-                proxy_command="proxy cmd",
-            )
+            with patch("shutil.which", return_value="/usr/bin/tsh"):
+                hm.add_host(
+                    alias="test",
+                    hostname="example.com",
+                    user="testuser",
+                    port=2222,
+                    identity_file="/path/to/key",
+                    password_ref="env://TEST_SSH_PASSWORD",
+                    proxy_command="tsh proxy ssh %h:%p",
+                )
             assert "test" in hm.hosts
             assert hm.hosts["test"]["hostname"] == "example.com"
             assert hm.hosts["test"]["user"] == "testuser"
             assert hm.hosts["test"]["port"] == 2222
             assert hm.hosts["test"]["identity_file"] == "/path/to/key"
-            assert hm.hosts["test"]["password"] == "testpass"
-            assert hm.hosts["test"]["proxy_command"] == "proxy cmd"
+            assert hm.hosts["test"]["password_ref"] == "env://TEST_SSH_PASSWORD"
+            assert "password" not in hm.hosts["test"]
+            assert hm.hosts["test"]["proxy_command"] == "tsh proxy ssh %h:%p"
         finally:
             os.unlink(config_path)
 
@@ -137,18 +178,18 @@ class TestHostManager:
 
     def test_list_hosts(self):
         """Test listing all hosts."""
-        from tunnel_manager.models import HostConfig
-
         hm = HostManager()
         hm.hosts = {
             "host1": {"hostname": "example1.com"},
             "host2": {"hostname": "example2.com"},
         }
         result = hm.list_hosts()
-        assert result == {
-            "host1": HostConfig(hostname="example1.com"),
-            "host2": HostConfig(hostname="example2.com"),
-        }
+        assert set(result) == {"host1", "host2"}
+        assert result["host1"]["hostname"] == "example1.com"
+        assert result["host2"]["hostname"] == "example2.com"
+        assert result["host1"]["password_configured"] is False
+        assert "password" not in result["host1"]
+        assert "password_ref" not in result["host1"]
 
     def test_get_host_existing(self):
         """Test getting an existing host."""
@@ -309,12 +350,15 @@ class TestTunnel:
         mock_proxy = Mock()
         mock_proxy_command.return_value = mock_proxy
 
-        with patch("os.path.exists", return_value=False):
+        with (
+            patch("os.path.exists", return_value=False),
+            patch("shutil.which", return_value="/usr/bin/tsh"),
+        ):
             t = Tunnel(
                 remote_host="example.com",
                 username="testuser",
                 password="testpass",
-                proxy_command="custom_proxy",
+                proxy_command="tsh proxy ssh %h:%p",
             )
             t.connect()
             mock_client_instance.connect.assert_called_once()
@@ -426,7 +470,8 @@ class TestTunnel:
         mock_ssh_client.return_value = mock_client_instance
 
         mock_sftp = Mock()
-        mock_sftp.get.side_effect = Exception("SFTP error")
+        mock_sftp.stat.return_value.st_size = 1
+        mock_sftp.getfo.side_effect = Exception("SFTP error")
         mock_client_instance.open_sftp.return_value = mock_sftp
 
         with tempfile.NamedTemporaryFile(delete=False) as f:
@@ -556,6 +601,7 @@ class TestTunnel:
         mock_ssh_client.return_value = mock_client_instance
 
         mock_sftp = Mock()
+        mock_sftp.stat.return_value.st_size = 1
         mock_client_instance.open_sftp.return_value = mock_sftp
 
         with tempfile.NamedTemporaryFile(delete=False) as f:
@@ -572,7 +618,7 @@ class TestTunnel:
                         with patch("os.access", return_value=True):
                             with patch("builtins.open", mock_open(read_data=b"test")):
                                 t.send_file(local_path, "/remote/path")
-                                mock_sftp.put.assert_called_once()
+                                mock_sftp.putfo.assert_called_once()
         finally:
             os.unlink(local_path)
 
@@ -588,7 +634,7 @@ class TestTunnel:
             t = Tunnel(
                 remote_host="example.com", username="testuser", password="testpass"
             )
-            with pytest.raises(OSError, match="Local file does not exist"):
+            with pytest.raises(OSError, match="Configured local file does not exist"):
                 t.send_file("/nonexistent/file", "/remote/path")
 
     @patch("paramiko.SSHConfig")
@@ -603,6 +649,7 @@ class TestTunnel:
         mock_ssh_client.return_value = mock_client_instance
 
         mock_sftp = Mock()
+        mock_sftp.stat.return_value.st_size = 1
         mock_client_instance.open_sftp.return_value = mock_sftp
 
         with tempfile.NamedTemporaryFile(delete=False) as f:
@@ -613,7 +660,7 @@ class TestTunnel:
                     remote_host="example.com", username="testuser", password="testpass"
                 )
                 t.receive_file("/remote/path", local_path)
-                mock_sftp.get.assert_called_once()
+                mock_sftp.getfo.assert_called_once()
         finally:
             os.unlink(local_path)
 
@@ -719,7 +766,7 @@ class TestTunnel:
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".pub", delete=False) as f:
             pub_key_path = f.name
-            f.write("ssh-rsa test_key")
+            f.write("ssh-rsa " + "A" * 64)
         try:
             private_key_path = pub_key_path.replace(".pub", "")
             with patch("os.path.exists", side_effect=lambda x: x == pub_key_path):
@@ -734,9 +781,12 @@ class TestTunnel:
                 os.unlink(pub_key_path)
 
     @patch("os.path.exists")
+    @patch("os.chmod")
     @patch("paramiko.HostKeys")
     @patch("paramiko.SSHConfig")
-    def test_remove_host_key(self, mock_ssh_config, mock_host_keys_class, mock_exists):
+    def test_remove_host_key(
+        self, mock_ssh_config, mock_host_keys_class, _mock_chmod, mock_exists
+    ):
         """Test removing host key from known_hosts."""
         mock_exists.return_value = True
 
@@ -760,7 +810,7 @@ class TestTunnel:
         assert mock_kh.loaded_path == "/mock/path"
         assert "example.com" not in mock_kh
         assert mock_kh.saved_path == "/mock/path"
-        assert "Removed host key" in res
+        assert "Removed managed-host key" in res
 
     @patch("paramiko.SSHConfig")
     @patch("paramiko.SSHClient")
@@ -820,17 +870,23 @@ class TestTunnel:
         )  # Avoid real connection setup and paramiko private key parsing
 
         # Mock run_command responses
+        old_public_key = "ssh-ed25519 " + "B" * 64
+        new_public_key = "ssh-ed25519 " + "A" * 64
+
         def run_cmd_side_effect(cmd):
             if "cat" in cmd:
-                return ("old-pub-key-content\nother-key", "")
-            return ("", "")
+                return CommandResult(
+                    success=True, stdout=old_public_key + "\nother-key"
+                )
+            return CommandResult(success=True)
 
         t.run_command = Mock(side_effect=run_cmd_side_effect)
+        t.send_file = Mock()
 
         # We need mock_open to return different contents for different paths
         file_contents = {
-            "/new/key.pub": "new-pub-key-content",
-            "/old/key.pub": "old-pub-key-content",
+            "/new/key.pub": new_public_key,
+            "/old/key.pub": old_public_key,
         }
 
         original_open = open
@@ -847,11 +903,12 @@ class TestTunnel:
         mock_subprocess.assert_called_once()
         assert mock_subprocess.call_args[0][0][2] == "ed25519"
 
-        # Verify run_command was called with updated authorized_keys
-        # It should contain other-key and new-pub-key-content, but not old-pub-key-content
+        # Authorized-key content is transferred as a file and never interpolated
+        # into a remote shell command.
+        t.send_file.assert_called_once()
         called_cmds = [call[0][0] for call in t.run_command.call_args_list]
-        assert any("new-pub-key-content" in cmd for cmd in called_cmds)
-        assert not any("old-pub-key-content" in cmd for cmd in called_cmds)
+        assert not any(new_public_key in cmd for cmd in called_cmds)
+        assert not any(old_public_key in cmd for cmd in called_cmds)
 
     @patch("paramiko.SSHConfig")
     @patch("paramiko.SSHClient")
@@ -875,15 +932,29 @@ class TestTunnel:
                 )
 
                 # Mock expanduser to simulate actual expansion
-                with patch(
-                    "os.path.expanduser",
-                    side_effect=lambda x: x.replace("~", "/home/user"),
+                fake_home = os.path.join(os.sep, "example-home")
+                with (
+                    patch(
+                        "os.path.expanduser",
+                        side_effect=lambda x: x.replace("~", fake_home),
+                    ),
+                    patch.object(
+                        _tunnel_module,
+                        "validate_identity_path",
+                        side_effect=lambda value: os.path.abspath(
+                            os.path.expanduser(value)
+                        ),
+                    ),
                 ):
                     t.connect()
 
                     # Verify they were expanded and passed resolved paths
-                    expected_key = os.path.abspath("/home/user/relative/key")
-                    expected_cert = os.path.abspath("/home/user/relative/cert")
+                    expected_key = os.path.abspath(
+                        os.path.join(fake_home, "relative", "key")
+                    )
+                    expected_cert = os.path.abspath(
+                        os.path.join(fake_home, "relative", "cert")
+                    )
 
                     mock_key.assert_called_once_with(expected_key)
                     mock_key.return_value.load_certificate.assert_called_once_with(
@@ -923,7 +994,7 @@ class TestTunnel:
 class TestTunnelStaticMethods:
     """Test Tunnel static methods for inventory operations."""
 
-    def test_execute_on_inventory(self):
+    def test_execute_on_inventory(self, monkeypatch):
         """Test executing function on inventory."""
         inventory_data = {
             "all": {
@@ -931,11 +1002,12 @@ class TestTunnelStaticMethods:
                     "host1": {
                         "ansible_host": "example1.com",
                         "ansible_user": "user1",
-                        "ansible_ssh_pass": "pass1",
+                        "ansible_ssh_pass_ref": "env://TEST_SSH_PASSWORD",
                     }
                 }
             }
         }
+        monkeypatch.setenv("TEST_SSH_PASSWORD", "runtime-only-test-value")
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump(inventory_data, f)
             inventory_path = f.name
@@ -974,14 +1046,16 @@ class TestTunnelStaticMethods:
             yaml.dump(inventory_data, f)
             inventory_path = f.name
         try:
-            with pytest.raises(ValueError, match="Group.*not found"):
+            with pytest.raises(
+                ValueError, match="configured inventory group is invalid"
+            ):
                 Tunnel.execute_on_inventory(
                     inventory_path, lambda x: None, group="invalid"
                 )
         finally:
             os.unlink(inventory_path)
 
-    def test_execute_on_inventory_parallel(self):
+    def test_execute_on_inventory_parallel(self, monkeypatch):
         """Test executing function on inventory in parallel."""
         inventory_data = {
             "all": {
@@ -989,16 +1063,18 @@ class TestTunnelStaticMethods:
                     "host1": {
                         "ansible_host": "example1.com",
                         "ansible_user": "user1",
-                        "ansible_ssh_pass": "pass1",
+                        "ansible_ssh_pass_ref": "env://TEST_SSH_PASSWORD_1",
                     },
                     "host2": {
                         "ansible_host": "example2.com",
                         "ansible_user": "user2",
-                        "ansible_ssh_pass": "pass2",
+                        "ansible_ssh_pass_ref": "env://TEST_SSH_PASSWORD_2",
                     },
                 }
             }
         }
+        monkeypatch.setenv("TEST_SSH_PASSWORD_1", "runtime-only-value-1")
+        monkeypatch.setenv("TEST_SSH_PASSWORD_2", "runtime-only-value-2")
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump(inventory_data, f)
             inventory_path = f.name
@@ -1015,25 +1091,29 @@ class TestTunnelStaticMethods:
         finally:
             os.unlink(inventory_path)
 
-    def test_execute_on_inventory_ansible_nested(self):
+    def test_execute_on_inventory_ansible_nested(self, monkeypatch):
         """Test executing function on Ansible-style nested inventory with children and variables."""
         inventory_data = {
             "all": {
                 "children": {
-                    "homelab": {
+                    "managed": {
                         "hosts": {
-                            "r510": {"ansible_host": "10.0.0.10"},
-                            "r710": {"ansible_host": "10.0.0.11"},
+                            "node-a": {"ansible_host": "node-a.example.invalid"},
+                            "node-b": {"ansible_host": "node-b.example.invalid"},
                         },
-                        "vars": {"ansible_ssh_pass": "group_pass"},
+                        "vars": {
+                            "ansible_ssh_pass_ref": "env://TEST_GROUP_SSH_PASSWORD"
+                        },
                     }
                 },
                 "vars": {
-                    "ansible_user": "genius",
-                    "ansible_ssh_private_key_file": "~/.ssh/id_rsa",
+                    "ansible_user": "operator",
+                    "ansible_ssh_private_key_file": "~/.ssh/id_ed25519",
+                    "ansible_ssh_known_hosts_file": "~/.ssh/known_hosts",
                 },
             }
         }
+        monkeypatch.setenv("TEST_GROUP_SSH_PASSWORD", "runtime-only-group-value")
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump(inventory_data, f)
             inventory_path = f.name
@@ -1043,14 +1123,18 @@ class TestTunnelStaticMethods:
             def test_func(host):
                 results.append(host)
 
-            Tunnel.execute_on_inventory(inventory_path, test_func, group="homelab")
+            Tunnel.execute_on_inventory(inventory_path, test_func, group="managed")
             assert len(results) == 2
 
             # Check variables inheritance
-            r510 = next(r for r in results if r["hostname"] == "10.0.0.10")
-            assert r510["username"] == "genius"
-            assert r510["password"] == "group_pass"
-            assert r510["key_path"] == "~/.ssh/id_rsa"
+            first = next(
+                r for r in results if r["hostname"] == "node-a.example.invalid"
+            )
+            assert first["username"] == "operator"
+            assert first["password_ref"] == "env://TEST_GROUP_SSH_PASSWORD"
+            assert "runtime-only-group-value" not in repr(first)
+            assert first["key_path"] == "~/.ssh/id_ed25519"
+            assert first["known_hosts_file"] == "~/.ssh/known_hosts"
 
             # Check that it works for group="all"
             all_results = []
@@ -1061,7 +1145,7 @@ class TestTunnelStaticMethods:
         finally:
             os.unlink(inventory_path)
 
-    def test_run_command_on_inventory(self):
+    def test_run_command_on_inventory(self, monkeypatch):
         """Test running command on inventory."""
         inventory_data = {
             "all": {
@@ -1069,11 +1153,12 @@ class TestTunnelStaticMethods:
                     "host1": {
                         "ansible_host": "example1.com",
                         "ansible_user": "user1",
-                        "ansible_ssh_pass": "pass1",
+                        "ansible_ssh_pass_ref": "env://TEST_SSH_PASSWORD",
                     }
                 }
             }
         }
+        monkeypatch.setenv("TEST_SSH_PASSWORD", "runtime-only-test-value")
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump(inventory_data, f)
             inventory_path = f.name
@@ -1087,7 +1172,7 @@ class TestTunnelStaticMethods:
         finally:
             os.unlink(inventory_path)
 
-    def test_setup_all_passwordless_ssh(self):
+    def test_setup_all_passwordless_ssh(self, monkeypatch):
         """Test setting up passwordless SSH for all hosts."""
         inventory_data = {
             "all": {
@@ -1095,11 +1180,12 @@ class TestTunnelStaticMethods:
                     "host1": {
                         "ansible_host": "example1.com",
                         "ansible_user": "user1",
-                        "ansible_ssh_pass": "pass1",
+                        "ansible_ssh_pass_ref": "env://TEST_SSH_PASSWORD",
                     }
                 }
             }
         }
+        monkeypatch.setenv("TEST_SSH_PASSWORD", "runtime-only-test-value")
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump(inventory_data, f)
             inventory_path = f.name
@@ -1108,7 +1194,7 @@ class TestTunnelStaticMethods:
                 mode="w", suffix=".pub", delete=False
             ) as f:
                 pub_key_path = f.name
-                f.write("ssh-rsa test_key")
+                f.write("ssh-rsa " + "A" * 64)
             try:
                 private_key_path = pub_key_path.replace(".pub", "")
                 with patch("os.path.exists", side_effect=lambda x: x == pub_key_path):
@@ -1134,7 +1220,7 @@ class TestTunnelStaticMethods:
         finally:
             os.unlink(inventory_path)
 
-    def test_copy_ssh_config_on_inventory(self):
+    def test_copy_ssh_config_on_inventory(self, monkeypatch):
         """Test copying SSH config to all hosts."""
         inventory_data = {
             "all": {
@@ -1142,11 +1228,12 @@ class TestTunnelStaticMethods:
                     "host1": {
                         "ansible_host": "example1.com",
                         "ansible_user": "user1",
-                        "ansible_ssh_pass": "pass1",
+                        "ansible_ssh_pass_ref": "env://TEST_SSH_PASSWORD",
                     }
                 }
             }
         }
+        monkeypatch.setenv("TEST_SSH_PASSWORD", "runtime-only-test-value")
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump(inventory_data, f)
             inventory_path = f.name
@@ -1165,7 +1252,7 @@ class TestTunnelStaticMethods:
         finally:
             os.unlink(inventory_path)
 
-    def test_rotate_ssh_key_on_inventory(self):
+    def test_rotate_ssh_key_on_inventory(self, monkeypatch):
         """Test rotating SSH keys for all hosts."""
         inventory_data = {
             "all": {
@@ -1173,11 +1260,12 @@ class TestTunnelStaticMethods:
                     "host1": {
                         "ansible_host": "example1.com",
                         "ansible_user": "user1",
-                        "ansible_ssh_pass": "pass1",
+                        "ansible_ssh_pass_ref": "env://TEST_SSH_PASSWORD",
                     }
                 }
             }
         }
+        monkeypatch.setenv("TEST_SSH_PASSWORD", "runtime-only-test-value")
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump(inventory_data, f)
             inventory_path = f.name
@@ -1189,7 +1277,7 @@ class TestTunnelStaticMethods:
         finally:
             os.unlink(inventory_path)
 
-    def test_send_file_on_inventory(self):
+    def test_send_file_on_inventory(self, monkeypatch):
         """Test sending file to all hosts."""
         inventory_data = {
             "all": {
@@ -1197,11 +1285,12 @@ class TestTunnelStaticMethods:
                     "host1": {
                         "ansible_host": "example1.com",
                         "ansible_user": "user1",
-                        "ansible_ssh_pass": "pass1",
+                        "ansible_ssh_pass_ref": "env://TEST_SSH_PASSWORD",
                     }
                 }
             }
         }
+        monkeypatch.setenv("TEST_SSH_PASSWORD", "runtime-only-test-value")
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump(inventory_data, f)
             inventory_path = f.name
@@ -1227,14 +1316,14 @@ class TestTunnelStaticMethods:
             yaml.dump(inventory_data, f)
             inventory_path = f.name
         try:
-            with pytest.raises(ValueError, match="Local file does not exist"):
+            with pytest.raises(ValueError, match="Local upload source does not exist"):
                 Tunnel.send_file_on_inventory(
                     inventory_path, "/nonexistent/file", "/remote/path"
                 )
         finally:
             os.unlink(inventory_path)
 
-    def test_receive_file_on_inventory(self):
+    def test_receive_file_on_inventory(self, monkeypatch):
         """Test receiving file from all hosts."""
         inventory_data = {
             "all": {
@@ -1242,11 +1331,12 @@ class TestTunnelStaticMethods:
                     "host1": {
                         "ansible_host": "example1.com",
                         "ansible_user": "user1",
-                        "ansible_ssh_pass": "pass1",
+                        "ansible_ssh_pass_ref": "env://TEST_SSH_PASSWORD",
                     }
                 }
             }
         }
+        monkeypatch.setenv("TEST_SSH_PASSWORD", "runtime-only-test-value")
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump(inventory_data, f)
             inventory_path = f.name
@@ -1282,23 +1372,37 @@ class TestAsyncTunnelManager:
 
     @pytest.mark.asyncio
     @patch("asyncssh.connect")
-    async def test_async_run_command_on_host_agent_and_tokens(self, mock_connect):
+    async def test_async_run_command_on_host_agent_and_tokens(
+        self, mock_connect, tmp_path
+    ):
         """Test async connect with path expansion, tokens, and agent fallback."""
         from tunnel_manager.async_tunnel import AsyncTunnelManager
         from tunnel_manager.models import HostConfig
 
         # Mock async context manager for asyncssh.connect
         mock_conn = Mock()
-        mock_result = Mock()
-        mock_result.exit_status = 0
-        mock_result.stdout = "success_output"
-        mock_result.stderr = ""
 
-        # Async mock conn.run
-        async def mock_run(cmd):
-            return mock_result
+        class AsyncStream:
+            def __init__(self, payload):
+                self.payload = payload
 
-        mock_conn.run = mock_run
+            async def read(self, _size):
+                payload, self.payload = self.payload, b""
+                return payload
+
+        process = Mock(exit_status=0)
+        process.stdout = AsyncStream(b"success_output")
+        process.stderr = AsyncStream(b"")
+
+        async def wait():
+            return process
+
+        process.wait = wait
+
+        async def create_process(_command, **_kwargs):
+            return process
+
+        mock_conn.create_process = create_process
 
         class AsyncContextManagerMock:
             async def __aenter__(self):
@@ -1308,6 +1412,11 @@ class TestAsyncTunnelManager:
                 pass
 
         mock_connect.return_value = AsyncContextManagerMock()
+        known_hosts = tmp_path / "known_hosts"
+        known_hosts.write_text(
+            "example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFake\n"
+        )
+        known_hosts.chmod(0o600)
 
         host_config = HostConfig(
             hostname="example.com",
@@ -1315,11 +1424,13 @@ class TestAsyncTunnelManager:
             port=2222,
             identity_file="~/relative/key",
             proxy_command="tsh proxy ssh %r@%h:%p",
+            known_hosts_file=str(known_hosts),
             extra_config={"certificate_file": "~/relative/cert"},
         )
 
+        fake_home = os.path.join(os.sep, "example-home")
         with patch(
-            "os.path.expanduser", side_effect=lambda x: x.replace("~", "/home/user")
+            "os.path.expanduser", side_effect=lambda x: x.replace("~", fake_home)
         ):
             with patch("shutil.which", return_value="/usr/bin/tsh"):
                 res = await AsyncTunnelManager.async_run_command_on_host(
@@ -1331,8 +1442,12 @@ class TestAsyncTunnelManager:
                 assert res.stdout == "success_output"
 
                 # Verify connect was called with expanded and resolved paths/tokens
-                expected_key = os.path.abspath("/home/user/relative/key")
-                expected_cert = os.path.abspath("/home/user/relative/cert")
+                expected_key = os.path.abspath(
+                    os.path.join(fake_home, "relative", "key")
+                )
+                expected_cert = os.path.abspath(
+                    os.path.join(fake_home, "relative", "cert")
+                )
                 expected_proxy = "/usr/bin/tsh proxy ssh testuser@example.com:2222"
 
                 call_kwargs = mock_connect.call_args[1]
@@ -1340,23 +1455,21 @@ class TestAsyncTunnelManager:
                 assert call_kwargs["port"] == 2222
                 assert call_kwargs["username"] == "testuser"
                 assert call_kwargs["client_keys"] == [(expected_key, expected_cert)]
-                assert call_kwargs["proxy_command"] == expected_proxy
+                assert call_kwargs["proxy_command"] == tuple(expected_proxy.split())
 
 
 class TestSetupFullMeshSsh:
     """Test full-mesh SSH bootstrap functionality."""
 
     @patch("tunnel_manager.tunnel_manager.Tunnel")
-    def test_setup_full_mesh_ssh_success(self, mock_tunnel_cls):
+    def test_setup_full_mesh_ssh_success(self, mock_tunnel_cls, monkeypatch):
         """Test setup_full_mesh_ssh runs successfully for a mix of Linux and Windows targets."""
         # 1. Custom mock open to allow actual YAML files to be read normally while mocking SSH key reads
         original_open = open
 
         def custom_open(file, mode="r", *args, **kwargs):
             if "id_ed25519" in str(file):
-                return mock_open(
-                    read_data="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPubkey local_user@local_host"
-                )()
+                return mock_open(read_data="ssh-ed25519 " + "A" * 64)()
             return original_open(file, mode, *args, **kwargs)
 
         # 2. Mock inventory data
@@ -1364,18 +1477,20 @@ class TestSetupFullMeshSsh:
             "all": {
                 "hosts": {
                     "node1": {
-                        "ansible_host": "192.168.1.10",
+                        "ansible_host": "192.0.2.10",
                         "ansible_user": "root",
-                        "ansible_ssh_pass": "secret1",
+                        "ansible_ssh_pass_ref": "env://TEST_SSH_PASSWORD_1",
                     },
                     "node2": {
-                        "ansible_host": "192.168.1.20",
+                        "ansible_host": "192.0.2.20",
                         "ansible_user": "Administrator",
-                        "ansible_ssh_pass": "secret2",
+                        "ansible_ssh_pass_ref": "env://TEST_SSH_PASSWORD_2",
                     },
                 }
             }
         }
+        monkeypatch.setenv("TEST_SSH_PASSWORD_1", "runtime-only-value-1")
+        monkeypatch.setenv("TEST_SSH_PASSWORD_2", "runtime-only-value-2")
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump(inventory_data, f)
@@ -1386,10 +1501,13 @@ class TestSetupFullMeshSsh:
             mock_t1 = Mock()  # node1 (Linux)
             mock_t2 = Mock()  # node2 (Windows)
 
-            def tunnel_init(remote_host, username, password=None, **kwargs):
-                if remote_host == "192.168.1.10":
+            def tunnel_init(remote_host=None, username=None, password=None, **kwargs):
+                config = kwargs.get("config")
+                if config is not None:
+                    remote_host = config.hostname
+                if remote_host == "192.0.2.10":
                     return mock_t1
-                elif remote_host == "192.168.1.20":
+                elif remote_host == "192.0.2.20":
                     return mock_t2
                 raise ValueError("Unexpected host")
 
@@ -1402,11 +1520,11 @@ class TestSetupFullMeshSsh:
                     return CommandResult(success=True, stdout="Linux\n")
                 elif "id_ed25519.pub" in cmd:
                     return CommandResult(
-                        success=True, stdout="ssh-ed25519 AAAAnode1pub root@node1\n"
+                        success=True, stdout="ssh-ed25519 " + "B" * 64 + "\n"
                     )
                 elif "SSH_CONNECTION" in cmd:
                     return CommandResult(
-                        success=True, stdout="192.168.1.5 54321 192.168.1.10 22\n"
+                        success=True, stdout="192.0.2.5 54321 192.0.2.10 22\n"
                     )
                 elif "authorized_keys" in cmd and "cat" in cmd:
                     return CommandResult(success=True, stdout="")
@@ -1423,11 +1541,11 @@ class TestSetupFullMeshSsh:
                 elif "id_ed25519.pub" in cmd:
                     return CommandResult(
                         success=True,
-                        stdout="ssh-ed25519 AAAAnode2pub administrator@node2\n",
+                        stdout="ssh-ed25519 " + "C" * 64 + "\n",
                     )
                 elif "SSH_CONNECTION" in cmd:
                     return CommandResult(
-                        success=True, stdout="192.168.1.5 54322 192.168.1.20 22\n"
+                        success=True, stdout="192.0.2.5 54322 192.0.2.20 22\n"
                     )
                 elif "authorized_keys" in cmd and "type" in cmd:
                     return CommandResult(success=True, stdout="")
@@ -1453,10 +1571,10 @@ class TestSetupFullMeshSsh:
             assert len(result["errors"]) == 0
 
             host_map = {r["hostname"]: r for r in result["host_results"]}
-            assert "192.168.1.10" in host_map
-            assert "192.168.1.20" in host_map
-            assert host_map["192.168.1.10"]["status"] == "success"
-            assert host_map["192.168.1.20"]["status"] == "success"
+            assert "192.0.2.10" in host_map
+            assert "192.0.2.20" in host_map
+            assert host_map["192.0.2.10"]["status"] == "success"
+            assert host_map["192.0.2.20"]["status"] == "success"
 
         finally:
             os.unlink(inventory_path)

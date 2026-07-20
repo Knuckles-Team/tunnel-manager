@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `remove_host` now prunes removed aliases from the Ansible-format inventory.
   `save_inventory()` merged `self.hosts` into the existing
-  `all.children.homelab.hosts` map but never deleted aliases removed from
+  `all.children.<group>.hosts` map but never deleted aliases removed from
   `self.hosts`, so `remove_host()` left the host in `inventory.yaml`. Aliases
   absent from `self.hosts` are now pruned from the file before writing;
   add/update behaviour and the Ansible nested format/vars are preserved.

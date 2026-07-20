@@ -22,16 +22,17 @@
 # Group-level `vars` apply to every host in the group; per-host keys override them.
 all:
   vars:
-    ansible_user: genius                       # default SSH user for all hosts
+    ansible_user: operator                     # default SSH user for all hosts
     ansible_ssh_private_key_file: ~/.ssh/id_rsa # default key for all hosts
+    ansible_ssh_known_hosts_file: ~/.ssh/known_hosts # verified server keys
     ansible_port: 22
   hosts:
     # A host with everything inherited from `all.vars`:
-    r820:
-      ansible_host: 10.0.0.13
+    edge-node:
+      ansible_host: 192.0.2.13
     # A host overriding the user, port, and key:
     gpu-node:
-      ansible_host: 10.0.0.16
+      ansible_host: 192.0.2.16
       ansible_user: ml
       ansible_port: 2222
       ansible_ssh_private_key_file: ~/.ssh/gpu_ed25519
@@ -41,26 +42,29 @@ all:
         ansible_user: storageadmin
       hosts:
         nas:
-          ansible_host: 10.0.0.10
+          ansible_host: 192.0.2.10
         backup:
-          ansible_host: 10.0.0.11
+          ansible_host: 192.0.2.11
           # Password auth instead of a key (use sparingly; prefer keys):
-          ansible_ssh_pass: "CHANGE_ME"
+          ansible_ssh_pass_ref: "vault://ssh/storage/password"
 
 # Recognized per-host keys (Ansible aliases on the left, native on the right —
 # either works): ansible_host|hostname, ansible_user|user, ansible_port|port,
-# ansible_ssh_private_key_file|identity_file|key_path, ansible_ssh_pass|password,
+# ansible_ssh_private_key_file|identity_file|key_path,
+# ansible_ssh_pass_ref|password_ref,
+# ansible_ssh_known_hosts_file|known_hosts_file,
 # ansible_ssh_common_args|proxy_command.
 
 # --- Flat layout (alternative) ---------------------------------------
 # Top-level keys are host aliases; no `all:` wrapper. Uncomment to use instead:
 #
-# r820:
-#   hostname: 10.0.0.13
-#   user: genius
+# edge-node:
+#   hostname: 192.0.2.13
+#   user: operator
 #   port: 22
 #   identity_file: ~/.ssh/id_rsa
+#   known_hosts_file: ~/.ssh/known_hosts
 # gpu-node:
-#   hostname: 10.0.0.16
+#   hostname: 192.0.2.16
 #   user: ml
 #   key_path: ~/.ssh/gpu_ed25519

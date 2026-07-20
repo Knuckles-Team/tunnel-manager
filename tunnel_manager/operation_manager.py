@@ -98,7 +98,7 @@ class OperationManager:
             start_time=datetime.now(),
         )
         self.operations[operation_id] = operation
-        self.logger.info(f"Created operation {operation_id} of type {operation_type}")
+        self.logger.info("Created managed operation: operation_type=%s", operation_type)
         return operation_id
 
     def update_operation_progress(
@@ -125,11 +125,11 @@ class OperationManager:
             True if update successful, False if operation not found or cancelled
         """
         if operation_id not in self.operations:
-            self.logger.warning(f"Operation {operation_id} not found")
+            self.logger.warning("Managed operation was not found")
             return False
 
         if operation_id in self.cancellation_requests:
-            self.logger.info(f"Operation {operation_id} marked for cancellation")
+            self.logger.info("Managed operation marked for cancellation")
             return False
 
         operation = self.operations[operation_id]
@@ -162,7 +162,7 @@ class OperationManager:
             True if successful, False if operation not found
         """
         if operation_id not in self.operations:
-            self.logger.warning(f"Operation {operation_id} not found")
+            self.logger.warning("Managed operation was not found")
             return False
 
         operation = self.operations[operation_id]
@@ -173,7 +173,7 @@ class OperationManager:
         if operation_id in self.cancellation_requests:
             self.cancellation_requests.remove(operation_id)
 
-        self.logger.info(f"Completed operation {operation_id} with status {status}")
+        self.logger.info("Managed operation completed: status=%s", status)
         return True
 
     def request_cancellation(self, operation_id: str) -> bool:
@@ -187,16 +187,16 @@ class OperationManager:
             True if cancellation requested, False if operation not found or already completed
         """
         if operation_id not in self.operations:
-            self.logger.warning(f"Operation {operation_id} not found")
+            self.logger.warning("Managed operation was not found")
             return False
 
         operation = self.operations[operation_id]
         if operation.status in ["completed", "failed", "cancelled"]:
-            self.logger.warning(f"Operation {operation_id} already {operation.status}")
+            self.logger.warning("Managed operation is already terminal")
             return False
 
         self.cancellation_requests.add(operation_id)
-        self.logger.info(f"Requested cancellation for operation {operation_id}")
+        self.logger.info("Requested managed-operation cancellation")
         return True
 
     def get_operation_status(self, operation_id: str) -> dict | None:
@@ -317,7 +317,7 @@ class OperationManager:
         )
 
         self.resource_history[operation_id].append(metrics)
-        self.logger.debug(f"Recorded resource metrics for operation {operation_id}")
+        self.logger.debug("Recorded managed-operation resource metrics")
 
     def get_resource_metrics(self, operation_id: str) -> list[dict]:
         """
@@ -367,7 +367,7 @@ class OperationManager:
         )
 
         self.sessions[host][session_id] = session_info
-        self.logger.info(f"Registered session {session_id} for host {host}")
+        self.logger.info("Registered managed host session")
         return session_id
 
     def update_session_usage(self, session_id: str, host: str) -> bool:
@@ -382,7 +382,7 @@ class OperationManager:
             True if successful, False if session not found
         """
         if host not in self.sessions or session_id not in self.sessions[host]:
-            self.logger.warning(f"Session {session_id} not found for host {host}")
+            self.logger.warning("Managed host session was not found")
             return False
 
         session = self.sessions[host][session_id]
@@ -420,7 +420,7 @@ class OperationManager:
             True if successful, False if session not found
         """
         if host not in self.sessions or session_id not in self.sessions[host]:
-            self.logger.warning(f"Session {session_id} not found for host {host}")
+            self.logger.warning("Managed host session was not found")
             return False
 
         session = self.sessions[host][session_id]
@@ -430,7 +430,7 @@ class OperationManager:
                 session.connection.close()
 
         del self.sessions[host][session_id]
-        self.logger.info(f"Closed session {session_id} for host {host}")
+        self.logger.info("Closed managed host session")
         return True
 
     def list_active_sessions(self) -> dict:

@@ -1,0 +1,8 @@
+{
+  "algorithm": "agent-utilities:mcp-tool-schema-compat:v1",
+  "connector": "tunnel-manager",
+  "schema_version": "1",
+  "tools": {
+    "tm_hosts": "9c925f0e490db26e1742dcf426e9da9370b42e959da96341e370e586dcb1d988"
+  }
+}

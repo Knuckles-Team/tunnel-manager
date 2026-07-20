@@ -1,0 +1,6 @@
+{
+  "connector": "tunnel-manager",
+  "current_ontology_source": "tunnel",
+  "migrations": [],
+  "schema_version": "1"
+}

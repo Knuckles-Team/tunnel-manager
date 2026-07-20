@@ -5,10 +5,10 @@ Auto-generated from mcp_server.py during ecosystem standardization.
 
 import logging
 
-from agent_utilities.mcp_utilities import (
+from agent_utilities.mcp.concurrency import run_blocking
+from agent_utilities.mcp.context_helpers import (
     ctx_confirm_destructive,
     ctx_progress,
-    run_blocking,
 )
 from fastmcp import Context, FastMCP
 from pydantic import Field
@@ -37,7 +37,12 @@ def register_host_tools(mcp: FastMCP):
         user: str = Field(default="", description="Username."),
         port: int = Field(default=22, description="SSH port."),
         identity_file: str = Field(default="", description="Path to private key."),
-        password: str = Field(default="", description="Password (if no key)."),
+        password_ref: str = Field(
+            default="", description="Secret-manager reference for an SSH password."
+        ),
+        known_hosts_file: str = Field(
+            default="", description="Verified SSH server-key trust store path."
+        ),
         proxy_command: str = Field(default="", description="Proxy command."),
         ctx: Context = Field(description="MCP context.", default=None),
     ) -> dict:
@@ -59,10 +64,11 @@ def register_host_tools(mcp: FastMCP):
                 user=user,
                 port=port,
                 identity_file=identity_file or None,
-                password=password or None,
+                password_ref=password_ref or None,
+                known_hosts_file=known_hosts_file or None,
                 proxy_command=proxy_command or None,
             )
-            return {"status": "success", "message": f"Host '{alias}' added."}
+            return {"status": "success", "message": "Host added."}
         elif action == "remove":
             if not alias:
                 return ResponseBuilder.build(
@@ -72,7 +78,7 @@ def register_host_tools(mcp: FastMCP):
                 return {"status": "cancelled", "message": "Operation cancelled by user"}
             await ctx_progress(ctx, 0, 100)
             await run_blocking(host_manager.remove_host, alias)
-            return {"status": "success", "message": f"Host '{alias}' removed."}
+            return {"status": "success", "message": "Host removed."}
         else:
             return ResponseBuilder.build(
                 400,
