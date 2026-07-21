@@ -1,0 +1,20 @@
+schema_version: '1'
+connector: tunnel-manager
+ontology_source: tunnel
+sync:
+- preset: tunnel-hosts
+  server: tunnel-manager-mcp
+  tool: tm_hosts
+  action: list
+  records_path: hosts
+  id_field: source_key
+  title_field: hostname
+  text_field: hostname
+  updated_field: null
+  doc_type: Host
+  tool_schema_sha256: 9c925f0e490db26e1742dcf426e9da9370b42e959da96341e370e586dcb1d988
+governance:
+  default_acl: quarantine
+  identity: opaque-reference
+  tenant: required-at-materialization
+  provenance: required-at-materialization

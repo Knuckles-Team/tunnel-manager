@@ -5,11 +5,13 @@ Auto-generated from mcp_server.py during ecosystem standardization.
 
 import logging
 
-from agent_utilities.mcp_utilities import ctx_log, run_blocking
+from agent_utilities.mcp.concurrency import run_blocking
+from agent_utilities.mcp.context_helpers import ctx_log
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
 from tunnel_manager.advanced_file_manager import AdvancedFileManager
+from tunnel_manager.connection_security import resolve_secret_ref
 from tunnel_manager.mcp_server import ResponseBuilder
 from tunnel_manager.tunnel_manager import Tunnel
 
@@ -34,7 +36,9 @@ def register_file_tools(mcp: FastMCP):
         ),
         remote_host: str = Field(default="", description="Remote host."),
         username: str = Field(default="", description="SSH username."),
-        password: str = Field(default="", description="SSH password."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
         identity_file: str = Field(default="", description="SSH identity file path."),
         operation: str = Field(
             default="",
@@ -88,6 +92,15 @@ def register_file_tools(mcp: FastMCP):
         ctx: Context = Field(description="MCP context.", default=None),
     ) -> dict:
         """Advanced file operations on remote hosts."""
+        try:
+            password = resolve_secret_ref(password_ref)
+        except ValueError:
+            return ResponseBuilder.build(
+                400,
+                "Invalid SSH credential configuration",
+                {"credential_ref_configured": bool(password_ref)},
+                errors=["A supported runtime secret reference is required"],
+            )
         if action == "recursive_ops":
             if not remote_host or not operation or not source:
                 return ResponseBuilder.build(
@@ -125,12 +138,12 @@ def register_file_tools(mcp: FastMCP):
                     errors=result.get("errors", []),
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Recursive file ops fail: {e}")
+                ctx_log(ctx, logger, "error", "Recursive file ops fail")
                 return ResponseBuilder.build(
                     500,
                     "Recursive file ops fail",
                     {"host": remote_host, "operation": operation},
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "content_search":
@@ -164,12 +177,12 @@ def register_file_tools(mcp: FastMCP):
                     error=result.get("error", ""),
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"File content search fail: {e}")
+                ctx_log(ctx, logger, "error", "File content search fail")
                 return ResponseBuilder.build(
                     500,
                     "File content search fail",
                     {"host": remote_host, "pattern": pattern},
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "watch":
@@ -198,12 +211,12 @@ def register_file_tools(mcp: FastMCP):
                     error=result.get("error", ""),
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"File watch fail: {e}")
+                ctx_log(ctx, logger, "error", "File watch fail")
                 return ResponseBuilder.build(
                     500,
                     "File watch fail",
                     {"host": remote_host, "watch_paths": watch_paths},
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "diff_compare":
@@ -237,12 +250,12 @@ def register_file_tools(mcp: FastMCP):
                     error=result.get("error", ""),
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"File diff fail: {e}")
+                ctx_log(ctx, logger, "error", "File diff fail")
                 return ResponseBuilder.build(
                     500,
                     "File diff fail",
                     {"file": file_path, "host1": host1, "host2": host2},
-                    str(e),
+                    type(e).__name__,
                 )
 
         elif action == "backup":
@@ -276,12 +289,12 @@ def register_file_tools(mcp: FastMCP):
                     error=result.get("error", ""),
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", f"Backup fail: {e}")
+                ctx_log(ctx, logger, "error", "Backup fail")
                 return ResponseBuilder.build(
                     500,
                     "Backup fail",
                     {"host": remote_host, "backup_paths": backup_paths},
-                    str(e),
+                    type(e).__name__,
                 )
         else:
             return ResponseBuilder.build(

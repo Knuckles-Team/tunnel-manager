@@ -9,18 +9,18 @@ description = "Create SSH Tunnels to your remote hosts and host as an MCP Server
 readme = "README.md"
 classifiers = [ "Development Status :: 5 - Production/Stable", "License :: Public Domain", "Environment :: Console", "Operating System :: POSIX :: Linux", "Programming Language :: Python :: 3",]
 requires-python = ">=3.11, <3.15"
-dependencies = [ "agent-utilities>=1.0.0", "fastmcp>=3.0.0b1", "paramiko>=4.0.0", "asyncssh>=2.14.0",]
+dependencies = [ "agent-utilities>=1.27.1,<2.0.0", "fastmcp>=3.0.0b1", "paramiko>=4.0.0", "asyncssh>=2.14.0",]
 [[project.authors]]
-name = "Audel Rouhi"
-email = "knucklessg1@gmail.com"
+name = "Project Maintainers"
+email = "maintainers@users.noreply.github.com"
 
 [project.license]
 text = "MIT"
 
 [project.optional-dependencies]
-mcp = [ "agent-utilities[mcp]>=1.0.0",]
-agent = [ "agent-utilities[agent,logfire]>=1.0.0",]
-all = [ "agent-utilities[mcp,agent,logfire]>=1.0.0",]
+mcp = [ "agent-utilities[mcp]>=1.27.1,<2.0.0",]
+agent = [ "agent-utilities[agent-runtime,logfire]>=1.27.1,<2.0.0",]
+all = [ "agent-utilities[mcp,agent-runtime,logfire]>=1.27.1,<2.0.0",]
 test = [
     "pytest-xdist>=3.6.0", "pytest", "pytest-asyncio", "pytest-cov",]
 
@@ -30,6 +30,7 @@ tunnel-manager-mcp = "tunnel_manager.mcp_server:mcp_server"
 tunnel-manager-agent = "tunnel_manager.agent_server:agent_server"
 tunnel-manager-health = "tunnel_manager.net_health:main_sample"
 tunnel-manager-health-derive = "tunnel_manager.net_health:main_derive"
+tunnel-manager-doctor = "tunnel_manager.doctor:main"
 
 [project.entry-points."agent_utilities.skill_providers"]
 tunnel-manager = "tunnel_manager.skills"

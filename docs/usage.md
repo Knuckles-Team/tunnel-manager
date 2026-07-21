@@ -39,7 +39,7 @@ from tunnel_manager.tunnel_manager import HostManager, Tunnel
 hosts = HostManager()
 hosts.add_host(
     alias="db-01",
-    hostname="10.0.0.21",
+    hostname="192.0.2.21",
     user="ops",
     identity_file="~/.ssh/id_ed25519",
 )

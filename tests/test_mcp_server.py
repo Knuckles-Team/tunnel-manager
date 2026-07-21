@@ -37,8 +37,9 @@ class TestTmInventoryTimeout:
             patch(
                 "tunnel_manager.mcp_server.to_boolean",
                 side_effect=lambda x: x == "True" or x is True,
+                create=True,
             ),
-            patch("tunnel_manager.mcp_server.to_integer", side_effect=int),
+            patch("tunnel_manager.mcp_server.to_integer", side_effect=int, create=True),
         ):
             mcp = MagicMock()
 
@@ -72,8 +73,9 @@ class TestTmInventoryTimeout:
             patch(
                 "tunnel_manager.mcp_server.to_boolean",
                 side_effect=lambda x: x == "True" or x is True,
+                create=True,
             ),
-            patch("tunnel_manager.mcp_server.to_integer", side_effect=int),
+            patch("tunnel_manager.mcp_server.to_integer", side_effect=int, create=True),
         ):
             mcp = MagicMock()
 
@@ -93,7 +95,7 @@ class TestTmInventoryTimeout:
 
             mock_hosts = [
                 {
-                    "hostname": "10.0.0.17",
+                    "hostname": "192.0.2.17",
                     "username": "testuser",
                     "key_path": "/fake/key",
                 }
@@ -136,12 +138,12 @@ class TestTmInventoryTimeout:
                 )
 
                 # Verify that Tunnel was instantiated with correctly passed params
-                mock_tunnel_cls.assert_called_once_with(
-                    remote_host="10.0.0.17",
-                    username="testuser",
-                    password=None,
-                    identity_file="/fake/key",
-                )
+                mock_tunnel_cls.assert_called_once()
+                config = mock_tunnel_cls.call_args.kwargs["config"]
+                assert config.hostname == "192.0.2.17"
+                assert config.user == "testuser"
+                assert config.password_ref is None
+                assert config.identity_file == "/fake/key"
 
                 # Verify that run_command was called with the correct custom timeout
                 mock_tunnel.run_command.assert_called_once_with("uptime", timeout=45)

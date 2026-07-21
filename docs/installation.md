@@ -6,9 +6,10 @@ path that matches how you want to run it.
 ## Requirements
 
 - **Python 3.11 – 3.14**.
-- SSH access to the hosts you intend to manage, and an SSH identity (key or password)
-  available to the process — see [Deployment](deployment.md#configuration-environment)
-  for the environment configuration.
+- SSH access to the hosts you intend to manage, an independently verified
+  `known_hosts` file, and either an SSH key/agent identity or an opaque runtime
+  password reference. Literal password configuration is rejected — see
+  [Deployment](deployment.md#configuration-environment).
 
 ## From PyPI (recommended)
 
@@ -24,7 +25,7 @@ interface you need:
 | Extra | Install | Pulls in |
 |---|---|---|
 | `mcp` | `pip install "tunnel-manager[mcp]"` | FastMCP MCP-server runtime (`agent-utilities[mcp]`) |
-| `agent` | `pip install "tunnel-manager[agent]"` | Pydantic-AI agent + Logfire tracing (`agent-utilities[agent,logfire]`) |
+| `agent` | `pip install "tunnel-manager[agent]"` | Pydantic-AI agent + Logfire tracing (`agent-utilities[agent-runtime,logfire]`) |
 | `all` | `pip install "tunnel-manager[all]"` | The MCP server, the agent, and tracing |
 | `test` | `pip install "tunnel-manager[test]"` | `pytest`, `pytest-asyncio`, `pytest-cov`, `pytest-xdist` |
 
@@ -50,16 +51,16 @@ uv run tunnel-manager-mcp
 
 ## Prebuilt Docker image
 
-A multi-stage, slim image is published on every release (entrypoint
+A multi-stage runtime image is published on every release (entrypoint
 `tunnel-manager-mcp`):
 
 ```bash
-docker pull knucklessg1/tunnel-manager:latest
+docker pull example/tunnel-manager@sha256:<digest>
 
 docker run --rm -i \
   -e TUNNEL_IDENTITY_FILE=/root/.ssh/id_ed25519 \
   -v "$HOME/.ssh:/root/.ssh:ro" \
-  knucklessg1/tunnel-manager:latest        # stdio transport (default)
+  example/tunnel-manager@sha256:<digest>        # stdio transport (default)
 ```
 
 For an HTTP server with a published port, and to run the agent alongside it, see

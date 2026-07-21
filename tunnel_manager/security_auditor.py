@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from tunnel_manager.connection_security import ConnectionPolicyError
 from tunnel_manager.tunnel_manager import Tunnel
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,16 @@ class SecurityAuditor:
         self.tunnel = tunnel
         self.logger = logging.getLogger(__name__)
 
+    def _run(self, command: str) -> tuple[str, str, int]:
+        """Normalize bounded Tunnel results for the static audit commands."""
+
+        result = self.tunnel.run_command(command)
+        if hasattr(result, "success"):
+            return result.stdout, result.stderr, 0 if result.success else 1
+        if isinstance(result, (tuple, list)) and len(result) == 3:
+            return str(result[0]), str(result[1]), int(result[2])
+        raise ConnectionPolicyError("Managed remote command failed")
+
     def security_audit(self, scope: list[str] | None = None) -> dict:
         """
         Perform comprehensive security assessment.
@@ -112,6 +123,21 @@ class SecurityAuditor:
                 "services",
                 "logs",
             ]
+            supported_scope = {
+                "system_updates",
+                "ssh_config",
+                "firewall",
+                "user_accounts",
+                "file_permissions",
+                "services",
+                "logs",
+            }
+            if (
+                not isinstance(scope, list)
+                or not 1 <= len(scope) <= len(supported_scope)
+                or any(item not in supported_scope for item in scope)
+            ):
+                raise ConnectionPolicyError("Invalid security audit scope")
 
             findings = []
             severity_counts = {
@@ -133,8 +159,8 @@ class SecurityAuditor:
                         severity_counts[f["severity"]] = (
                             severity_counts.get(f["severity"], 0) + 1
                         )
-                except Exception as e:
-                    audit_errors.append(f"System updates check failed: {e}")
+                except Exception:
+                    audit_errors.append("System updates check failed")
 
             # SSH configuration check
             if "ssh_config" in scope:
@@ -145,8 +171,8 @@ class SecurityAuditor:
                         severity_counts[f["severity"]] = (
                             severity_counts.get(f["severity"], 0) + 1
                         )
-                except Exception as e:
-                    audit_errors.append(f"SSH config check failed: {e}")
+                except Exception:
+                    audit_errors.append("SSH config check failed")
 
             # Firewall check
             if "firewall" in scope:
@@ -157,8 +183,8 @@ class SecurityAuditor:
                         severity_counts[f["severity"]] = (
                             severity_counts.get(f["severity"], 0) + 1
                         )
-                except Exception as e:
-                    audit_errors.append(f"Firewall check failed: {e}")
+                except Exception:
+                    audit_errors.append("Firewall check failed")
 
             # User accounts check
             if "user_accounts" in scope:
@@ -169,8 +195,8 @@ class SecurityAuditor:
                         severity_counts[f["severity"]] = (
                             severity_counts.get(f["severity"], 0) + 1
                         )
-                except Exception as e:
-                    audit_errors.append(f"User accounts check failed: {e}")
+                except Exception:
+                    audit_errors.append("User accounts check failed")
 
             # File permissions check
             if "file_permissions" in scope:
@@ -181,8 +207,8 @@ class SecurityAuditor:
                         severity_counts[f["severity"]] = (
                             severity_counts.get(f["severity"], 0) + 1
                         )
-                except Exception as e:
-                    audit_errors.append(f"File permissions check failed: {e}")
+                except Exception:
+                    audit_errors.append("File permissions check failed")
 
             # Services check
             if "services" in scope:
@@ -193,8 +219,8 @@ class SecurityAuditor:
                         severity_counts[f["severity"]] = (
                             severity_counts.get(f["severity"], 0) + 1
                         )
-                except Exception as e:
-                    audit_errors.append(f"Services check failed: {e}")
+                except Exception:
+                    audit_errors.append("Services check failed")
 
             # Log monitoring check
             if "logs" in scope:
@@ -205,8 +231,8 @@ class SecurityAuditor:
                         severity_counts[f["severity"]] = (
                             severity_counts.get(f["severity"], 0) + 1
                         )
-                except Exception as e:
-                    audit_errors.append(f"Logs check failed: {e}")
+                except Exception:
+                    audit_errors.append("Logs check failed")
 
             # Generate recommendations
             recommendations = self._generate_recommendations(findings)
@@ -230,7 +256,10 @@ class SecurityAuditor:
             return result
 
         except Exception as e:
-            self.logger.error(f"Failed to perform security audit: {e}")
+            self.logger.error(
+                "Failed to perform security audit: error_type=%s",
+                type(e).__name__,
+            )
             return {
                 "audit_type": "comprehensive",
                 "host": self.tunnel.remote_host,
@@ -240,13 +269,13 @@ class SecurityAuditor:
                 "score": 0,
                 "recommendations": [],
                 "success": False,
-                "error": str(e),
+                "error": "Operation failed",
             }
 
     def _check_system_updates(self) -> list:
         """Check for pending system updates."""
         findings = []
-        stdout, stderr, exit_code = self.tunnel.run_command(
+        stdout, stderr, exit_code = self._run(
             "apt list --upgradable 2>/dev/null | wc -l"
         )
         if exit_code == 0:
@@ -265,9 +294,7 @@ class SecurityAuditor:
     def _check_ssh_config(self) -> list:
         """Check SSH configuration for security issues."""
         findings = []
-        stdout, stderr, exit_code = self.tunnel.run_command(
-            "cat /etc/ssh/sshd_config 2>/dev/null"
-        )
+        stdout, stderr, exit_code = self._run("cat /etc/ssh/sshd_config 2>/dev/null")
         if exit_code == 0:
             config = stdout
             if "PermitRootLogin yes" in config:
@@ -302,7 +329,7 @@ class SecurityAuditor:
     def _check_firewall(self) -> list:
         """Check firewall configuration."""
         findings = []
-        stdout, stderr, exit_code = self.tunnel.run_command("ufw status 2>/dev/null")
+        stdout, stderr, exit_code = self._run("ufw status 2>/dev/null")
         if exit_code == 0:
             if "inactive" in stdout:
                 findings.append(
@@ -315,9 +342,7 @@ class SecurityAuditor:
                 )
         else:
             # Try iptables
-            stdout, stderr, exit_code = self.tunnel.run_command(
-                "iptables -L -n 2>/dev/null"
-            )
+            stdout, stderr, exit_code = self._run("iptables -L -n 2>/dev/null")
             if exit_code == 0 and len(stdout.split("\n")) < 10:
                 findings.append(
                     {
@@ -333,7 +358,7 @@ class SecurityAuditor:
         """Check user account security."""
         findings = []
         # Check for users with UID 0 (root)
-        stdout, stderr, exit_code = self.tunnel.run_command(
+        stdout, stderr, exit_code = self._run(
             "cat /etc/passwd | grep ':0:' 2>/dev/null"
         )
         if exit_code == 0:
@@ -351,7 +376,7 @@ class SecurityAuditor:
                 )
 
         # Check for users without passwords
-        stdout, stderr, exit_code = self.tunnel.run_command(
+        stdout, stderr, exit_code = self._run(
             "cat /etc/shadow | awk -F: '($2 == \"\") {print $1}' 2>/dev/null"
         )
         if exit_code == 0 and stdout.strip():
@@ -375,7 +400,7 @@ class SecurityAuditor:
             "/etc/ssh/sshd_config",
         ]
         for file_path in critical_files:
-            stdout, stderr, exit_code = self.tunnel.run_command(
+            stdout, stderr, exit_code = self._run(
                 f"stat -c '%a' {file_path} 2>/dev/null"
             )
             if exit_code == 0:
@@ -394,7 +419,7 @@ class SecurityAuditor:
     def _check_services(self) -> list:
         """Check running services for security issues."""
         findings = []
-        stdout, stderr, exit_code = self.tunnel.run_command(
+        stdout, stderr, exit_code = self._run(
             "systemctl list-units --type=service --state=running 2>/dev/null"
         )
         if exit_code == 0:
@@ -418,7 +443,7 @@ class SecurityAuditor:
     def _check_logs(self) -> list:
         """Check system logs for security events."""
         findings = []
-        stdout, stderr, exit_code = self.tunnel.run_command(
+        stdout, stderr, exit_code = self._run(
             "journalctl -n 100 --priority=err..alert 2>/dev/null"
         )
         if exit_code == 0:
@@ -472,7 +497,9 @@ class SecurityAuditor:
             Dictionary with compliance check results
         """
         try:
-            self.logger.info(f"Starting compliance check against {standard}")
+            if standard not in {"cis_benchmark", "pci_dss"}:
+                raise ConnectionPolicyError("Unsupported compliance standard")
+            self.logger.info("Starting managed compliance check")
             start_time = datetime.now()
 
             checks = self._get_compliance_checks(standard)
@@ -497,8 +524,8 @@ class SecurityAuditor:
                                 "remediation": check["remediation"],
                             }
                         )
-                except Exception as e:
-                    check_errors.append(f"Check {check['id']} failed: {e}")
+                except Exception:
+                    check_errors.append("Check {check['id']} failed")
 
             compliant = failed == 0 and len(check_errors) == 0
 
@@ -525,8 +552,8 @@ class SecurityAuditor:
             )
             return result
 
-        except Exception as e:
-            self.logger.error(f"Failed to perform compliance check: {e}")
+        except Exception:
+            self.logger.error("Failed to perform compliance check")
             return {
                 "standard": standard,
                 "host": self.tunnel.remote_host,
@@ -537,7 +564,7 @@ class SecurityAuditor:
                 "violations": [],
                 "details": {},
                 "success": False,
-                "error": str(e),
+                "error": "Operation failed",
             }
 
     def _get_compliance_checks(self, standard: str) -> list:
@@ -601,7 +628,7 @@ class SecurityAuditor:
 
     def _run_compliance_check(self, check: dict) -> dict:
         """Run a single compliance check."""
-        stdout, stderr, exit_code = self.tunnel.run_command(check["command"])
+        stdout, stderr, exit_code = self._run(check["command"])
         output = stdout.strip()
 
         if "expected" in check:
@@ -627,7 +654,9 @@ class SecurityAuditor:
             Dictionary with vulnerability scan results
         """
         try:
-            self.logger.info(f"Starting vulnerability scan ({scan_type})")
+            if scan_type not in {"basic", "package", "config"}:
+                raise ConnectionPolicyError("Unsupported vulnerability scan type")
+            self.logger.info("Starting managed vulnerability scan")
             start_time = datetime.now()
 
             vulnerabilities = []
@@ -642,8 +671,8 @@ class SecurityAuditor:
                         severity_counts[v["severity"]] = (
                             severity_counts.get(v["severity"], 0) + 1
                         )
-                except Exception as e:
-                    scan_errors.append(f"Package vulnerability scan failed: {e}")
+                except Exception:
+                    scan_errors.append("Package vulnerability scan failed")
 
             if scan_type in ["basic", "config"]:
                 try:
@@ -653,8 +682,8 @@ class SecurityAuditor:
                         severity_counts[v["severity"]] = (
                             severity_counts.get(v["severity"], 0) + 1
                         )
-                except Exception as e:
-                    scan_errors.append(f"Config vulnerability scan failed: {e}")
+                except Exception:
+                    scan_errors.append("Config vulnerability scan failed")
 
             duration = (datetime.now() - start_time).total_seconds()
 
@@ -674,8 +703,8 @@ class SecurityAuditor:
             )
             return result
 
-        except Exception as e:
-            self.logger.error(f"Failed to perform vulnerability scan: {e}")
+        except Exception:
+            self.logger.error("Failed to perform vulnerability scan")
             return {
                 "scan_type": scan_type,
                 "host": self.tunnel.remote_host,
@@ -684,15 +713,13 @@ class SecurityAuditor:
                 "severity_counts": {},
                 "scan_duration": 0,
                 "success": False,
-                "error": str(e),
+                "error": "Operation failed",
             }
 
     def _scan_package_vulnerabilities(self) -> list:
         """Scan for package vulnerabilities."""
         vulnerabilities = []
-        stdout, stderr, exit_code = self.tunnel.run_command(
-            "apt list --upgradable 2>/dev/null"
-        )
+        stdout, stderr, exit_code = self._run("apt list --upgradable 2>/dev/null")
         if exit_code == 0:
             for line in stdout.split("\n"):
                 if line.strip() and "/" in line:
@@ -711,7 +738,7 @@ class SecurityAuditor:
         """Scan for configuration vulnerabilities."""
         vulnerabilities = []
         # Check for weak SSL/TLS configurations
-        stdout, stderr, exit_code = self.tunnel.run_command(
+        stdout, stderr, exit_code = self._run(
             "grep -r 'TLSv1' /etc/ssl /etc/nginx 2>/dev/null"
         )
         if exit_code == 0 and stdout.strip():
@@ -726,7 +753,7 @@ class SecurityAuditor:
             )
 
         # Check for world-writable files in system directories
-        stdout, stderr, exit_code = self.tunnel.run_command(
+        stdout, stderr, exit_code = self._run(
             "find /etc /usr /bin -perm -o+w 2>/dev/null"
         )
         if exit_code == 0 and stdout.strip():
@@ -761,23 +788,23 @@ class SecurityAuditor:
 
             try:
                 users_audited = self._audit_users()
-            except Exception as e:
-                audit_errors.append(f"User audit failed: {e}")
+            except Exception:
+                audit_errors.append("User audit failed")
 
             try:
                 permission_issues = self._audit_permissions()
-            except Exception as e:
-                audit_errors.append(f"Permission audit failed: {e}")
+            except Exception:
+                audit_errors.append("Permission audit failed")
 
             try:
                 sudo_config = self._audit_sudo()
-            except Exception as e:
-                audit_errors.append(f"Sudo audit failed: {e}")
+            except Exception:
+                audit_errors.append("Sudo audit failed")
 
             try:
                 ssh_config = self._audit_ssh_access()
-            except Exception as e:
-                audit_errors.append(f"SSH access audit failed: {e}")
+            except Exception:
+                audit_errors.append("SSH access audit failed")
 
             result = {
                 "audit_type": "access_control",
@@ -796,8 +823,8 @@ class SecurityAuditor:
             )
             return result
 
-        except Exception as e:
-            self.logger.error(f"Failed to perform access control audit: {e}")
+        except Exception:
+            self.logger.error("Failed to perform access control audit")
             return {
                 "audit_type": "access_control",
                 "host": self.tunnel.remote_host,
@@ -807,13 +834,13 @@ class SecurityAuditor:
                 "sudo_config": {},
                 "ssh_config": {},
                 "success": False,
-                "error": str(e),
+                "error": "Operation failed",
             }
 
     def _audit_users(self) -> list:
         """Audit user accounts."""
         users = []
-        stdout, stderr, exit_code = self.tunnel.run_command("cat /etc/passwd")
+        stdout, stderr, exit_code = self._run("cat /etc/passwd")
         if exit_code == 0:
             for line in stdout.split("\n"):
                 if line.strip():
@@ -836,7 +863,7 @@ class SecurityAuditor:
         # Check for world-writable files in sensitive directories
         sensitive_dirs = ["/etc", "/root", "/home"]
         for dir_path in sensitive_dirs:
-            stdout, stderr, exit_code = self.tunnel.run_command(
+            stdout, stderr, exit_code = self._run(
                 f"find {dir_path} -perm -o+w 2>/dev/null"
             )
             if exit_code == 0 and stdout.strip():
@@ -854,9 +881,7 @@ class SecurityAuditor:
     def _audit_sudo(self) -> dict[str, Any]:
         """Audit sudo configuration."""
         config: dict[str, Any] = {}
-        stdout, stderr, exit_code = self.tunnel.run_command(
-            "cat /etc/sudoers 2>/dev/null"
-        )
+        stdout, stderr, exit_code = self._run("cat /etc/sudoers 2>/dev/null")
         if exit_code == 0:
             config["has_sudoers_file"] = True
             config["sudoers_lines"] = len(stdout.split("\n"))
@@ -868,9 +893,7 @@ class SecurityAuditor:
     def _audit_ssh_access(self) -> dict:
         """Audit SSH access configuration."""
         config = {}
-        stdout, stderr, exit_code = self.tunnel.run_command(
-            "cat /etc/ssh/sshd_config 2>/dev/null"
-        )
+        stdout, stderr, exit_code = self._run("cat /etc/ssh/sshd_config 2>/dev/null")
         if exit_code == 0:
             config["has_ssh_config"] = True
             config["permit_root_login"] = "PermitRootLogin yes" in stdout

@@ -46,7 +46,8 @@ graph TD
 
 ### Architecture B: Standard Native Direct Access (Without `tsh`)
 
-Designed for traditional cloud infrastructure, secure VPC networks, or local/homelab environments that use standard static key pairs, SSH agent caching, or password authentication.
+Designed for traditional infrastructure that uses static key pairs, SSH agent
+caching, or password authentication through an opaque runtime secret reference.
 
 ```mermaid
 graph TD
@@ -69,7 +70,7 @@ graph TD
 1.  **Credential Lookup**: The engine checks the inventory or SSH config files, attempting to authenticate in the following order:
     -   Active local SSH agent keys.
     -   Specified private key files (`identity_file`).
-    -   Plaintext password.
+    -   Runtime `password_ref`; plaintext values are rejected.
 2.  **Direct Socket**: The engine opens a native TCP connection directly to the target host's IP/hostname on the specified port (default 22). No intermediate proxy sub-processes are created.
 
 ---
@@ -79,8 +80,8 @@ graph TD
 To ensure zero burden on the end-user, the codebase automatically detects the host operating system (`platform.system()`) and configures system-level features accordingly.
 
 ### Path Resolvers
--   **Linux**: Expands `~` using standard Unix home directory conventions (`/home/username`).
--   **Windows**: Expands `~` using Windows environment variables (`C:\Users\username`).
+-   **Linux**: Expands `~` using the account home returned by the operating system.
+-   **Windows**: Expands `~` using the account profile returned by the operating system.
 -   Paths are normalized using Python's `os.path.abspath(os.path.expanduser(path))` to format path separators correctly for the host OS (`/` on Linux vs `\` on Windows).
 
 ### Subprocess Shell Execution

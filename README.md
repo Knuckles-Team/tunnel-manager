@@ -93,7 +93,7 @@ _Auto-generated from the live MCP server — do not edit by hand._
 _8 action-routed tool(s) (default) · 6 verbose 1:1 tool(s). Each is enabled unless its `<DOMAIN>TOOL` toggle is set false; `MCP_TOOL_MODE` selects the surface (`condensed` default · `verbose` 1:1 · `both`). Auto-generated — do not edit._
 <!-- MCP-TOOLS-TABLE:END -->
 
-Detailed tool schemas, parameter shapes, and validation constraints are preserved in [docs/mcp.md](docs/mcp.md).
+Detailed tool schemas, parameter shapes, and validation constraints are preserved in [docs/usage.md](docs/usage.md).
 
 ### Dynamic Tool Selection & Visibility
 
@@ -120,11 +120,10 @@ When query strings or parameters are supplied, an LLM-free **Knowledge Graph res
 
 <!-- MCP-CONFIG-EXAMPLES:START -->
 
-> **Install the slim `[mcp]` extra.** All examples install `tunnel-manager[mcp]` — the
-> MCP-server extra that pulls only the FastMCP / FastAPI tooling (`agent-utilities[mcp]`).
-> It deliberately **excludes** the heavy agent runtime (`pydantic-ai`, the epistemic-graph
-> engine, `dspy`, `llama-index`), so `uvx` / container installs are far smaller. Use the
-> full `[agent]` extra only when you need the integrated Pydantic AI agent.
+> **Install the connector-focused `[mcp]` extra.** Examples use `tunnel-manager[mcp]` to add
+> FastMCP / FastAPI through `agent-utilities[mcp]`; the required Agent Utilities core
+> still carries `epistemic-graph[full]`. The `[agent-runtime]` extra additionally
+> enables model orchestration.
 
 #### stdio Transport (local IDEs — Cursor, Claude Desktop, VS Code)
 
@@ -139,7 +138,7 @@ When query strings or parameters are supplied, an LLM-free **Knowledge Graph res
         "tunnel-manager-mcp"
       ],
       "env": {
-        "MCP_TOOL_MODE": "condensed",
+        "MCP_TOOL_MODE": "intent",
         "FILETOOL": "True",
         "HOSTTOOL": "True",
         "INGESTTOOL": "True",
@@ -148,28 +147,26 @@ When query strings or parameters are supplied, an LLM-free **Knowledge Graph res
         "REMOTETOOL": "True",
         "SECURITYTOOL": "True",
         "SYSTEMTOOL": "True",
-        "TUNNEL_CERTIFICATE": "",
         "TUNNEL_IDENTITY_FILE": "~/.ssh/id_ed25519",
-        "TUNNEL_INVENTORY": "",
         "TUNNEL_INVENTORY_GROUP": "all",
         "TUNNEL_KG_INGEST": "true",
+        "TUNNEL_KNOWN_HOSTS": "~/.ssh/known_hosts",
         "TUNNEL_MANAGER_HEALTH_AGGREGATE_S": "3600",
         "TUNNEL_MANAGER_HEALTH_INGEST": "true",
         "TUNNEL_MANAGER_HEALTH_NOTIFY_URL": "",
         "TUNNEL_MANAGER_HOSTS": "r510,r710,r820,rw710",
         "TUNNEL_MAX_THREADS": "6",
         "TUNNEL_PARALLEL": "False",
-        "TUNNEL_PASSWORD": "",
-        "TUNNEL_PROXY_COMMAND": "",
-        "TUNNEL_REMOTE_HOST": "",
-        "TUNNEL_REMOTE_PORT": "22",
-        "TUNNEL_USERNAME": "",
-        "XDG_CONFIG_HOME": ""
+        "TUNNEL_REMOTE_PORT": "22"
       }
     }
   }
 }
 ```
+
+Runtime references require an alias-aware launcher such as GraphOS. Other
+launchers must omit those entries and inject the resolved values through their
+own runtime secret boundary.
 
 #### Streamable-HTTP Transport (networked / production)
 
@@ -189,9 +186,9 @@ When query strings or parameters are supplied, an LLM-free **Knowledge Graph res
       ],
       "env": {
         "TRANSPORT": "streamable-http",
-        "HOST": "0.0.0.0",
+        "HOST": "127.0.0.1",
         "PORT": "8000",
-        "MCP_TOOL_MODE": "condensed",
+        "MCP_TOOL_MODE": "intent",
         "FILETOOL": "True",
         "HOSTTOOL": "True",
         "INGESTTOOL": "True",
@@ -200,23 +197,17 @@ When query strings or parameters are supplied, an LLM-free **Knowledge Graph res
         "REMOTETOOL": "True",
         "SECURITYTOOL": "True",
         "SYSTEMTOOL": "True",
-        "TUNNEL_CERTIFICATE": "",
         "TUNNEL_IDENTITY_FILE": "~/.ssh/id_ed25519",
-        "TUNNEL_INVENTORY": "",
         "TUNNEL_INVENTORY_GROUP": "all",
         "TUNNEL_KG_INGEST": "true",
+        "TUNNEL_KNOWN_HOSTS": "~/.ssh/known_hosts",
         "TUNNEL_MANAGER_HEALTH_AGGREGATE_S": "3600",
         "TUNNEL_MANAGER_HEALTH_INGEST": "true",
         "TUNNEL_MANAGER_HEALTH_NOTIFY_URL": "",
         "TUNNEL_MANAGER_HOSTS": "r510,r710,r820,rw710",
         "TUNNEL_MAX_THREADS": "6",
         "TUNNEL_PARALLEL": "False",
-        "TUNNEL_PASSWORD": "",
-        "TUNNEL_PROXY_COMMAND": "",
-        "TUNNEL_REMOTE_HOST": "",
-        "TUNNEL_REMOTE_PORT": "22",
-        "TUNNEL_USERNAME": "",
-        "XDG_CONFIG_HOME": ""
+        "TUNNEL_REMOTE_PORT": "22"
       }
     }
   }
@@ -235,16 +226,18 @@ Alternatively, connect to a pre-deployed Streamable-HTTP instance by `url`:
 }
 ```
 
-Deploying the Streamable-HTTP server via Docker:
+Run a reviewed container image as a least-privilege stdio child (no
+listener or published port):
 
 ```bash
-docker run -d \
-  --name tunnel-manager-mcp-mcp \
-  -p 8000:8000 \
-  -e TRANSPORT=streamable-http \
-  -e HOST=0.0.0.0 \
-  -e PORT=8000 \
-  -e MCP_TOOL_MODE=condensed \
+docker run -i --rm \
+  --read-only \
+  --cap-drop=ALL \
+  --security-opt=no-new-privileges \
+  --pids-limit=256 \
+  --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
+  -e TRANSPORT=stdio \
+  -e MCP_TOOL_MODE=intent \
   -e FILETOOL=True \
   -e HOSTTOOL=True \
   -e INGESTTOOL=True \
@@ -253,25 +246,24 @@ docker run -d \
   -e REMOTETOOL=True \
   -e SECURITYTOOL=True \
   -e SYSTEMTOOL=True \
-  -e TUNNEL_CERTIFICATE="" \
   -e TUNNEL_IDENTITY_FILE=~/.ssh/id_ed25519 \
-  -e TUNNEL_INVENTORY="" \
   -e TUNNEL_INVENTORY_GROUP=all \
   -e TUNNEL_KG_INGEST=true \
+  -e TUNNEL_KNOWN_HOSTS=~/.ssh/known_hosts \
   -e TUNNEL_MANAGER_HEALTH_AGGREGATE_S=3600 \
   -e TUNNEL_MANAGER_HEALTH_INGEST=true \
   -e TUNNEL_MANAGER_HEALTH_NOTIFY_URL="" \
   -e TUNNEL_MANAGER_HOSTS=r510,r710,r820,rw710 \
   -e TUNNEL_MAX_THREADS=6 \
   -e TUNNEL_PARALLEL=False \
-  -e TUNNEL_PASSWORD="" \
-  -e TUNNEL_PROXY_COMMAND="" \
-  -e TUNNEL_REMOTE_HOST="" \
   -e TUNNEL_REMOTE_PORT=22 \
-  -e TUNNEL_USERNAME="" \
-  -e XDG_CONFIG_HOME="" \
-  knucklessg1/tunnel-manager:mcp
+  registry.example.invalid/tunnel-manager@sha256:<digest> tunnel-manager-mcp
 ```
+
+For containerized network HTTP, supply an authenticated TLS ingress (or
+direct server TLS), exact `MCP_ALLOWED_HOSTS`, and an exact trusted-proxy
+CIDR policy through the operator-owned deployment profile. The generator
+does not emit an unauthenticated non-loopback listener.
 
 _Auto-generated from the code-read env surface (`MCP_TOOL_MODE` + package vars) — do not edit._
 <!-- MCP-CONFIG-EXAMPLES:END -->
@@ -279,16 +271,16 @@ _Auto-generated from the code-read env surface (`MCP_TOOL_MODE` + package vars) 
 <!-- BEGIN GENERATED: additional-deployment-options -->
 ### Additional Deployment Options
 
-`tunnel-manager` can also run as a **local container** (Docker / Podman / `uv`) or be
-consumed from a **remote deployment**. The
-[Deployment guide](https://knuckles-team.github.io/tunnel-manager/deployment/) has full, copy-paste
-`mcp_config.json` for all four transports — **stdio**, **streamable-http**,
-**local container / uv**, and **remote URL**:
+`tunnel-manager` can run as a local stdio process or container, or behind a remote
+network boundary. The
+[Deployment guide](https://knuckles-team.github.io/tunnel-manager/deployment/) carries
+the detailed transport contract.
 
-- **Local container / uv** — launch the server from `mcp_config.json` via `uvx`,
-  `docker run`, or `podman run`, or point at a local streamable-http container by `url`.
-- **Remote URL** — connect to a server deployed behind Caddy at
-  `http://tunnel-manager-mcp.arpa/mcp` using the `"url"` key.
+- **Local container** — launch a reviewed immutable image as a least-privilege
+  stdio child with no listener or published port.
+- **Remote URL** — connect through an operator-supplied authenticated HTTPS
+  ingress. Keep its URL, outbound identity references, trust profile, and exact
+  `MCP_ALLOWED_HOSTS` in `AgentConfig`.
 <!-- END GENERATED: additional-deployment-options -->
 
 ---
@@ -296,7 +288,7 @@ consumed from a **remote deployment**. The
 ## Inventory
 
 tunnel-manager works from a single shared YAML **inventory** that maps short host
-aliases (e.g. `r820`) to their SSH connection details. Every ecosystem surface reads
+aliases (e.g. `edge-node`) to their SSH connection details. Every ecosystem surface reads
 the **same file** — the `HostManager` API, the `tunnel-manager` CLI, the MCP server,
 **container-manager-mcp** (its `cm_*` host aliases), and the `ssh-bootstrap` skill — so
 you define your fleet once.
@@ -325,7 +317,7 @@ Full schema, every host field, the copy-paste template, and override options liv
 
 | Variable | Example | Description |
 |----------|---------|-------------|
-| `HOST` | `0.0.0.0` |  |
+| `HOST` | `127.0.0.1` | loopback bind by default; use an authenticated gateway for remote access |
 | `PORT` | `8000` |  |
 | `TRANSPORT` | `stdio` | options: stdio, streamable-http, sse |
 | `ENABLE_OTEL` | `True` |  |
@@ -339,16 +331,22 @@ Full schema, every host field, the copy-paste template, and override options liv
 | `TUNNEL_IDENTITY_FILE` | `~/.ssh/id_ed25519` |  |
 | `DEBUG` | `False` |  |
 | `PYTHONUNBUFFERED` | `1` |  |
-| `TUNNEL_REMOTE_HOST` | — | default remote host (e.g. 192.168.1.10) |
+| `TUNNEL_REMOTE_HOST` | — | default remote host (e.g. 198.51.100.10) |
 | `TUNNEL_REMOTE_PORT` | `22` | default SSH port |
 | `TUNNEL_USERNAME` | — | default SSH username |
-| `TUNNEL_PASSWORD` | — | default SSH password (prefer key-based auth) |
+| `TUNNEL_PASSWORD_REF` | — | runtime secret reference for SSH password auth; literal passwords are rejected |
+| `TUNNEL_KNOWN_HOSTS` | `~/.ssh/known_hosts` | independently verified SSH server host keys |
 | `TUNNEL_CERTIFICATE` | — | path to an SSH certificate file |
 | `TUNNEL_PROXY_COMMAND` | — | SSH ProxyCommand for jump-host/bastion connections |
 | `TUNNEL_INVENTORY` | — | path to the inventory file (defaults to XDG config path) |
 | `TUNNEL_INVENTORY_GROUP` | `all` | inventory host group to target |
 | `TUNNEL_PARALLEL` | `False` | run host operations in parallel |
 | `TUNNEL_MAX_THREADS` | `6` | max worker threads when TUNNEL_PARALLEL=True |
+| `TUNNEL_MAX_COMMAND_CHARS` | `65536` | maximum managed command size |
+| `TUNNEL_MAX_OUTPUT_BYTES` | `1048576` | combined command-output cap |
+| `TUNNEL_MAX_TRANSFER_BYTES` | `268435456` | file-transfer size cap |
+| `TUNNEL_MAX_FLEET_HOSTS` | `1000` | inventory host cap |
+| `TUNNEL_MAX_CONCURRENCY` | `64` | concurrent SSH operation cap |
 | `XDG_CONFIG_HOME` | — | base config dir (defaults to ~/.config) for inventory resolution |
 | `HOSTTOOL` | `True` | Grouped condensed-surface toggles, one per register_<tag>_tools registrar. |
 | `REMOTETOOL` | `True` |  |
@@ -383,7 +381,7 @@ Full schema, every host field, the copy-paste template, and override options liv
 | `MODEL_ID` | `gpt-4o` | Model id for the agent |
 | `ENABLE_WEB_UI` | `True` | Serve the AG-UI web interface |
 
-_38 package + 14 inherited variable(s). Auto-generated from `.env.example` + the shared agent-utilities set — do not edit._
+_44 package + 14 inherited variable(s). Auto-generated from `.env.example` + the shared agent-utilities set — do not edit._
 <!-- ENV-VARS-TABLE:END -->
 
 
@@ -395,7 +393,8 @@ for a copy-paste starting point.
 |----------|-------------|---------|
 | `TUNNEL_IDENTITY_FILE` | Path to the SSH private key | `~/.ssh/id_ed25519` |
 | `TUNNEL_USERNAME` | SSH username | — |
-| `TUNNEL_PASSWORD` | SSH password (when not using a key) | — |
+| `TUNNEL_PASSWORD_REF` | `env://`, `vault://`, `secret://`, or `sqlite://` SSH password reference | — |
+| `TUNNEL_KNOWN_HOSTS` | Independently verified SSH server-key trust store | `~/.ssh/known_hosts` |
 | `TUNNEL_CERTIFICATE` | Path to an SSH certificate | — |
 | `TUNNEL_REMOTE_HOST` | Default remote host | — |
 | `TUNNEL_REMOTE_PORT` | Default remote SSH port | `22` |
@@ -414,7 +413,7 @@ for a copy-paste starting point.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `TRANSPORT` | `stdio`, `streamable-http`, or `sse` | `stdio` |
-| `HOST` | Bind host (HTTP transports) | `0.0.0.0` |
+| `HOST` | Bind host (HTTP transports) | `127.0.0.1` |
 | `PORT` | Bind port (HTTP transports) | `8000` |
 | `MCP_TOOL_MODE` | Tool surface: `condensed`, `verbose`, or `both` | `condensed` |
 | `MCP_ENABLED_TOOLS` / `MCP_DISABLED_TOOLS` | Comma-separated tool allow/deny list | — |
@@ -472,7 +471,7 @@ version: '3.8'
 
 services:
   tunnel-manager-mcp:
-    image: knucklessg1/tunnel-manager:mcp
+    image: example/tunnel-manager:mcp
     container_name: tunnel-manager-mcp
     hostname: tunnel-manager-mcp
     restart: always
@@ -498,7 +497,7 @@ services:
         max-file: "3"
 
   tunnel-manager-agent:
-    image: knucklessg1/tunnel-manager:latest
+    image: example/tunnel-manager@sha256:<digest>
     container_name: tunnel-manager-agent
     hostname: tunnel-manager-agent
     restart: always
@@ -532,7 +531,7 @@ services:
 
 ```
 
-Detailed graph node architecture explanations, custom skill configurations, and agentic trace guides are available in [docs/agent.md](docs/agent.md).
+Detailed graph node architecture explanations, custom skill configurations, and agentic trace guides are available in [docs/deployment.md](docs/deployment.md).
 
 ---
 
@@ -560,15 +559,15 @@ Pick the extra that matches what you want to run:
 
 | Extra | Installs | Use when |
 |-------|----------|----------|
-| `tunnel-manager[mcp]` | Slim MCP server only (`agent-utilities[mcp]` — FastMCP/FastAPI) | You only run the **MCP server** (smallest install / image) |
-| `tunnel-manager[agent]` | Full agent runtime (`agent-utilities[agent,logfire]` — Pydantic AI + the epistemic-graph engine) | You run the **integrated agent** |
+| `tunnel-manager[mcp]` | Connector-focused MCP server (`agent-utilities[mcp]` — FastMCP/FastAPI + `epistemic-graph[full]`) | You only run the **MCP server** (smallest install / image) |
+| `tunnel-manager[agent]` | Agent runtime (`agent-utilities[agent-runtime,logfire]` — model orchestration + `epistemic-graph[full]`) | You run the **integrated agent** |
 | `tunnel-manager[all]` | Everything (`mcp` + `agent` + `logfire`) | Development / both surfaces |
 
 ```bash
-# MCP server only (recommended for tool hosting — slim deps)
+# Connector-focused MCP server (includes the shared graph engine)
 uv pip install "tunnel-manager[mcp]"
 
-# Full agent runtime (Pydantic AI + epistemic-graph engine)
+# Agent runtime (adds model orchestration to the shared graph engine)
 uv pip install "tunnel-manager[agent]"
 
 # Everything (development)
@@ -581,26 +580,27 @@ One multi-stage `docker/Dockerfile` builds two right-sized images, selected by `
 
 | Image tag | Build target | Contents | Entrypoint |
 |-----------|--------------|----------|------------|
-| `knucklessg1/tunnel-manager:mcp` | `--target mcp` | `tunnel-manager[mcp]` — **slim**, no engine/`pydantic-ai`/`dspy`/`llama-index`/`tree-sitter` | `tunnel-manager-mcp` |
-| `knucklessg1/tunnel-manager:latest` | `--target agent` (default) | `tunnel-manager[agent]` — **full** agent runtime + epistemic-graph engine | `tunnel-manager-agent` |
+| `example/tunnel-manager:mcp` | `--target mcp` | `tunnel-manager[mcp]` — **connector-focused**, includes `epistemic-graph[full]`; no model-orchestration stack | `tunnel-manager-mcp` |
+| `example/tunnel-manager@sha256:<digest>` | `--target agent` (default) | `tunnel-manager[agent]` — **agent runtime**, model orchestration + `epistemic-graph[full]` | `tunnel-manager-agent` |
 
 ```bash
-docker build --target mcp   -t knucklessg1/tunnel-manager:mcp    docker/   # slim MCP server
-docker build --target agent -t knucklessg1/tunnel-manager:latest docker/   # full agent
+docker build --target mcp   -t example/tunnel-manager:mcp    docker/   # connector-focused MCP server
+docker build --target agent -t example/tunnel-manager:agent-local docker/   # agent runtime
 ```
 
-`docker/mcp.compose.yml` runs the slim `:mcp` server; `docker/agent.compose.yml` runs the
-agent (`:latest`) with a co-located `:mcp` sidecar.
+`docker/mcp.compose.yml` runs the connector-focused `:mcp` server; `docker/agent.compose.yml` runs the
+agent (`immutable agent digest`) with a co-located `:mcp` sidecar.
 
 ### Knowledge-graph database (`epistemic-graph`)
 
-The **full agent** (`[agent]` / `:latest`) embeds the **epistemic-graph** engine (pulled in
-transitively via `agent-utilities[agent]`). For production — or to share one knowledge graph
-across multiple agents — run **epistemic-graph as its own database container** and point the
-agent at it instead of embedding it. Deployment recipes (single-node + Raft HA), connection
-config, and the full database architecture (with diagrams) are documented in the
+Both `[mcp]` and `[agent]` carry the **epistemic-graph** engine through the required
+Agent Utilities core dependency (`epistemic-graph[full]`). The `[mcp]` extra keeps
+the server connector-focused; `[agent]` additionally enables model orchestration. Local
+deployments can use the bundled engine. For production or shared state, run
+**epistemic-graph as a dedicated database service** and configure the runtime to use it.
+Deployment recipes (single-node + Raft HA), connection configuration, and architecture
+diagrams are documented in the
 [epistemic-graph deployment guide](https://knuckles-team.github.io/epistemic-graph/deployment/).
-The slim `[mcp]` server does **not** require the database.
 
 ---
 
@@ -622,12 +622,10 @@ the recommended reference for installation, deployment, and day-to-day operation
 
 `AGENTS.md` is the canonical contributor/agent guidance.
 
-## Repository Owners
+## Maintainers
 
-<img width="100%" height="180em" src="https://github-readme-stats.vercel.app/api?username=Knucklessg1&show_icons=true&hide_border=true&&count_private=true&include_all_commits=true" />
-
-![GitHub followers](https://img.shields.io/github/followers/Knucklessg1)
-![GitHub User's stars](https://img.shields.io/github/stars/Knucklessg1)
+Maintained by the project contributor team. Package metadata intentionally uses a
+role address rather than personal identity.
 
 ---
 
@@ -640,23 +638,40 @@ Contributions are welcome! Please ensure code quality by executing local checks 
 - Execute test suites using `pytest`
 
 
-<!-- BEGIN agent-os-genesis-deploy (generated; do not edit between markers) -->
+<!-- BEGIN agent-utilities-deployment (generated; do not edit between markers) -->
 
-## Deploy with `agent-os-genesis`
+## Deploy with `agent-utilities-deployment`
 
-This package can be provisioned for you — skill-guided — by the **`agent-os-genesis`**
-universal skill (its *single-package deploy mode*): it picks your install method, seeds
-secrets to OpenBao/Vault (or `.env`), trusts your enterprise CA, registers the MCP
-server, and verifies it — the same machinery that stands up the whole Agent OS, narrowed
-to just this package. Ask your agent to **"deploy `tunnel-manager` with agent-os-genesis"**.
+Provision this package with the consolidated **`agent-utilities-deployment`**
+workflow. It selects an installed-package, editable-source, or immutable-container
+path; records only runtime secret and TLS-profile references in `AgentConfig`; and
+runs doctor, registration, policy, observability, and rollback gates. Ask your agent
+to **"deploy `tunnel-manager` with agent-utilities-deployment"**.
 
 | Install mode | Command |
 |------|---------|
-| Bare-metal, prod (PyPI) | `uvx tunnel-manager-mcp` · or `uv tool install tunnel-manager` |
-| Bare-metal, dev (editable) | `uv pip install -e ".[all]"` · or `pip install -e ".[all]"` |
-| Container, prod | deploy `knucklessg1/tunnel-manager:latest` via docker-compose / swarm / podman / podman-compose / kubernetes |
-| Container, dev (editable) | deploy `docker/compose.dev.yml` (source-mounted at `/src`; edits live on restart) |
+| Installed package | `uv tool install "tunnel-manager[mcp]"`, then run `tunnel-manager-mcp` |
+| Editable source | `uv pip install -e ".[agent]"`, then run `tunnel-manager-mcp` |
+| Immutable container | deploy `registry.example.invalid/tunnel-manager@sha256:<digest>` through the operator-selected orchestrator |
 
-Secrets are read-existing + seeded via `vault_sync` — you are only prompted for what's missing.
+The repository embeds no deployment profile, credential value, certificate path, or
+environment-specific endpoint. Supply those at runtime through `AgentConfig` and the
+configured secret provider.
 
-<!-- END agent-os-genesis-deploy -->
+<!-- END agent-utilities-deployment -->
+
+<!-- GOVERNED-CAPABILITY:START -->
+## Governed capability contract
+
+This package ships a compact canonical skill surface with specialist procedures
+kept as referenced workflows. The current MCP tools, skill metadata,
+`connector_manifest.yml`, ontology, mappings, shapes, fixtures, migrations,
+tool-schema fingerprints, and certification metadata form one versioned
+capability contract. Validate them together; do not rely on stale tool names or
+historical per-task skill wrappers.
+
+Runtime endpoints, credentials, certificate trust, tenant identity, retention,
+and observability policy are deployment inputs and are never packaged values.
+See [Configuration, trust, and privacy](docs/configuration.md) before enabling a
+network transport, connector ingestion, GraphOS delegation, or trace export.
+<!-- GOVERNED-CAPABILITY:END -->

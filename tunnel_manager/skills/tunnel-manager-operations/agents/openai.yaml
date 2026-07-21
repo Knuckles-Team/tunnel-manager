@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tunnel Manager Operations"
+  short_description: "Help with Tunnel Manager Operations tasks"
+  default_prompt: "Use $tunnel-manager-operations to complete a governed provider workflow."

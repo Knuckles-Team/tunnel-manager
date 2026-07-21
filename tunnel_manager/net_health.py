@@ -36,13 +36,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import shutil
 import subprocess
 import time
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
+
+from agent_utilities.core.config import setting
 
 logger = logging.getLogger("tunnel_manager.net_health")
 
@@ -131,24 +132,40 @@ _DEFAULT_RUNNER: CommandRunner = SubprocessCommandRunner()
 # inventory — reuse tunnel-manager's own HostManager, do not reinvent it       #
 # --------------------------------------------------------------------------- #
 def _hosts_from_env() -> list[str]:
-    raw = os.getenv("TUNNEL_MANAGER_HOSTS", "").strip()
+    raw = str(setting("TUNNEL_MANAGER_HOSTS", "")).strip()
     return [h.strip() for h in raw.split(",") if h.strip()]
 
 
 def _resolve_hosts() -> dict[str, Any]:
     """The probe target set: tunnel-manager's own inventory (``HostManager``),
-    optionally narrowed by ``TUNNEL_MANAGER_HOSTS`` (comma-separated aliases)."""
+    optionally narrowed by ``TUNNEL_MANAGER_HOSTS`` (comma-separated aliases).
+
+    Enumerates via ``list_hosts()`` (identity-entitlement-scoped — a caller only
+    ever probes hosts it may reach) but resolves each target via ``get_host()``
+    to get the real, unredacted ``HostConfig`` (``list_hosts()`` strips
+    ``password``/``password_ref`` for display; a real SSH connect needs them).
+    """
     from tunnel_manager.tunnel_manager import HostManager
 
     try:
-        all_hosts = HostManager().list_hosts()
+        manager = HostManager()
+        aliases = list(manager.list_hosts().keys())
     except Exception as e:  # noqa: BLE001 — no/unreadable inventory -> nothing to probe
         logger.debug("net-health: inventory unavailable: %s", e)
         return {}
     wanted = _hosts_from_env()
     if wanted:
-        return {alias: cfg for alias, cfg in all_hosts.items() if alias in wanted}
-    return all_hosts
+        aliases = [alias for alias in aliases if alias in wanted]
+    resolved: dict[str, Any] = {}
+    for alias in aliases:
+        try:
+            config = manager.get_host(alias)
+        except Exception as e:  # noqa: BLE001 — e.g. entitlement denial -> skip, not fatal
+            logger.debug("net-health: host %s unavailable: %s", alias, e)
+            continue
+        if config is not None:
+            resolved[alias] = config
+    return resolved
 
 
 def _target_hostname(alias: str, host_config: Any) -> str:
@@ -280,14 +297,14 @@ def _buffer_for(host: str, signal: str) -> Any | None:
     key = (host, signal)
     buf = _BUFFERS.get(key)
     if buf is None:
-        window_s = int(os.getenv("TUNNEL_MANAGER_HEALTH_AGGREGATE_S", "3600"))
+        window_s = int(setting("TUNNEL_MANAGER_HEALTH_AGGREGATE_S", 3600))
         buf = HealthTrendBuffer(window_s=window_s)
         _BUFFERS[key] = buf
     return buf
 
 
 def _health_ingest_enabled() -> bool:
-    return os.getenv("TUNNEL_MANAGER_HEALTH_INGEST", "true").strip().lower() not in {
+    return str(setting("TUNNEL_MANAGER_HEALTH_INGEST", "true")).strip().lower() not in {
         "0",
         "false",
         "no",
@@ -387,7 +404,7 @@ def _notify(message: str) -> None:
     ``fan_manager.kg_control._notify``/``systems_manager.os_health._notify``."""
     import urllib.request
 
-    url = os.getenv("TUNNEL_MANAGER_HEALTH_NOTIFY_URL")
+    url = setting("TUNNEL_MANAGER_HEALTH_NOTIFY_URL")
     logger.info(message)
     if not url:
         return

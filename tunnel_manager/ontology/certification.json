@@ -1,0 +1,37 @@
+{
+  "api_version": "graphos.io/v1",
+  "artifacts": {
+    "a2a.json": "b8069ec1d85cd69186e5e464ae3df15f30c3712aab5af175ee97fad24a856678",
+    "connector_manifest.yml": "83e242e164b230726ee08febf0e0580ef1664a6de884a030bdc1719dd78cf039",
+    "tunnel_manager/connectors/mcp_source_presets.json": "14b4feede9e759ea842e50feaf47cb2821b179f4b0a09ddf40ff96d63137608c",
+    "tunnel_manager/connectors/tool_schema_fingerprints.json": "db49f9c4ca5809c4a4355b29267d608a6ecdf721b9b7974e7e5e7d782fc89227",
+    "tunnel_manager/ontology/fixtures/records.json": "49f7277587ed9ce506e4467a950e05f57d2d6b7ae2656a395b92bdee27ea6bbb",
+    "tunnel_manager/ontology/mappings/source.yaml": "d1422d29adaee27a85a2b8412f6d37aab395da475cb3bf3d8283eaa767af963c",
+    "tunnel_manager/ontology/migrations/manifest.json": "652cca36bebf90a24a527609cd1742943aea24fe241a0854d2c79b091dc2004a",
+    "tunnel_manager/ontology/shapes/connector.shacl.ttl": "06b19a37435207113f47ee9826965ade7ebecbeb60cee687e257285ebad3f87c",
+    "tunnel_manager/ontology/tunnel.ttl": "bb5d7a6ec70db754c18fd33ea216034a633d8aed38ec55168dca7093badfcf62"
+  },
+  "checks": {
+    "declared_tool_schema": "passed",
+    "manifest_integrity": "passed",
+    "privacy_contract": "passed",
+    "shacl_parse": "passed",
+    "synthetic_fixture_contract": "passed"
+  },
+  "compatibility": {
+    "agent_utilities": ">=1.27.1,<2",
+    "bundle_schema": "2",
+    "epistemic_graph": ">=2.23.1,<3"
+  },
+  "connector": "tunnel-manager",
+  "kind": "ConnectorSourceAttestation",
+  "live_certified": false,
+  "mode": "offline-source",
+  "schema_version": "2",
+  "signature": "gNHOkjjVwLEWHz4eehNNCMmFItyV-2S2S7hxqMcaZpincv0XfflTqzOvIOyvkCvjr3ff3iKrjxeAyTAZKG-YCg",
+  "signature_algorithm": "ed25519",
+  "signer": "ontology-manifest-generator",
+  "signing_public_key": "q0Cp7bmQMqJhbofGKKw8xXC6KbFzukBDDke0UYVi8y4",
+  "status": "source-validated",
+  "validated_at": "2026-07-18T00:00:00Z"
+}
