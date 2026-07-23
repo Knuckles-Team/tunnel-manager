@@ -36,7 +36,7 @@ from .connection_security import (
 from .models import CommandResult, HostConfig
 from .proxy_security import proxy_command_argv, proxy_command_string
 
-__version__ = "2.1.0"
+__version__ = "3.0.0"
 
 
 def _password_ref(*sources: dict) -> str | None:

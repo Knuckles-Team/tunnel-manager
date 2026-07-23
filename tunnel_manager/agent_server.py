@@ -5,7 +5,7 @@ import warnings
 
 from agent_utilities.core.config import setting
 
-__version__ = "2.1.0"
+__version__ = "3.0.0"
 
 logging.basicConfig(
     level=logging.INFO,
