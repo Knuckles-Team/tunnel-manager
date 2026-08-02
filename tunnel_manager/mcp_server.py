@@ -81,7 +81,16 @@ logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = get_logger("TunnelManager")
-host_manager = HostManager()
+# D-CDX-88: HostManager (the alias store tm_remote/tm_hosts authorize
+# against) must resolve the SAME inventory file tm_inventory defaults to —
+# previously it always used default_inventory_path() and silently ignored
+# a $TUNNEL_INVENTORY override, so a deployment pointing tm_inventory at a
+# mounted inventory left the alias store reading a different (often empty)
+# default file. This is the bridge: one env var, one resolution order, for
+# both surfaces.
+host_manager = HostManager(
+    config_file=setting("TUNNEL_INVENTORY") or _DEFAULT_INVENTORY_PATH
+)
 
 
 def get_client() -> HostManager:
@@ -333,6 +342,57 @@ def load_inventory(
             {"inventory": inventory, "group": group},
             type(e).__name__,
         )
+
+
+def resolve_single_host(
+    inventory: str, host: str, logger: logging.Logger
+) -> tuple[list[dict], dict]:
+    """Resolve exactly ONE host for a single-host inventory selector.
+
+    D-CDX-88: bridges ``tm_inventory``'s YAML-group fan-out (``load_inventory``
+    above) to the SAME entitlement-checked alias store ``tm_remote``/
+    ``tm_hosts`` authorize against (:data:`host_manager`), instead of a second,
+    divergent notion of "known host". An unknown alias returns a 400 and a
+    caller not entitled to a known alias gets the identical ``PermissionError``
+    denial ``tm_remote`` would give them — never a silent no-op, matching this
+    codebase's fail-loudly convention.
+
+    Returns a one-item ``hosts`` list shaped like ``load_inventory``'s entries
+    (safe to feed straight into the same per-host execution loop) plus an
+    error-response dict (empty on success).
+    """
+    try:
+        host_config = host_manager.get_host(host)
+    except PermissionError as e:
+        return [], ResponseBuilder.build(
+            403,
+            f"Not entitled to host alias: {host}",
+            {"inventory": inventory, "host": host},
+            errors=[str(e)],
+        )
+    if host_config is None:
+        return [], ResponseBuilder.build(
+            400,
+            f"Unknown host alias: {host}",
+            {"inventory": inventory, "host": host},
+            errors=[f"Unknown host alias: {host}"],
+        )
+    if not host_config.user:
+        return [], ResponseBuilder.build(
+            400,
+            f"Host alias '{host}' has no configured username",
+            {"inventory": inventory, "host": host},
+            errors=[f"Host alias '{host}' has no configured username"],
+        )
+    entry = {
+        "hostname": host_config.hostname,
+        "username": host_config.user,
+        "password_ref": host_config.password_ref,
+        "known_hosts_file": host_config.known_hosts_file,
+        "key_path": host_config.identity_file or host_config.key_path,
+        "port": host_config.port or 22,
+    }
+    return [entry], {}
 
 
 def _resolve_host(
@@ -1183,6 +1243,28 @@ def register_inventory_tools(mcp: FastMCP):
             default=setting("TUNNEL_INVENTORY_GROUP", "all"),
             description="Target group.",
         ),
+        host: str = Field(
+            default="",
+            description=(
+                "run_command only. Optional single-host alias to target instead of "
+                "the whole 'group' fan-out — the safe way to reach ONE inventory "
+                "host (e.g. 'gb10') without running against 'homelab'. Resolved and "
+                "authorized through the same alias store tm_remote/tm_hosts use, so "
+                "the two are one source of truth: an unknown or unauthorized alias "
+                "is rejected outright, never silently skipped. Takes precedence over "
+                "'group' when set."
+            ),
+        ),
+        preview: bool = Field(
+            default=False,
+            description=(
+                "run_command only. If true, resolve the exact target host(s) for "
+                "'host'/'group' and return them in 'resolved_hosts' WITHOUT running "
+                "'cmd' — lets a caller verify scope before executing for real (no "
+                "surprise fan-out). The real (non-preview) response also always "
+                "includes 'resolved_hosts' for the same reason."
+            ),
+        ),
         parallel: bool = Field(
             default=bool(setting("TUNNEL_PARALLEL", False)),
             description="Run parallel.",
@@ -1489,10 +1571,29 @@ def register_inventory_tools(mcp: FastMCP):
                     400, "Need cmd", {"action": action, "cmd": cmd}, errors=["Need cmd"]
                 )
             try:
-                hosts, error = load_inventory(inventory, group, logger)
+                if host:
+                    hosts, error = resolve_single_host(inventory, host, logger)
+                else:
+                    hosts, error = load_inventory(inventory, group, logger)
                 if error:
                     return error
+                resolved_hosts = [h["hostname"] for h in hosts]
                 total = len(hosts)
+                if preview:
+                    return ResponseBuilder.build(
+                        200,
+                        f"Preview: '{cmd}' would run on {len(hosts)} host(s)"
+                        + (f" (host={host})" if host else f" (group={group})"),
+                        {
+                            "inventory": inventory,
+                            "group": group,
+                            "host": host,
+                            "cmd": cmd,
+                            "resolved_hosts": resolved_hosts,
+                            "preview": True,
+                        },
+                        errors=[],
+                    )
                 if ctx:
                     await ctx.report_progress(progress=0, total=total)
 
@@ -1571,10 +1672,11 @@ def register_inventory_tools(mcp: FastMCP):
                         errors.extend(r["errors"])
                         if ctx:
                             await ctx.report_progress(progress=i, total=total)
+                target_label = f"host={host}" if host else f"group={group}"
                 msg = (
-                    f"Cmd '{cmd}' done on {group}"
+                    f"Cmd '{cmd}' done on {target_label}"
                     if not errors
-                    else f"Cmd '{cmd}' failed for some in {group}"
+                    else f"Cmd '{cmd}' failed for some in {target_label}"
                 )
                 return ResponseBuilder.build(
                     200 if not errors else 500,
@@ -1582,7 +1684,9 @@ def register_inventory_tools(mcp: FastMCP):
                     {
                         "inventory": inventory,
                         "group": group,
+                        "host": host,
                         "cmd": cmd,
+                        "resolved_hosts": resolved_hosts,
                         "host_results": results,
                     },
                     error="; ".join(errors),
@@ -1596,7 +1700,7 @@ def register_inventory_tools(mcp: FastMCP):
                 return ResponseBuilder.build(
                     500,
                     "Cmd all fail",
-                    {"inventory": inventory, "group": group, "cmd": cmd},
+                    {"inventory": inventory, "group": group, "host": host, "cmd": cmd},
                     type(e).__name__,
                 )
 
