@@ -1,0 +1,54 @@
+# Merge-queue gate declaration for `tunnel-manager` (a Python agent package: SSH
+# tunnel/inventory client + FastMCP server + A2A agent).
+#
+# Bootstrapped 2026-08-02 (wave-m-clusterdebt-0802, while landing the D-CDX-88 fix) --
+# this repo had a live queue store (a candidate enqueued and sitting undrained) with no
+# `.mergequeue.yaml`; the queue refuses a repo that declares no gates rather than
+# inventing them or defaulting to none. Mirrors the aris-mcp precedent
+# (agent-packages/agents/aris-mcp/.mergequeue.yaml, same day) for the same reason.
+#
+# Interpreter: no repo-local .venv here. Confirmed BOTH the system `python3` and the
+# shared /home/apps/workspace/.venv/bin/python3 import `tunnel_manager` cleanly from
+# this repo root; pinning the shared workspace venv because that is the interpreter
+# the D-CDX-88 fix was actually tested against (157 passed / 10 pre-existing failures
+# reproduced identically on the untouched canonical checkout -- see that lane's
+# evidence), so it is the proven-working choice rather than an unverified guess.
+
+base: main
+batch_size: 8
+
+environment_signature: ["/home/apps/workspace/.venv/bin/python3", "-c", "import sys, sysconfig; print(sys.version, sysconfig.get_paths()['purelib'])"]
+
+gates:
+  # ── the whole unit suite ────────────────────────────────────────────────
+  # compare: pytest-ids -- an ID-level differential: a failing id is permitted ONLY
+  # when that EXACT id already fails on the base ref. main is not assumed absolutely
+  # green anywhere in this fleet (this repo's own suite has pre-existing failures --
+  # missing ambient KG/identity context in a bare sandbox, and a worktree-basename
+  # artifact in test_init_dynamics.py); judging by exit code alone would refuse every
+  # candidate the moment one unrelated test goes red on base.
+  - name: pytest
+    command: ["/home/apps/workspace/.venv/bin/python3", "-m", "pytest", "-q", "tests"]
+    tier: fast
+    timeout: 180
+    baseline_timeout: 180
+    compare: pytest-ids
+
+  - name: ruff-check
+    command: ["/home/apps/workspace/.venv/bin/python3", "-m", "ruff", "check", "--output-format", "concise", "."]
+    tier: fast
+    timeout: 60
+    compare: lines
+    when_changed: ["*.py", "**/*.py"]
+
+  - name: ruff-format
+    command: ["/home/apps/workspace/.venv/bin/python3", "-m", "ruff", "format", "--check", "."]
+    tier: fast
+    timeout: 60
+    compare: lines
+    when_changed: ["*.py", "**/*.py"]
+
+# No purely-derived files tracked in this repo, so no generated_files/regenerate
+# section.
+generated_files: []
+regenerate: []
