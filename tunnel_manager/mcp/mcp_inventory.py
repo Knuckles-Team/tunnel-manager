@@ -30,6 +30,7 @@ from tunnel_manager.mcp_server import (
     _DEFAULT_INVENTORY_PATH,
     ResponseBuilder,
     load_inventory,
+    resolve_single_host,
 )
 from tunnel_manager.models import HostConfig
 from tunnel_manager.tunnel_manager import Tunnel
@@ -60,6 +61,28 @@ def register_inventory_tools(mcp: FastMCP):
         group: str = Field(
             default=setting("TUNNEL_INVENTORY_GROUP", "all"),
             description="Target group.",
+        ),
+        host: str = Field(
+            default="",
+            description=(
+                "run_command only. Optional single-host alias to target instead of "
+                "the whole 'group' fan-out — the safe way to reach ONE inventory "
+                "host (e.g. 'gb10') without running against 'homelab'. Resolved and "
+                "authorized through the same alias store tm_remote/tm_hosts use, so "
+                "the two are one source of truth: an unknown or unauthorized alias "
+                "is rejected outright, never silently skipped. Takes precedence over "
+                "'group' when set."
+            ),
+        ),
+        preview: bool = Field(
+            default=False,
+            description=(
+                "run_command only. If true, resolve the exact target host(s) for "
+                "'host'/'group' and return them in 'resolved_hosts' WITHOUT running "
+                "'cmd' — lets a caller verify scope before executing for real (no "
+                "surprise fan-out). The real (non-preview) response also always "
+                "includes 'resolved_hosts' for the same reason."
+            ),
         ),
         parallel: bool = Field(
             default=to_boolean(setting("TUNNEL_PARALLEL", False)),
@@ -351,10 +374,29 @@ def register_inventory_tools(mcp: FastMCP):
                     400, "Need cmd", {"action": action, "cmd": cmd}, errors=["Need cmd"]
                 )
             try:
-                hosts, error = load_inventory(inventory, group, logger)
+                if host:
+                    hosts, error = resolve_single_host(inventory, host, logger)
+                else:
+                    hosts, error = load_inventory(inventory, group, logger)
                 if error:
                     return error
+                resolved_hosts = [h["hostname"] for h in hosts]
                 total = len(hosts)
+                if preview:
+                    return ResponseBuilder.build(
+                        200,
+                        f"Preview: '{cmd}' would run on {len(hosts)} host(s)"
+                        + (f" (host={host})" if host else f" (group={group})"),
+                        {
+                            "inventory": inventory,
+                            "group": group,
+                            "host": host,
+                            "cmd": cmd,
+                            "resolved_hosts": resolved_hosts,
+                            "preview": True,
+                        },
+                        errors=[],
+                    )
                 if ctx:
                     await ctx.report_progress(progress=0, total=total)
 
@@ -433,10 +475,11 @@ def register_inventory_tools(mcp: FastMCP):
                         errors.extend(r["errors"])
                         if ctx:
                             await ctx.report_progress(progress=i, total=total)
+                target_label = f"host={host}" if host else f"group={group}"
                 msg = (
-                    f"Cmd '{cmd}' done on {group}"
+                    f"Cmd '{cmd}' done on {target_label}"
                     if not errors
-                    else f"Cmd '{cmd}' failed for some in {group}"
+                    else f"Cmd '{cmd}' failed for some in {target_label}"
                 )
                 return ResponseBuilder.build(
                     200 if not errors else 500,
@@ -444,7 +487,9 @@ def register_inventory_tools(mcp: FastMCP):
                     {
                         "inventory": inventory,
                         "group": group,
+                        "host": host,
                         "cmd": cmd,
+                        "resolved_hosts": resolved_hosts,
                         "host_results": results,
                     },
                     error="; ".join(errors),
@@ -458,7 +503,7 @@ def register_inventory_tools(mcp: FastMCP):
                 return ResponseBuilder.build(
                     500,
                     "Cmd all fail",
-                    {"inventory": inventory, "group": group, "cmd": cmd},
+                    {"inventory": inventory, "group": group, "host": host, "cmd": cmd},
                     type(e).__name__,
                 )
 
