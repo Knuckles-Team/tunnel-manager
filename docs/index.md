@@ -36,6 +36,7 @@ SSH and audit hosts at scale without deploying persistent daemons. It provides:
 - :material-rocket-launch: **[Installation](installation.md)** — pip, source, extras, and the prebuilt Docker image.
 - :material-server-network: **[Deployment](deployment.md)** — run the MCP and agent servers, Docker Compose, Caddy + Technitium.
 - :material-console: **[Usage](usage.md)** — the MCP tools, the `HostManager` / `Tunnel` API, and the CLI.
+- :material-shield-lock: **[Structured remote execution](remote_execution.md)** — the alias-only, entitlement-aware worker boundary.
 - :material-sitemap: **[Overview](overview.md)** — ecosystem role, distributed SSH swarm scaling, MCP configuration.
 - :material-transit-connection-variant: **[Teleport Architecture](teleport_architecture.md)** — certificate, proxy and cross-OS connection model.
 - :material-tag-multiple: **[Concepts](concepts.md)** — the `CONCEPT:TUN-*` registry.
