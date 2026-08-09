@@ -19,6 +19,8 @@ from tunnel_manager.remote_execution import (
     FailureClass,
     HostInventory,
     RemoteCommandRequest,
+    RemoteExecutionContext,
+    RemoteExecutionResult,
     RemoteTargetError,
     TunnelCommandExecutor,
     render_remote_command,
@@ -108,6 +110,19 @@ def _request(**overrides) -> RemoteCommandRequest:
     values = {"argv": ("printf", "%s", "ok"), "workdir": "/workspace"}
     values.update(overrides)
     return RemoteCommandRequest(**values)
+
+
+def _context(
+    *,
+    command_id: str = "rmcmd:caller-command",
+    worker_id: str = "worker:caller-worker",
+    fence: str = "fence:caller-fence",
+) -> RemoteExecutionContext:
+    return RemoteExecutionContext(
+        command_id=command_id,
+        worker_id=worker_id,
+        fence=fence,
+    )
 
 
 def test_inventory_uses_tunnel_inventory_override(monkeypatch):
@@ -239,11 +254,50 @@ def test_dispatch_reloads_inventory_and_reauthorizes(entitled_inventory, tmp_pat
     result = TunnelCommandExecutor(
         inventory,
         transport_factory=factory,
-    ).execute(target, _request(), _actor("ssh:build-host"))
+    ).execute(
+        target,
+        _request(),
+        _actor("ssh:build-host"),
+        context=_context(),
+    )
 
     assert result.outcome is ExecutionOutcome.SUCCEEDED
     assert seen == ["new-build-host.example"]
     assert transport.closed is True
+
+
+def test_caller_correlations_survive_success_and_failure(entitled_inventory):
+    inventory, _ = entitled_inventory
+    context = _context(
+        command_id="rmcmd:exact-caller-command",
+        worker_id="worker:exact-caller-worker",
+        fence="fence:exact-caller-fence",
+    )
+    success = TunnelCommandExecutor(
+        inventory,
+        transport_factory=lambda _: _Transport(),
+    ).execute(
+        AuthorizedTarget(alias="build-host"),
+        _request(),
+        _actor("ssh:build-host"),
+        context=context,
+    )
+    failure = TunnelCommandExecutor(
+        inventory,
+        transport_factory=lambda _: _Transport(
+            result=CommandResult(success=False, stderr="failed")
+        ),
+    ).execute(
+        AuthorizedTarget(alias="build-host"),
+        _request(),
+        _actor("ssh:build-host"),
+        context=context,
+    )
+
+    for result in (success, failure):
+        assert result.command_id == context.command_id
+        assert result.worker_id == context.worker_id
+        assert result.fence == context.fence
 
 
 def test_public_models_reject_connection_fields_and_raw_shell():
@@ -257,6 +311,22 @@ def test_public_models_reject_connection_fields_and_raw_shell():
         )
     with pytest.raises(ValidationError, match="raw shell"):
         RemoteCommandRequest(argv=("sh", "-c", "echo unsafe"), workdir="/workspace")
+
+
+def test_frozen_execution_limits_and_result_reference_shape():
+    with pytest.raises(ValidationError):
+        RemoteCommandRequest(
+            argv=("echo", "ok"),
+            workdir="/workspace",
+            timeout_seconds=86_401,
+        )
+    with pytest.raises(ValidationError):
+        RemoteCommandRequest(
+            argv=("echo", "ok"),
+            workdir="/workspace",
+            max_artifact_bytes=1024 * 1024 * 1024 + 1,
+        )
+    assert "error_message" not in RemoteExecutionResult.model_fields
 
 
 def test_metacharacter_argument_is_one_quoted_argv_element():
@@ -278,7 +348,10 @@ def test_known_hosts_policy_refuses_before_transport(entitled_inventory):
     )
 
     result = executor.execute(
-        AuthorizedTarget(alias="build-host"), _request(), _actor("ssh:build-host")
+        AuthorizedTarget(alias="build-host"),
+        _request(),
+        _actor("ssh:build-host"),
+        context=_context(),
     )
 
     assert result.outcome is ExecutionOutcome.REFUSED
@@ -306,7 +379,10 @@ def test_key_and_proxy_policy_refuse_before_transport(
         HostInventory(manager_factory=lambda: manager),
         transport_factory=transport_factory,
     ).execute(
-        AuthorizedTarget(alias="build-host"), _request(), _actor("ssh:build-host")
+        AuthorizedTarget(alias="build-host"),
+        _request(),
+        _actor("ssh:build-host"),
+        context=_context(),
     )
 
     assert result.outcome is ExecutionOutcome.REFUSED
@@ -331,6 +407,7 @@ def test_timeout_disconnect_and_bounded_redacted_output(
         AuthorizedTarget(alias="build-host"),
         _request(max_stdout_bytes=8, max_stderr_bytes=8),
         _actor("ssh:build-host"),
+        context=_context(),
     )
 
     assert result.outcome is ExecutionOutcome.TIMED_OUT
@@ -351,7 +428,10 @@ def test_close_on_connect_error_and_cleanup_failure(entitled_inventory):
     )
 
     result = executor.execute(
-        AuthorizedTarget(alias="build-host"), _request(), _actor("ssh:build-host")
+        AuthorizedTarget(alias="build-host"),
+        _request(),
+        _actor("ssh:build-host"),
+        context=_context(),
     )
 
     assert transport.closed is True
@@ -389,7 +469,10 @@ def test_default_real_tunnel_path_connects_once_and_closes(
 
     monkeypatch.setattr(Tunnel, "connect", counted_connect)
     result = TunnelCommandExecutor(inventory).execute(
-        AuthorizedTarget(alias="build-host"), _request(), _actor("ssh:build-host")
+        AuthorizedTarget(alias="build-host"),
+        _request(),
+        _actor("ssh:build-host"),
+        context=_context(),
     )
 
     assert result.outcome is ExecutionOutcome.SUCCEEDED
@@ -445,7 +528,10 @@ def test_default_real_tunnel_path_preserves_typed_failures_and_closes(
 
     monkeypatch.setattr(Tunnel, "connect", counted_connect)
     result = TunnelCommandExecutor(inventory).execute(
-        AuthorizedTarget(alias="build-host"), _request(), _actor("ssh:build-host")
+        AuthorizedTarget(alias="build-host"),
+        _request(),
+        _actor("ssh:build-host"),
+        context=_context(),
     )
 
     assert result.outcome is outcome
@@ -486,6 +572,7 @@ def test_nonzero_command_is_candidate_failure_and_output_is_bounded(entitled_inv
         AuthorizedTarget(alias="build-host"),
         _request(max_stdout_bytes=4, max_stderr_bytes=3),
         _actor("ssh:build-host"),
+        context=_context(),
     )
 
     assert result.outcome is ExecutionOutcome.FAILED
@@ -505,6 +592,7 @@ def test_environment_refs_are_not_silently_ignored(entitled_inventory):
         AuthorizedTarget(alias="build-host"),
         _request(environment_refs=("REMOTE_ENV",)),
         _actor("ssh:build-host"),
+        context=_context(),
     )
 
     assert result.outcome is ExecutionOutcome.REFUSED

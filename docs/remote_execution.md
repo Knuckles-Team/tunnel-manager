@@ -12,6 +12,7 @@ trust, proxy policy, and secret references.
 from tunnel_manager import (
     HostInventory,
     RemoteCommandRequest,
+    RemoteExecutionContext,
     TunnelCommandExecutor,
 )
 
@@ -23,8 +24,20 @@ request = RemoteCommandRequest(
     max_stdout_bytes=64 * 1024,
     max_stderr_bytes=64 * 1024,
 )
-result = TunnelCommandExecutor().execute(target, request, actor)
+context = RemoteExecutionContext(
+    command_id="rmcmd:workitem-command",
+    worker_id="worker:remote-01",
+    fence="fence:workitem-lease",
+)
+result = TunnelCommandExecutor().execute(
+    target, request, actor, context=context
+)
 ```
+
+`context` is copied from the owning WorkItem lease. Tunnel Manager preserves all
+three correlations exactly; it never creates a replacement command ID, worker ID,
+or fence. The owning scheduler must conditionally publish the result with its
+WorkItem CAS and discard stale-fence output.
 
 `AuthorizedTarget` contains only `kind`, `alias`, and capability labels. It
 never contains a hostname, username, identity path, proxy, known-host file,
@@ -71,7 +84,9 @@ The inventory is loaded afresh on every resolution and dispatch. An inventory
 edit or entitlement revocation between planning and execution therefore fails
 closed or uses the newly authorized configuration; stale `HostConfig` objects
 are never reused. The result has only opaque command/worker/fence identifiers,
-bounded redacted output tails, stable C-10 failure classes, and cleanup status.
+bounded redacted output tails, frozen typed log/artifact-reference fields, stable
+C-10 failure classes, and cleanup status. Free-form error-message fields are not
+part of the frozen result contract.
 
 Known-host, identity-file, proxy allowlist, and opaque secret-reference checks
 run before a transport factory is called. Transport `close()` runs in `finally`,
@@ -81,6 +96,11 @@ The structured executor uses an additive `Tunnel.run_command(...,
 propagate_errors=True)` flag so timeout and SSH policy failures retain their stable
 failure classes. The flag defaults to `False`; existing Tunnel callers continue to
 receive the legacy `CommandResult` error shape.
+
+The request/result limits follow the frozen C-04 models: execution timeout is
+bounded at 86,400 seconds and artifact references at 1 GiB. Tunnel Manager may
+apply a stricter local output or transfer policy at dispatch; artifact production
+and transfer remain RMDD-15 responsibilities.
 
 ## Dependency decision for Repository Manager
 

@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import re
 import shlex
-import uuid
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -57,8 +56,15 @@ from .proxy_security import proxy_command_argv
 from .tunnel_manager import HostManager, Tunnel, default_inventory_path
 
 _ALIAS_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,126}[A-Za-z0-9])?\Z")
+_DIGEST_RE = re.compile(r"[0-9a-f]{64}\Z")
+_JOB_ID_RE = re.compile(
+    r"rmjob:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z"
+)
 _ENV_REF_RE = re.compile(r"[A-Za-z][A-Za-z0-9_.:/-]*\Z")
 _MAX_OUTPUT_TAIL_BYTES = 64 * 1024
+_MAX_ARTIFACT_BYTES = 1024 * 1024 * 1024
+_MAX_EXECUTION_TIMEOUT_SECONDS = 86_400
 _MAX_REMOTE_PATH_BYTES = 4_096
 _SHELL_NAMES = frozenset({"ash", "bash", "csh", "dash", "fish", "ksh", "sh", "zsh"})
 
@@ -111,6 +117,104 @@ class RemoteTransportError(RemoteExecutionError):
     """The trusted SSH environment or transport could not execute the request."""
 
     failure_class = FailureClass.WORKER_ENVIRONMENT_FAILURE
+
+
+def _validate_opaque(value: str, label: str) -> str:
+    if not value or value.strip() != value or any(ord(char) < 0x20 for char in value):
+        raise ValueError(f"{label} must be a non-blank opaque identifier")
+    return value
+
+
+def _validate_digest(value: str) -> str:
+    if not _DIGEST_RE.fullmatch(value):
+        raise ValueError("content address must be a lowercase SHA-256 digest")
+    return value
+
+
+def _validate_relative_path(value: str) -> str:
+    path = Path(value)
+    if not value or value.strip() != value or path.is_absolute() or ".." in path.parts:
+        raise ValueError("reference path must be relative and confined")
+    return value
+
+
+class RemoteExecutionContext(BaseModel):
+    """Caller-owned WorkItem correlations carried through one dispatch."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    contract_version: Literal["1"] = "1"
+    command_id: StrictStr
+    worker_id: StrictStr
+    fence: StrictStr
+
+    @field_validator("command_id", "worker_id", "fence")
+    @classmethod
+    def validate_correlations(_cls, value: str, info: Any) -> str:
+        return _validate_opaque(value, info.field_name)
+
+
+class RemoteArtifactReference(BaseModel):
+    """Frozen C-04 artifact-reference shape; transport is RMDD-15 scope."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    contract_version: Literal["1"] = "1"
+    content_address: StrictStr
+    relative_path: StrictStr
+    size_bytes: StrictInt = Field(ge=0, le=_MAX_ARTIFACT_BYTES)
+    media_type: StrictStr
+    producer_job_id: StrictStr | None = None
+
+    @field_validator("content_address")
+    @classmethod
+    def validate_content_address(_cls, value: str) -> str:
+        return _validate_digest(value)
+
+    @field_validator("relative_path")
+    @classmethod
+    def validate_path(_cls, value: str) -> str:
+        return _validate_relative_path(value)
+
+    @field_validator("media_type")
+    @classmethod
+    def validate_media_type(_cls, value: str) -> str:
+        return _validate_opaque(value, "media_type")
+
+    @field_validator("producer_job_id")
+    @classmethod
+    def validate_producer_job_id(_cls, value: str | None) -> str | None:
+        if value is not None and not _JOB_ID_RE.fullmatch(value):
+            raise ValueError("producer_job_id must use the frozen job ID form")
+        return value
+
+
+class RemoteLogReference(BaseModel):
+    """Frozen C-04 log-reference shape; full logs remain external."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    contract_version: Literal["1"] = "1"
+    content_address: StrictStr
+    relative_path: StrictStr
+    size_bytes: StrictInt = Field(ge=0, le=_MAX_ARTIFACT_BYTES)
+    tail_bytes: StrictInt = Field(ge=0, le=_MAX_OUTPUT_TAIL_BYTES)
+    media_type: StrictStr = "text/plain"
+
+    @field_validator("content_address")
+    @classmethod
+    def validate_content_address(_cls, value: str) -> str:
+        return _validate_digest(value)
+
+    @field_validator("relative_path")
+    @classmethod
+    def validate_path(_cls, value: str) -> str:
+        return _validate_relative_path(value)
+
+    @field_validator("media_type")
+    @classmethod
+    def validate_media_type(_cls, value: str) -> str:
+        return _validate_opaque(value, "media_type")
 
 
 class AuthorizedTarget(BaseModel):
@@ -167,21 +271,23 @@ class RemoteCommandRequest(BaseModel):
     argv: tuple[StrictStr, ...]
     workdir: StrictStr
     environment_refs: tuple[StrictStr, ...] = ()
-    timeout_seconds: StrictInt = Field(default=3_600, ge=1, le=3_600)
+    timeout_seconds: StrictInt = Field(
+        default=3_600, ge=1, le=_MAX_EXECUTION_TIMEOUT_SECONDS
+    )
     max_stdout_bytes: StrictInt = Field(
         default_factory=lambda: min(_MAX_OUTPUT_TAIL_BYTES, max_output_bytes()),
         ge=0,
-        le=16_777_216,
+        le=_MAX_ARTIFACT_BYTES,
     )
     max_stderr_bytes: StrictInt = Field(
         default_factory=lambda: min(_MAX_OUTPUT_TAIL_BYTES, max_output_bytes()),
         ge=0,
-        le=16_777_216,
+        le=_MAX_ARTIFACT_BYTES,
     )
     max_artifact_bytes: StrictInt = Field(
-        default_factory=max_transfer_bytes,
+        default_factory=lambda: min(max_transfer_bytes(), _MAX_ARTIFACT_BYTES),
         ge=0,
-        le=2_147_483_648,
+        le=_MAX_ARTIFACT_BYTES,
     )
     heartbeat_interval_seconds: StrictInt = Field(default=30, ge=1, le=3_600)
     cancellation_channel: StrictStr | None = None
@@ -250,7 +356,7 @@ class RemoteCommandRequest(BaseModel):
             raise ValueError("requested stdout limit exceeds tunnel policy")
         if self.max_stderr_bytes > max_output_bytes():
             raise ValueError("requested stderr limit exceeds tunnel policy")
-        if self.max_artifact_bytes > max_transfer_bytes():
+        if self.max_artifact_bytes > min(max_transfer_bytes(), _MAX_ARTIFACT_BYTES):
             raise ValueError("requested artifact limit exceeds tunnel policy")
         rendered = _render_command(self)
         if len(rendered) > max_command_chars():
@@ -275,11 +381,10 @@ class RemoteExecutionResult(BaseModel):
     fence: StrictStr
     stdout_tail: StrictStr = ""
     stderr_tail: StrictStr = ""
-    log_refs: tuple[StrictStr, ...] = ()
-    artifact_refs: tuple[StrictStr, ...] = ()
+    log_refs: tuple[RemoteLogReference, ...] = ()
+    artifact_refs: tuple[RemoteArtifactReference, ...] = ()
     failure_class: FailureClass | None = None
     cleanup_ok: StrictBool = True
-    error_message: StrictStr | None = None
 
     @field_validator("started_at", "finished_at")
     @classmethod
@@ -350,10 +455,6 @@ def render_remote_command(request: RemoteCommandRequest) -> str:
     """Return the deterministic command used by a transport fake or worker."""
 
     return _render_command(request)
-
-
-def _new_id(prefix: str) -> str:
-    return f"{prefix}:{uuid.uuid4()}"
 
 
 def _utc_now() -> datetime:
@@ -507,27 +608,33 @@ class TunnelCommandExecutor:
         inventory: HostInventory | None = None,
         *,
         transport_factory: Callable[[HostConfig], TunnelTransport] | None = None,
-        worker_id: str = "tunnel-manager",
     ) -> None:
-        if not worker_id or any(ord(char) < 0x20 for char in worker_id):
-            raise ValueError("worker_id must be an opaque identifier")
         self.inventory = inventory or HostInventory()
         self._transport_factory = transport_factory or (
             lambda config: Tunnel(config=config)
         )
-        self.worker_id = worker_id
 
     def execute(
         self,
         target: AuthorizedTarget | Mapping[str, Any],
         request: RemoteCommandRequest | Mapping[str, Any],
         actor: ActorContext,
+        *,
+        context: RemoteExecutionContext | Mapping[str, Any],
     ) -> RemoteExecutionResult:
-        """Reauthorize, validate, execute, and always close one remote command."""
+        """Execute one command with caller-owned WorkItem correlations.
 
+        The owning scheduler supplies ``context`` from the leased WorkItem. The
+        transport never invents or advances command/fence identity; publication
+        remains the scheduler's conditional CAS responsibility.
+        """
+
+        parsed_context = (
+            context
+            if isinstance(context, RemoteExecutionContext)
+            else RemoteExecutionContext.model_validate(context)
+        )
         started = _utc_now()
-        command_id = _new_id("rmcmd")
-        fence = _new_id("fence")
         config: HostConfig | None = None
         transport: TunnelTransport | None = None
         result: RemoteExecutionResult | None = None
@@ -553,7 +660,9 @@ class TunnelCommandExecutor:
             config = self.inventory._resolve_config(parsed_target.alias, actor)
             _validate_host_config(config)
             timeout = validate_timeout(
-                parsed_request.timeout_seconds, default=3_600, maximum=3_600
+                parsed_request.timeout_seconds,
+                default=3_600,
+                maximum=_MAX_EXECUTION_TIMEOUT_SECONDS,
             )
             transport = self._transport_factory(config)
             # The concrete Tunnel already owns connection setup inside its
@@ -576,8 +685,7 @@ class TunnelCommandExecutor:
             finished = _utc_now()
             if command_result.success:
                 result = self._result(
-                    command_id=command_id,
-                    fence=fence,
+                    context=parsed_context,
                     started=started,
                     finished=finished,
                     outcome=ExecutionOutcome.SUCCEEDED,
@@ -594,8 +702,7 @@ class TunnelCommandExecutor:
                     else FailureClass.WORKER_ENVIRONMENT_FAILURE
                 )
                 result = self._result(
-                    command_id=command_id,
-                    fence=fence,
+                    context=parsed_context,
                     started=started,
                     finished=finished,
                     outcome=ExecutionOutcome.FAILED,
@@ -605,25 +712,20 @@ class TunnelCommandExecutor:
                     request=parsed_request,
                     config=config,
                     failure_class=failure,
-                    error_message="remote command failed",
                 )
         except RemoteTargetError as exc:
             result = self._failure_result(
-                command_id,
-                fence,
+                parsed_context,
                 started,
                 ExecutionOutcome.REFUSED,
                 exc.failure_class,
-                "remote target authorization failed",
             )
         except ConnectionPolicyError:
             result = self._failure_result(
-                command_id,
-                fence,
+                parsed_context,
                 started,
                 ExecutionOutcome.REFUSED,
                 FailureClass.WORKER_ENVIRONMENT_FAILURE,
-                "remote SSH policy refused the execution environment",
             )
         except (RemoteRequestError, ValidationError, ValueError) as exc:
             failure = (
@@ -632,30 +734,24 @@ class TunnelCommandExecutor:
                 else FailureClass.INVALID_REQUEST
             )
             result = self._failure_result(
-                command_id,
-                fence,
+                parsed_context,
                 started,
                 ExecutionOutcome.REFUSED,
                 failure,
-                "remote execution request was refused",
             )
         except TimeoutError:
             result = self._failure_result(
-                command_id,
-                fence,
+                parsed_context,
                 started,
                 ExecutionOutcome.TIMED_OUT,
                 FailureClass.CANCELLED_DEADLINE,
-                "remote execution deadline exceeded",
             )
         except Exception:
             result = self._failure_result(
-                command_id,
-                fence,
+                parsed_context,
                 started,
                 ExecutionOutcome.FAILED,
                 FailureClass.WORKER_ENVIRONMENT_FAILURE,
-                "remote transport failed",
             )
         finally:
             if transport is not None:
@@ -666,12 +762,10 @@ class TunnelCommandExecutor:
 
         if result is None:  # pragma: no cover - defensive invariant
             result = self._failure_result(
-                command_id,
-                fence,
+                parsed_context,
                 started,
                 ExecutionOutcome.FAILED,
                 FailureClass.INTERNAL_ERROR,
-                "remote execution failed",
             )
         if not cleanup_ok:
             result = result.model_copy(
@@ -679,7 +773,6 @@ class TunnelCommandExecutor:
                     "outcome": ExecutionOutcome.FAILED,
                     "failure_class": FailureClass.WORKER_ENVIRONMENT_FAILURE,
                     "cleanup_ok": False,
-                    "error_message": "remote transport cleanup failed",
                 }
             )
         return result
@@ -687,8 +780,7 @@ class TunnelCommandExecutor:
     def _result(
         self,
         *,
-        command_id: str,
-        fence: str,
+        context: RemoteExecutionContext,
         started: datetime,
         finished: datetime,
         outcome: ExecutionOutcome,
@@ -698,17 +790,16 @@ class TunnelCommandExecutor:
         request: RemoteCommandRequest,
         config: HostConfig | None,
         failure_class: FailureClass | None = None,
-        error_message: str | None = None,
     ) -> RemoteExecutionResult:
         return RemoteExecutionResult(
-            command_id=command_id,
+            command_id=context.command_id,
             outcome=outcome,
             exit_code=exit_code,
             started_at=started,
             finished_at=finished,
             duration_ms=max(0, int((finished - started).total_seconds() * 1_000)),
-            worker_id=self.worker_id,
-            fence=fence,
+            worker_id=context.worker_id,
+            fence=context.fence,
             stdout_tail=_bounded_text(
                 stdout,
                 min(request.max_stdout_bytes, _MAX_OUTPUT_TAIL_BYTES),
@@ -720,29 +811,25 @@ class TunnelCommandExecutor:
                 config=config,
             ),
             failure_class=failure_class,
-            error_message=error_message,
         )
 
     def _failure_result(
         self,
-        command_id: str,
-        fence: str,
+        context: RemoteExecutionContext,
         started: datetime,
         outcome: ExecutionOutcome,
         failure_class: FailureClass,
-        error_message: str,
     ) -> RemoteExecutionResult:
         finished = _utc_now()
         return RemoteExecutionResult(
-            command_id=command_id,
+            command_id=context.command_id,
             outcome=outcome,
             started_at=started,
             finished_at=finished,
             duration_ms=max(0, int((finished - started).total_seconds() * 1_000)),
-            worker_id=self.worker_id,
-            fence=fence,
+            worker_id=context.worker_id,
+            fence=context.fence,
             failure_class=failure_class,
-            error_message=error_message,
         )
 
 
@@ -750,14 +837,12 @@ def create_tunnel_executor(
     inventory: HostInventory | None = None,
     *,
     transport_factory: Callable[[HostConfig], TunnelTransport] | None = None,
-    worker_id: str = "tunnel-manager",
 ) -> TunnelCommandExecutor:
     """Build the stable executor seam for a Repository Manager worker."""
 
     return TunnelCommandExecutor(
         inventory,
         transport_factory=transport_factory,
-        worker_id=worker_id,
     )
 
 
@@ -766,9 +851,12 @@ __all__ = [
     "ExecutionOutcome",
     "FailureClass",
     "HostInventory",
+    "RemoteArtifactReference",
     "RemoteCommandRequest",
     "RemoteExecutionError",
+    "RemoteExecutionContext",
     "RemoteExecutionResult",
+    "RemoteLogReference",
     "RemoteRequestError",
     "RemoteTargetError",
     "RemoteTransportError",

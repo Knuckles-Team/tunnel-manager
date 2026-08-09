@@ -673,7 +673,9 @@ class Tunnel:
         :return: CommandResult object.
         """
         command = validate_command(command)
-        command_timeout = validate_timeout(timeout, default=60)
+        command_timeout = validate_timeout(
+            timeout, default=60, maximum=86_400 if propagate_errors else 3_600
+        )
         self.connect()
         try:
             _stdin, stdout, stderr = self.ssh_client.exec_command(
