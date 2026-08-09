@@ -17,6 +17,7 @@
 | `CONCEPT:TM-OS.governance.tun-5` | Remote Operations | MCP tool domain `remote` — Action-routed dynamic tool registration |
 | `CONCEPT:TM-OS.governance.tun-6` | Security Operations | MCP tool domain `security` — Action-routed dynamic tool registration |
 | `CONCEPT:TM-OS.governance.tun-7` | System Information & Health | MCP tool domain `system` — Action-routed dynamic tool registration |
+| `CONCEPT:TM-OS.governance.entitlement-aware-remote-execution` | Entitlement-aware remote execution | Alias-only structured worker boundary for Repository Manager; canonical inventory and SSH policy remain in tunnel-manager |
 
 ## Cross-Project References (from agent-utilities)
 

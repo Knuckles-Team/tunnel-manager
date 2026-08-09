@@ -70,6 +70,15 @@ results = tunnel.run_command_on_inventory(
 )
 ```
 
+### Repository-worker execution
+
+Repository Manager uses the alias-only structured boundary documented in
+[Structured remote execution](remote_execution.md). It does not call
+`HostManager.hosts`, pass raw SSH fields, or submit a shell string. The
+plan-time alias view is re-resolved and re-authorized immediately before each
+dispatch, and the transport is closed even when validation, authentication, or
+the command fails.
+
 ### Provisioning operations
 
 Key-management and file-transfer operations are first-class:

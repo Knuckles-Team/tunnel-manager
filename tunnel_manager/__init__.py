@@ -31,6 +31,43 @@ for module_name in CORE_MODULES:
         module = importlib.import_module(module_name)
         _expose_members(module)
 
+# Stable structured remote-execution seam.  Keep the export list explicit so
+# importing the package does not expose HostConfig/transport implementation
+# details from this adapter.
+from .remote_execution import (  # noqa: E402
+    AuthorizedTarget,
+    ExecutionOutcome,
+    FailureClass,
+    HostInventory,
+    RemoteCommandRequest,
+    RemoteExecutionError,
+    RemoteExecutionResult,
+    RemoteRequestError,
+    RemoteTargetError,
+    RemoteTransportError,
+    TunnelCommandExecutor,
+    TunnelTransport,
+    create_tunnel_executor,
+    render_remote_command,
+)
+
+__all__ += [
+    "AuthorizedTarget",
+    "ExecutionOutcome",
+    "FailureClass",
+    "HostInventory",
+    "RemoteCommandRequest",
+    "RemoteExecutionError",
+    "RemoteExecutionResult",
+    "RemoteRequestError",
+    "RemoteTargetError",
+    "RemoteTransportError",
+    "TunnelCommandExecutor",
+    "TunnelTransport",
+    "create_tunnel_executor",
+    "render_remote_command",
+]
+
 # Dynamic/lazy loading of optional modules (agent_server, mcp_server)
 _loaded_optional_modules: dict[str, Any] = {}
 

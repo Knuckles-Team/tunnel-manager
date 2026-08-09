@@ -660,12 +660,16 @@ class Tunnel:
         )
         raise ConnectionError("SSH connection failed") from None
 
-    def run_command(self, command, timeout=None) -> CommandResult:
+    def run_command(
+        self, command, timeout=None, *, propagate_errors: bool = False
+    ) -> CommandResult:
         """
         Run a shell command on the remote host.
 
         :param command: The command to execute.
         :param timeout: Optional command execution timeout in seconds.
+        :param propagate_errors: Re-raise typed timeout/policy failures for a
+            structured caller. The default preserves the legacy result shape.
         :return: CommandResult object.
         """
         command = validate_command(command)
@@ -732,6 +736,10 @@ class Tunnel:
             return CommandResult(success=(exit_status == 0), stdout=out, stderr=err)
         except Exception as e:
             self.logger.error("Operation failed: error_type=%s", type(e).__name__)
+            if propagate_errors and isinstance(
+                e, (TimeoutError, ConnectionPolicyError)
+            ):
+                raise
             return CommandResult(
                 success=False,
                 error_message="ManagedCommandError",
