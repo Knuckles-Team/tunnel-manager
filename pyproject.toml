@@ -70,6 +70,7 @@ ignore = [ "E402", "E501", "B008",]
 
 [tool.setuptools.packages.find]
 where = [ ".",]
+include = [ "tunnel_manager*",]
 
 [tool.vulture]
 ignore_names = ["request", "config"]
