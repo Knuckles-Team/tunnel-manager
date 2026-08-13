@@ -3045,7 +3045,6 @@ def mcp_server() -> None:
 
     from agent_utilities.mcp.server_factory import (
         mcp_network_run_kwargs,
-        protect_stdio_jsonrpc,
     )
     from agent_utilities.security.request_identity import (
         apply_served_security_profile,
@@ -3059,7 +3058,9 @@ def mcp_server() -> None:
     )
 
     if args.transport == "stdio":
-        protect_stdio_jsonrpc()
+        # Stdout purity is owned fd-level by the MCP SDK's own stdio_server()
+        # (agent-utilities B-19): it claims fd 1 exclusively and dup2()s stderr
+        # over it for every other writer, so no process-wide patch is needed.
         mcp.run(transport="stdio")
     elif args.transport == "streamable-http":
         mcp.run(
