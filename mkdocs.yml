@@ -92,5 +92,6 @@ nav:
   - Inventory (setup & overrides): inventory.md
   - Deployment: deployment.md
   - Usage (API / CLI / MCP): usage.md
+  - Structured remote execution: remote_execution.md
   - Teleport Architecture: teleport_architecture.md
   - Concepts: concepts.md
