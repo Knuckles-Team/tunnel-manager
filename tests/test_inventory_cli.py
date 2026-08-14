@@ -86,9 +86,7 @@ class TestInventoryDoctor:
         dest = config_dir / "inventory.yml"
         # Host with no user anywhere -> missing 'user'.
         dest.write_text(
-            yaml.dump(
-                {"all": {"hosts": {"edge-node": {"ansible_host": "192.0.2.13"}}}}
-            )
+            yaml.dump({"all": {"hosts": {"edge-node": {"ansible_host": "192.0.2.13"}}}})
         )
         assert _inventory_doctor(str(dest), fix=False) == 1
 

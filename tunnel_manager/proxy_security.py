@@ -20,9 +20,7 @@ class ProxyCommandError(ValueError):
 
 def _csv(name: str, default: str) -> tuple[str, ...]:
     return tuple(
-        item.strip()
-        for item in str(setting(name, default)).split(",")
-        if item.strip()
+        item.strip() for item in str(setting(name, default)).split(",") if item.strip()
     )
 
 

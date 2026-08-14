@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 try:
     from servicenow_api.servicenow_agent import create_agent
-except ImportError as e:
+except ImportError:
     print("Import Error")
     print("Please install dependencies via `pip install .[all]`")
     sys.exit(1)
@@ -46,12 +46,11 @@ async def main():
                 elif hasattr(agent, "_tools"):
                     print(f"Agent Tools: {[t.__name__ for t in agent._tools]}")
 
-            except Exception as e:
+            except Exception:
                 print("\n\nError processing question '{q}'")
 
-    except Exception as e:
+    except Exception:
         print("Validation failed with error")
-        import traceback
 
         print("Detailed traceback suppressed by privacy policy")
 

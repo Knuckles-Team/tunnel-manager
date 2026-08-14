@@ -35,7 +35,12 @@ def ingest_entities(
 ) -> dict[str, int]:
     """Write canonical typed nodes and relationships in one native transaction."""
     return _native_ingest_entities(
-        entities, relationships, source=source, domain=domain, client=client, graph=graph
+        entities,
+        relationships,
+        source=source,
+        domain=domain,
+        client=client,
+        graph=graph,
     )
 
 
@@ -59,7 +64,9 @@ def _host_to_dict(host: Any) -> dict[str, Any]:
         try:
             return host.model_dump(exclude_unset=False)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Host normalization recovery: error_type=%s", type(exc).__name__)
+            logger.debug(
+                "Host normalization recovery: error_type=%s", type(exc).__name__
+            )
     if isinstance(host, dict):
         return dict(host)
     return {}
@@ -115,7 +122,12 @@ def ingest_hosts(
             if key_id not in seen_keys:
                 seen_keys.add(key_id)
                 entities.append(
-                    {"id": key_id, "node_type": "SshKey", "name": identity, "path": identity}
+                    {
+                        "id": key_id,
+                        "node_type": "SshKey",
+                        "name": identity,
+                        "path": identity,
+                    }
                 )
             relationships.append(
                 {"source": host_id, "target": key_id, "relationship": "usesKey"}

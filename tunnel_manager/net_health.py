@@ -160,7 +160,9 @@ def _resolve_hosts() -> dict[str, Any]:
     for alias in aliases:
         try:
             config = manager.get_host(alias)
-        except Exception as e:  # noqa: BLE001 — e.g. entitlement denial -> skip, not fatal
+        except (
+            Exception
+        ) as e:  # noqa: BLE001 — e.g. entitlement denial -> skip, not fatal
             logger.debug("net-health: host %s unavailable: %s", alias, e)
             continue
         if config is not None:
