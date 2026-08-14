@@ -20,7 +20,7 @@
 ![PyPI - Wheel](https://img.shields.io/pypi/wheel/tunnel-manager)
 ![PyPI - Implementation](https://img.shields.io/pypi/implementation/tunnel-manager)
 
-*Version: 3.0.0*
+*Version: 3.1.0*
 
 > **Documentation** — Installation, deployment, usage across the API, CLI, and MCP
 > and agent interfaces are maintained in the
@@ -61,7 +61,7 @@ _Auto-generated from the live MCP server — do not edit by hand._
 
 <!-- MCP-TOOLS-TABLE:START -->
 
-#### Condensed action-routed tools (default — `MCP_TOOL_MODE=condensed`)
+#### Condensed action-routed tools (`MCP_TOOL_MODE=condensed`)
 
 | MCP Tool | Toggle Env Var | Description |
 |----------|----------------|-------------|
@@ -82,15 +82,15 @@ _Auto-generated from the live MCP server — do not edit by hand._
 | MCP Tool | Toggle Env Var | Description |
 |----------|----------------|-------------|
 | `tunnel_manager_add_host` | `HOST_MANAGERTOOL` | Invoke the add_host operation. |
-| `tunnel_manager_get_host` | `HOST_MANAGERTOOL` | Invoke the get_host operation. |
-| `tunnel_manager_list_hosts` | `HOST_MANAGERTOOL` | Invoke the list_hosts operation. |
+| `tunnel_manager_get_host` | `HOST_MANAGERTOOL` | Get a host config by alias, denying an alias the caller isn't entitled to. |
+| `tunnel_manager_list_hosts` | `HOST_MANAGERTOOL` | List the host aliases the CALLER is entitled to, secrets redacted. |
 | `tunnel_manager_load_inventory` | `HOST_MANAGERTOOL` | Invoke the load_inventory operation. |
 | `tunnel_manager_remove_host` | `HOST_MANAGERTOOL` | Invoke the remove_host operation. |
 | `tunnel_manager_save_inventory` | `HOST_MANAGERTOOL` | Invoke the save_inventory operation. |
 
 </details>
 
-_8 action-routed tool(s) (default) · 6 verbose 1:1 tool(s). Each is enabled unless its `<DOMAIN>TOOL` toggle is set false; `MCP_TOOL_MODE` selects the surface (`condensed` default · `verbose` 1:1 · `both`). Auto-generated — do not edit._
+_8 action-routed tool(s) · 6 verbose 1:1 tool(s). Each is enabled unless its `<DOMAIN>TOOL` toggle is set false; `MCP_TOOL_MODE` selects the surface (**`intent` default** — the six verb-tools, granular set loaded on demand · `condensed` action-routed · `verbose` 1:1 · `both`). Auto-generated — do not edit._
 <!-- MCP-TOOLS-TABLE:END -->
 
 Detailed tool schemas, parameter shapes, and validation constraints are preserved in [docs/usage.md](docs/usage.md).
@@ -153,7 +153,6 @@ When query strings or parameters are supplied, an LLM-free **Knowledge Graph res
         "TUNNEL_KNOWN_HOSTS": "~/.ssh/known_hosts",
         "TUNNEL_MANAGER_HEALTH_AGGREGATE_S": "3600",
         "TUNNEL_MANAGER_HEALTH_INGEST": "true",
-        "TUNNEL_MANAGER_HEALTH_NOTIFY_URL": "",
         "TUNNEL_MANAGER_HOSTS": "r510,r710,r820,rw710",
         "TUNNEL_MAX_THREADS": "6",
         "TUNNEL_PARALLEL": "False",
@@ -203,7 +202,6 @@ own runtime secret boundary.
         "TUNNEL_KNOWN_HOSTS": "~/.ssh/known_hosts",
         "TUNNEL_MANAGER_HEALTH_AGGREGATE_S": "3600",
         "TUNNEL_MANAGER_HEALTH_INGEST": "true",
-        "TUNNEL_MANAGER_HEALTH_NOTIFY_URL": "",
         "TUNNEL_MANAGER_HOSTS": "r510,r710,r820,rw710",
         "TUNNEL_MAX_THREADS": "6",
         "TUNNEL_PARALLEL": "False",
@@ -252,7 +250,6 @@ docker run -i --rm \
   -e TUNNEL_KNOWN_HOSTS=~/.ssh/known_hosts \
   -e TUNNEL_MANAGER_HEALTH_AGGREGATE_S=3600 \
   -e TUNNEL_MANAGER_HEALTH_INGEST=true \
-  -e TUNNEL_MANAGER_HEALTH_NOTIFY_URL="" \
   -e TUNNEL_MANAGER_HOSTS=r510,r710,r820,rw710 \
   -e TUNNEL_MAX_THREADS=6 \
   -e TUNNEL_PARALLEL=False \
@@ -317,13 +314,13 @@ Full schema, every host field, the copy-paste template, and override options liv
 
 | Variable | Example | Description |
 |----------|---------|-------------|
-| `HOST` | `127.0.0.1` | loopback bind by default; use an authenticated gateway for remote access |
+| `HOST` | `127.0.0.1` |  |
 | `PORT` | `8000` |  |
 | `TRANSPORT` | `stdio` | options: stdio, streamable-http, sse |
 | `ENABLE_OTEL` | `True` |  |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:8080/api/public/otel` |  |
-| `OTEL_EXPORTER_OTLP_PUBLIC_KEY` | `pk-...` |  |
-| `OTEL_EXPORTER_OTLP_SECRET_KEY` | `sk-...` |  |
+| `OTEL_EXPORTER_OTLP_PUBLIC_KEY` | secret-injected |  |
+| `OTEL_EXPORTER_OTLP_SECRET_KEY` | secret-injected |  |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` |  |
 | `EUNOMIA_TYPE` | `none` | options: none, embedded, remote |
 | `EUNOMIA_POLICY_FILE` | `mcp_policies.json` |  |
@@ -334,19 +331,19 @@ Full schema, every host field, the copy-paste template, and override options liv
 | `TUNNEL_REMOTE_HOST` | — | default remote host (e.g. 198.51.100.10) |
 | `TUNNEL_REMOTE_PORT` | `22` | default SSH port |
 | `TUNNEL_USERNAME` | — | default SSH username |
-| `TUNNEL_PASSWORD_REF` | — | runtime secret reference for SSH password auth; literal passwords are rejected |
-| `TUNNEL_KNOWN_HOSTS` | `~/.ssh/known_hosts` | independently verified SSH server host keys |
+| `TUNNEL_PASSWORD_REF` | — | env://, vault://, secret://, or sqlite:// reference |
+| `TUNNEL_KNOWN_HOSTS` | `~/.ssh/known_hosts` | independently verified server host keys |
 | `TUNNEL_CERTIFICATE` | — | path to an SSH certificate file |
 | `TUNNEL_PROXY_COMMAND` | — | SSH ProxyCommand for jump-host/bastion connections |
 | `TUNNEL_INVENTORY` | — | path to the inventory file (defaults to XDG config path) |
 | `TUNNEL_INVENTORY_GROUP` | `all` | inventory host group to target |
 | `TUNNEL_PARALLEL` | `False` | run host operations in parallel |
 | `TUNNEL_MAX_THREADS` | `6` | max worker threads when TUNNEL_PARALLEL=True |
-| `TUNNEL_MAX_COMMAND_CHARS` | `65536` | maximum managed command size |
-| `TUNNEL_MAX_OUTPUT_BYTES` | `1048576` | combined command-output cap |
-| `TUNNEL_MAX_TRANSFER_BYTES` | `268435456` | file-transfer size cap |
-| `TUNNEL_MAX_FLEET_HOSTS` | `1000` | inventory host cap |
-| `TUNNEL_MAX_CONCURRENCY` | `64` | concurrent SSH operation cap |
+| `TUNNEL_MAX_COMMAND_CHARS` | `65536` |  |
+| `TUNNEL_MAX_OUTPUT_BYTES` | `1048576` |  |
+| `TUNNEL_MAX_TRANSFER_BYTES` | `268435456` |  |
+| `TUNNEL_MAX_FLEET_HOSTS` | `1000` |  |
+| `TUNNEL_MAX_CONCURRENCY` | `64` |  |
 | `XDG_CONFIG_HOME` | — | base config dir (defaults to ~/.config) for inventory resolution |
 | `HOSTTOOL` | `True` | Grouped condensed-surface toggles, one per register_<tag>_tools registrar. |
 | `REMOTETOOL` | `True` |  |
@@ -366,16 +363,16 @@ Full schema, every host field, the copy-paste template, and override options liv
 
 | Variable | Example | Description |
 |----------|---------|-------------|
-| `MCP_TOOL_MODE` | `condensed` | Tool surface: `condensed` | `verbose` | `both` |
+| `MCP_TOOL_MODE` | `intent` | Tool surface: `intent` \| `condensed` \| `verbose` \| `both` |
 | `MCP_ENABLED_TOOLS` | — | Comma-separated tool allow-list |
 | `MCP_DISABLED_TOOLS` | — | Comma-separated tool deny-list |
 | `MCP_ENABLED_TAGS` | — | Comma-separated tag allow-list |
 | `MCP_DISABLED_TAGS` | — | Comma-separated tag deny-list |
-| `MCP_CLIENT_AUTH` | — | Outbound MCP child auth: `oidc-client-credentials` | `basic` | `none` |
+| `MCP_CLIENT_AUTH` | — | Outbound MCP child auth: `oidc-client-credentials` \| `basic` \| `none` |
 | `OIDC_CLIENT_ID` | — | OIDC client id (service-account auth) |
-| `OIDC_CLIENT_SECRET` | — | OIDC client secret (service-account auth) |
+| `OIDC_CLIENT_SECRET_REF` | `secret://identity/oidc-client-secret` | Runtime secret reference for the OIDC service account |
 | `MCP_BASIC_AUTH_USERNAME` | — | HTTP Basic username (`MCP_CLIENT_AUTH=basic`) |
-| `MCP_BASIC_AUTH_PASSWORD` | — | HTTP Basic password (`MCP_CLIENT_AUTH=basic`) |
+| `MCP_BASIC_AUTH_PASSWORD_REF` | `secret://identity/mcp-basic-password` | Runtime secret reference for HTTP Basic auth (`MCP_CLIENT_AUTH=basic`) |
 | `MCP_URL` | `http://localhost:8000/mcp` | URL of the MCP server the agent connects to |
 | `PROVIDER` | `openai` | LLM provider for the agent |
 | `MODEL_ID` | `gpt-4o` | Model id for the agent |

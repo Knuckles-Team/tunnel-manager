@@ -62,7 +62,7 @@ from tunnel_manager.tunnel_manager import (
     default_inventory_path,
 )
 
-__version__ = "3.0.0"
+__version__ = "3.1.0"
 
 # XDG-compliant default paths. The inventory is shared across the ecosystem
 # (the HostManager library, container-manager-mcp, and the ssh-bootstrap skill all
