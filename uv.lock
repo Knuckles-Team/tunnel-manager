@@ -2803,7 +2803,7 @@ wheels = [
 
 [[package]]
 name = "tunnel-manager"
-version = "3.0.0"
+version = "3.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "agent-utilities" },
