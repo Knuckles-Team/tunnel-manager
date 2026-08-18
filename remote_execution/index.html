@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://knuckles-team.github.io/tunnel-manager/inventory/">
+        <link rel="canonical" href="https://knuckles-team.github.io/tunnel-manager/remote_execution/">
       
       
-        <link rel="prev" href="../configuration/">
+        <link rel="prev" href="../usage/">
       
       
-        <link rel="next" href="../deployment/">
+        <link rel="next" href="../teleport_architecture/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Inventory (setup & overrides) - tunnel-manager</title>
+        <title>Structured remote execution - tunnel-manager</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#inventory-setup-creation-overrides" class="md-skip">
+        <a href="#structured-remote-execution" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Inventory (setup & overrides)
+              Structured remote execution
             
           </span>
         </div>
@@ -310,11 +310,9 @@
   
   
   
-    
   
-  
-    <li class="md-tabs__item md-tabs__item--active">
-      <a href="./" class="md-tabs__link">
+    <li class="md-tabs__item">
+      <a href="../inventory/" class="md-tabs__link">
         
   
   
@@ -369,9 +367,11 @@
   
   
   
+    
   
-    <li class="md-tabs__item">
-      <a href="../remote_execution/" class="md-tabs__link">
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
         
   
   
@@ -585,37 +585,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Inventory (setup & overrides)
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../inventory/" class="md-nav__link">
         
   
   
@@ -631,131 +604,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#default-location" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Default location
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#create-your-inventory" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Create your inventory
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Create your inventory">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#inventory-cli-commands" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Inventory CLI commands
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#template" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Template
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#format" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Format
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#recognized-per-host-keys" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Recognized per-host keys
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#build-it-programmatically-instead" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Build it programmatically instead
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#override-the-default-location" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Override the default location
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#use-it-ssh-mesh-bootstrap" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Use it: SSH mesh bootstrap
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -818,10 +666,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../remote_execution/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Structured remote execution
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -837,6 +712,59 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#public-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Public contract
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authorization-and-dispatch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authorization and dispatch
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dependency-decision-for-repository-manager" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dependency decision for Repository Manager
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -922,10 +850,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#default-location" class="md-nav__link">
+  <a href="#public-contract" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Default location
+        Public contract
       
     </span>
   </a>
@@ -933,82 +861,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#create-your-inventory" class="md-nav__link">
+  <a href="#authorization-and-dispatch" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Create your inventory
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Create your inventory">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#inventory-cli-commands" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Inventory CLI commands
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#template" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Template
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#format" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Format
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#recognized-per-host-keys" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Recognized per-host keys
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#build-it-programmatically-instead" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Build it programmatically instead
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#override-the-default-location" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Override the default location
+        Authorization and dispatch
       
     </span>
   </a>
@@ -1016,10 +872,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#use-it-ssh-mesh-bootstrap" class="md-nav__link">
+  <a href="#dependency-decision-for-repository-manager" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Use it: SSH mesh bootstrap
+        Dependency decision for Repository Manager
       
     </span>
   </a>
@@ -1046,216 +902,124 @@
   
 
 
-<h1 id="inventory-setup-creation-overrides">Inventory — setup, creation &amp; overrides<a class="headerlink" href="#inventory-setup-creation-overrides" title="Permanent link">&para;</a></h1>
-<p>tunnel-manager works from a single YAML <strong>inventory</strong> that maps short host aliases
-(for example, <code>managed-node</code>) to connection metadata. Every entry
-point — the <code>HostManager</code> Python API, the <code>tunnel-manager</code> CLI, the
-<code>tunnel-manager-mcp</code> MCP server, <strong>and</strong> <code>container-manager-mcp</code> and the
-<code>ssh-bootstrap</code> skill — reads the <strong>same file</strong>, so you define your fleet once.</p>
-<h2 id="default-location">Default location<a class="headerlink" href="#default-location" title="Permanent link">&para;</a></h2>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>$XDG_CONFIG_HOME/agent-utilities/inventory.yml      # preferred
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>$XDG_CONFIG_HOME/agent-utilities/inventory.yaml     # legacy fallback
+<h1 id="structured-remote-execution">Structured remote execution<a class="headerlink" href="#structured-remote-execution" title="Permanent link">&para;</a></h1>
+<p>RMDD-14 provides the reusable remote-worker boundary for Repository Manager. It
+is intentionally narrower than the existing <code>tm_remote</code> MCP action: a caller
+selects an authorized inventory alias and supplies a structured argv request.
+Tunnel Manager remains the authority for inventory, SSH identity, known-host
+trust, proxy policy, and secret references.</p>
+<h2 id="public-contract">Public contract<a class="headerlink" href="#public-contract" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">tunnel_manager</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">HostInventory</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">RemoteCommandRequest</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">RemoteExecutionContext</span><span class="p">,</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">TunnelCommandExecutor</span><span class="p">,</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">)</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">target</span> <span class="o">=</span> <span class="n">HostInventory</span><span class="p">()</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="s2">"build-host"</span><span class="p">,</span> <span class="n">actor</span><span class="p">)</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">request</span> <span class="o">=</span> <span class="n">RemoteCommandRequest</span><span class="p">(</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">argv</span><span class="o">=</span><span class="p">(</span><span class="s2">"pytest"</span><span class="p">,</span> <span class="s2">"-q"</span><span class="p">,</span> <span class="s2">"tests"</span><span class="p">),</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">workdir</span><span class="o">=</span><span class="s2">"/srv/worktrees/project"</span><span class="p">,</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">timeout_seconds</span><span class="o">=</span><span class="mi">900</span><span class="p">,</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="n">max_stdout_bytes</span><span class="o">=</span><span class="mi">64</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">,</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="n">max_stderr_bytes</span><span class="o">=</span><span class="mi">64</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">,</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="p">)</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="n">context</span> <span class="o">=</span> <span class="n">RemoteExecutionContext</span><span class="p">(</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="n">command_id</span><span class="o">=</span><span class="s2">"rmcmd:workitem-command"</span><span class="p">,</span>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="n">worker_id</span><span class="o">=</span><span class="s2">"worker:remote-01"</span><span class="p">,</span>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    <span class="n">fence</span><span class="o">=</span><span class="s2">"fence:workitem-lease"</span><span class="p">,</span>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="p">)</span>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="n">result</span> <span class="o">=</span> <span class="n">TunnelCommandExecutor</span><span class="p">()</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>    <span class="n">target</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">actor</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="n">context</span>
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="p">)</span>
 </span></code></pre></div>
-<p>which is <code>~/.config/agent-utilities/inventory.yml</code> on a typical Linux/macOS host
-(<code>XDG_CONFIG_HOME</code> defaults to <code>~/.config</code>). The path is <strong>resolved</strong> in this order:</p>
-<ol>
-<li><code>inventory.yml</code> if it exists — the standard for fresh installs, <strong>else</strong></li>
-<li><code>inventory.yaml</code> if it exists — the legacy filename, still fully supported, <strong>else</strong></li>
-<li><code>inventory.yml</code> — the path a fresh <code>init</code> writes to.</li>
-</ol>
-<p>So existing <code>.yaml</code> users keep working untouched, while new installs standardize on
-<code>.yml</code>. If neither file exists, tunnel-manager starts with an empty inventory (no error)
-and you can add hosts via the API/CLI.</p>
-<blockquote>
-<p><strong>Note:</strong> this is the <code>agent-utilities</code> config directory on purpose — the inventory
-is shared across the ecosystem. Earlier builds of the MCP server defaulted to
-<code>~/.config/tunnel-manager/inventory.yml</code>; that has been unified to the path above.</p>
-</blockquote>
-<h2 id="create-your-inventory">Create your inventory<a class="headerlink" href="#create-your-inventory" title="Permanent link">&para;</a></h2>
-<p>The fastest start is the <code>init</code> command, which writes a fully-commented template to
-the resolved path:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>tunnel-manager<span class="w"> </span>inventory<span class="w"> </span>init<span class="w">        </span><span class="c1"># writes ~/.config/agent-utilities/inventory.yml</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nv">$EDITOR</span><span class="w"> </span>~/.config/agent-utilities/inventory.yml
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>tunnel-manager<span class="w"> </span>inventory<span class="w"> </span>doctor<span class="w">      </span><span class="c1"># validate it</span>
+<p><code>context</code> is copied from the owning WorkItem lease. Tunnel Manager preserves all
+three correlations exactly; it never creates a replacement command ID, worker ID,
+or fence. The owning scheduler must conditionally publish the result with its
+WorkItem CAS and discard stale-fence output.</p>
+<p><code>AuthorizedTarget</code> contains only <code>kind</code>, <code>alias</code>, and capability labels. It
+never contains a hostname, username, identity path, proxy, known-host file,
+password, or secret value. <code>RemoteCommandRequest</code> accepts <code>argv</code>, an absolute
+remote <code>workdir</code>, opaque environment-reference names, and bounded timeout/output
+limits. A raw shell string and caller-supplied connection fields are invalid.</p>
+<p>The adapter renders one controller-owned command frame:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>cd -- &lt;quoted-workdir&gt; &amp;&amp; exec &lt;quoted-argv-elements&gt;
 </span></code></pre></div>
-<p><code>init</code> refuses to clobber an existing file unless you pass <code>--force</code>, and creates the
-parent directory for you. The template documents every supported host field with
-example hosts and group structure (reproduced under <a href="#template">Template</a> below).</p>
-<h3 id="inventory-cli-commands">Inventory CLI commands<a class="headerlink" href="#inventory-cli-commands" title="Permanent link">&para;</a></h3>
+<p>Every caller value is one <code>shlex</code>-quoted argv element. A semicolon or pipeline
+inside an argv element therefore remains data. Explicit <code>sh -c</code>/<code>bash -c</code>
+requests are refused because they would turn the structured boundary back into a
+caller-owned shell string.</p>
+<h2 id="authorization-and-dispatch">Authorization and dispatch<a class="headerlink" href="#authorization-and-dispatch" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>sequenceDiagram
+    participant RM as Repository Manager
+    participant HI as HostInventory
+    participant AU as Agent Utilities entitlement resolver
+    participant TM as Tunnel / SSH transport
+    participant Host as Inventory host
+
+    RM-&gt;&gt;HI: resolve(alias, verified actor)
+    HI-&gt;&gt;AU: authorize ssh:alias
+    HI-&gt;&gt;HI: reload canonical TUNNEL_INVENTORY
+    HI--&gt;&gt;RM: opaque AuthorizedTarget
+    RM-&gt;&gt;HI: dispatch(target, structured request, actor)
+    HI-&gt;&gt;AU: reauthorize alias at dispatch
+    HI-&gt;&gt;HI: reload inventory and validate trust/key/proxy/ref policy
+    HI-&gt;&gt;TM: connect with private HostConfig
+    TM-&gt;&gt;Host: fixed framed command
+    Host--&gt;&gt;TM: bounded stdout/stderr
+    TM--&gt;&gt;RM: C-04-shaped result
+    RM-&gt;&gt;TM: close in finally</code></pre>
+<p>The inventory is loaded afresh on every resolution and dispatch. An inventory
+edit or entitlement revocation between planning and execution therefore fails
+closed or uses the newly authorized configuration; stale <code>HostConfig</code> objects
+are never reused. The result has only opaque command/worker/fence identifiers,
+bounded redacted output tails, frozen typed log/artifact-reference fields, stable
+C-10 failure classes, and cleanup status. Free-form error-message fields are not
+part of the frozen result contract.</p>
+<p>Known-host, identity-file, proxy allowlist, and opaque secret-reference checks
+run before a transport factory is called. Transport <code>close()</code> runs in <code>finally</code>,
+including connect, timeout, authorization, and command failures.</p>
+<p>The structured executor uses an additive <code>Tunnel.run_command(...,
+propagate_errors=True)</code> flag so timeout and SSH policy failures retain their stable
+failure classes. The flag defaults to <code>False</code>; existing Tunnel callers continue to
+receive the legacy <code>CommandResult</code> error shape.</p>
+<p>The request/result limits follow the frozen C-04 models: execution timeout is
+bounded at 86,400 seconds and artifact references at 1 GiB. Tunnel Manager may
+apply a stricter local output or transfer policy at dispatch; artifact production
+and transfer remain RMDD-15 responsibilities.</p>
+<h2 id="dependency-decision-for-repository-manager">Dependency decision for Repository Manager<a class="headerlink" href="#dependency-decision-for-repository-manager" title="Permanent link">&para;</a></h2>
+<p>RMDD-14 does not add a Repository Manager dependency or modify a package extra.
+The recommended initial integration is <strong>MCP composition through the existing
+multiplexer</strong>:</p>
 <table>
 <thead>
 <tr>
-<th>Command</th>
-<th>What it does</th>
+<th>Option</th>
+<th>Benefits</th>
+<th>Costs / risk</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>tunnel-manager inventory init [--inventory PATH] [--force]</code></td>
-<td>Write the commented <code>inventory.yml</code> template to the resolved path (or <code>--inventory</code>). Refuses to overwrite without <code>--force</code>.</td>
+<td>Optional direct <code>remote</code> library extra</td>
+<td>Lowest call latency; direct typed Python seam; simple fake transport injection</td>
+<td>Couples release/version lifecycles; requires a second package import path and compatibility matrix; makes it easier to bypass the tunnel-manager credential boundary</td>
 </tr>
 <tr>
-<td><code>tunnel-manager inventory doctor [--inventory PATH] [--fix]</code></td>
-<td>Validate: file exists + parses, each host has required fields, groups reference real hosts. Exits non-zero on hard errors. With <code>--fix</code>, migrate a legacy <code>inventory.yaml</code> to <code>inventory.yml</code>.</td>
-</tr>
-<tr>
-<td><code>tunnel-manager inventory show [--inventory PATH]</code></td>
-<td>Print the resolved inventory path plus a host/group summary.</td>
+<td>MCP composition (recommended first)</td>
+<td>Tunnel Manager remains the sole inventory/credential authority; independently deployable; works across hosts and mixed package versions; existing multiplexer policy applies</td>
+<td>One extra MCP hop and availability dependency; RMDD-15 must map the C-04 models to the tool payload</td>
 </tr>
 </tbody>
 </table>
-<h3 id="template">Template<a class="headerlink" href="#template" title="Permanent link">&para;</a></h3>
-<p>This is the copy-paste template <code>tunnel-manager inventory init</code> writes (comments
-trimmed here for brevity):</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">all</span><span class="p">:</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">vars</span><span class="p">:</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">operator</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">ansible_ssh_private_key_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">~/.ssh/id_rsa</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="nt">ansible_ssh_known_hosts_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">~/.ssh/known_hosts</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nt">hosts</span><span class="p">:</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="nt">managed-node</span><span class="p">:</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">      </span><span class="nt">ansible_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">192.0.2.13</span>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">managed-node-secondary</span><span class="p">:</span>
-</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">      </span><span class="nt">ansible_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">192.0.2.16</span>
-</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">      </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ml</span>
-</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">      </span><span class="nt">ansible_port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2222</span>
-</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="nt">children</span><span class="p">:</span>
-</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">    </span><span class="nt">storage</span><span class="p">:</span>
-</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">      </span><span class="nt">vars</span><span class="p">:</span>
-</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">        </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
-</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">      </span><span class="nt">hosts</span><span class="p">:</span>
-</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">        </span><span class="nt">storage-node</span><span class="p">:</span>
-</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">          </span><span class="nt">ansible_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">192.0.2.10</span>
-</span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">          </span><span class="c1"># ansible_ssh_pass_ref: vault://ssh/storage/password</span>
-</span><span id="__span-2-21"><a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="w">          </span><span class="c1"># ansible_ssh_common_args: "-J jump@bastion"</span>
-</span></code></pre></div>
-<h3 id="format">Format<a class="headerlink" href="#format" title="Permanent link">&para;</a></h3>
-<p>Two layouts are accepted:</p>
-<p><strong>Ansible-style (recommended)</strong> — supports group-level <code>vars</code> and <code>children</code> groups:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">all</span><span class="p">:</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">vars</span><span class="p">:</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">operator</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">ansible_ssh_private_key_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">~/.ssh/id_rsa</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span><span class="nt">ansible_ssh_known_hosts_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">~/.ssh/known_hosts</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="nt">hosts</span><span class="p">:</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span><span class="nt">managed-node</span><span class="p">:</span>
-</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">      </span><span class="nt">ansible_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">192.0.2.13</span>
-</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="nt">managed-node-secondary</span><span class="p">:</span>
-</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">      </span><span class="nt">ansible_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">192.0.2.16</span>
-</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">      </span><span class="nt">ansible_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ml</span>
-</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">      </span><span class="nt">ansible_port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2222</span>
-</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">  </span><span class="nt">children</span><span class="p">:</span>
-</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">    </span><span class="nt">storage</span><span class="p">:</span>
-</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">      </span><span class="nt">hosts</span><span class="p">:</span>
-</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">        </span><span class="nt">storage-node</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> ansible_host</span><span class="p">:</span><span class="w"> </span><span class="nv">192.0.2.10</span><span class="w"> </span><span class="p p-Indicator">}</span>
-</span></code></pre></div>
-<p><strong>Flat</strong> — top-level keys are aliases (no <code>all:</code> wrapper):</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">managed-node</span><span class="p">:</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">hostname</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">192.0.2.13</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">operator</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">identity_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">~/.ssh/id_rsa</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">known_hosts_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">~/.ssh/known_hosts</span>
-</span></code></pre></div>
-<h3 id="recognized-per-host-keys">Recognized per-host keys<a class="headerlink" href="#recognized-per-host-keys" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Ansible alias</th>
-<th>Native key</th>
-<th>Meaning</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>ansible_host</code></td>
-<td><code>hostname</code></td>
-<td>IP / DNS name (defaults to the alias).</td>
-</tr>
-<tr>
-<td><code>ansible_user</code></td>
-<td><code>user</code></td>
-<td>SSH user.</td>
-</tr>
-<tr>
-<td><code>ansible_port</code></td>
-<td><code>port</code></td>
-<td>SSH port (default 22).</td>
-</tr>
-<tr>
-<td><code>ansible_ssh_private_key_file</code></td>
-<td><code>identity_file</code> / <code>key_path</code></td>
-<td>Path to the private key.</td>
-</tr>
-<tr>
-<td><code>ansible_ssh_pass_ref</code></td>
-<td><code>password_ref</code></td>
-<td>Secret-manager reference for password auth.</td>
-</tr>
-<tr>
-<td><code>ansible_ssh_known_hosts_file</code></td>
-<td><code>known_hosts_file</code></td>
-<td>Verified SSH server-key trust store.</td>
-</tr>
-<tr>
-<td><code>ansible_ssh_common_args</code></td>
-<td><code>proxy_command</code></td>
-<td>Extra SSH args / jump host.</td>
-</tr>
-</tbody>
-</table>
-<p>Group-level <code>vars</code> apply to all hosts in the group; per-host values override them.</p>
-<h3 id="build-it-programmatically-instead">Build it programmatically instead<a class="headerlink" href="#build-it-programmatically-instead" title="Permanent link">&para;</a></h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">tunnel_manager.tunnel_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">HostManager</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">hm</span> <span class="o">=</span> <span class="n">HostManager</span><span class="p">()</span>                      <span class="c1"># uses the default path</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">hm</span><span class="o">.</span><span class="n">add_host</span><span class="p">(</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="s2">"managed-node"</span><span class="p">,</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">hostname</span><span class="o">=</span><span class="s2">"192.0.2.13"</span><span class="p">,</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="n">user</span><span class="o">=</span><span class="s2">"operator"</span><span class="p">,</span>
-</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="n">identity_file</span><span class="o">=</span><span class="s2">"~/.ssh/id_ed25519"</span><span class="p">,</span>
-</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="n">known_hosts_file</span><span class="o">=</span><span class="s2">"~/.ssh/known_hosts"</span><span class="p">,</span>
-</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="p">)</span>
-</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="n">hm</span><span class="o">.</span><span class="n">save_inventory</span><span class="p">()</span>                     <span class="c1"># writes back to the inventory file</span>
-</span></code></pre></div>
-<h2 id="override-the-default-location">Override the default location<a class="headerlink" href="#override-the-default-location" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Surface</th>
-<th>How</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>CLI</td>
-<td><code>tunnel-manager --inventory /path/to/inventory.yml &lt;subcommand&gt;</code></td>
-</tr>
-<tr>
-<td>MCP server</td>
-<td><code>export TUNNEL_INVENTORY=/path/to/inventory.yml</code> (or pass the <code>inventory</code> arg to <code>tm_inventory</code>)</td>
-</tr>
-<tr>
-<td>Python API</td>
-<td><code>HostManager(config_file="/path/to/inventory.yml")</code></td>
-</tr>
-</tbody>
-</table>
-<p>The MCP <code>tm_inventory</code> tool also takes an optional <code>group</code> arg (default <code>all</code>) to
-scope operations to one Ansible group; the env equivalent is <code>TUNNEL_INVENTORY_GROUP</code>.</p>
-<h2 id="use-it-ssh-mesh-bootstrap">Use it: SSH mesh bootstrap<a class="headerlink" href="#use-it-ssh-mesh-bootstrap" title="Permanent link">&para;</a></h2>
-<p>Before any connection, provision each server's verified public host key in the
-configured <code>known_hosts</code> file. Tunnel Manager never accepts an unknown key and
-never treats <code>ssh-keyscan</code> output as trusted. Once that trust input exists, key
-authentication can be distributed across the fleet:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># CLI</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>tunnel-manager<span class="w"> </span>setup-all<span class="w"> </span>--parallel
-</span></code></pre></div>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>// MCP (tm_inventory)
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>{ "action": "mesh_bootstrap" }   // inventory defaults to the XDG path above
-</span></code></pre></div>
-<p>This operation distributes authentication keys; it does not manufacture host-key
-trust. Each peer still needs a governed <code>known_hosts</code> entry before it can connect.
-Remote command execution, rotation, and config copy then resolve inventory aliases.</p>
+<p>Use the stable model shape and alias-only semantics in either mode. A future
+operator-approved optional extra may call this library directly when measured
+latency or worker placement justifies the coupling, but it must retain the same
+contract fixtures, reauthorization behavior, and security gates. No dependency
+decision is applied by this lane.</p>
+<p><code>environment_refs</code> are accepted only as opaque names and are refused by this
+SSH adapter until an approved remote environment resolver exists; raw
+environment values are never accepted.</p>
 
 
 
@@ -1293,7 +1057,7 @@ Remote command execution, rotation, and config copy then resolve inventory alias
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../configuration/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Configuration, trust, and privacy">
+          <a href="../usage/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Usage (API / CLI / MCP)">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1303,20 +1067,20 @@ Remote command execution, rotation, and config copy then resolve inventory alias
                 Previous
               </span>
               <div class="md-ellipsis">
-                Configuration, trust, and privacy
+                Usage (API / CLI / MCP)
               </div>
             </div>
           </a>
         
         
           
-          <a href="../deployment/" class="md-footer__link md-footer__link--next" aria-label="Next: Deployment">
+          <a href="../teleport_architecture/" class="md-footer__link md-footer__link--next" aria-label="Next: Teleport Architecture">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Deployment
+                Teleport Architecture
               </div>
             </div>
             <div class="md-footer__button md-icon">
