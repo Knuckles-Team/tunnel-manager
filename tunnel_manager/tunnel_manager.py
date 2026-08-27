@@ -39,6 +39,23 @@ from .proxy_security import proxy_command_argv, proxy_command_string
 __version__ = "3.1.0"
 
 
+def _first_field(sources: tuple, keys: tuple, default=None):
+    """Return the first truthy ``source.get(key)`` scanning sources outer, keys inner.
+
+    Mirrors the ``a.get(k1) or a.get(k2) or b.get(k1) or b.get(k2) or default``
+    fallback-chain idiom used throughout inventory-variable resolution: each
+    source (e.g. host vars, then group vars, then top-level vars) is checked
+    for every candidate key, in order, before moving to the next source.
+    """
+
+    for source in sources:
+        for key in keys:
+            value = source.get(key)
+            if value:
+                return value
+    return default
+
+
 def _password_ref(*sources: dict) -> str | None:
     """Read an inventory secret reference and reject legacy plaintext secrets."""
 
@@ -67,6 +84,264 @@ def _known_hosts_file(*sources: dict) -> str | None:
         if value:
             return str(value)
     return None
+
+
+def _load_execute_inventory_yaml(inventory: str, logger: logging.Logger) -> dict:
+    """Load and parse the YAML inventory for ``Tunnel.execute_on_inventory``."""
+
+    try:
+        with open(inventory) as f:
+            inventory_data = yaml.safe_load(f) or {}
+        logger.debug("Loaded configured inventory data")
+        return inventory_data
+    except FileNotFoundError:
+        logger.error("Configured inventory file was not found")
+        print("Error: configured inventory file was not found", file=sys.stderr)
+        raise
+    except yaml.YAMLError as e:
+        logger.error("Operation failed: error_type=%s", type(e).__name__)
+        print(f"Operation failed: {type(e).__name__}", file=sys.stderr)
+        raise
+
+
+def _ansible_hosts_to_parse_all(all_hosts: dict, children: dict) -> dict:
+    """``group="all"``: direct hosts from ``all`` plus every child's hosts."""
+
+    hosts_to_parse: dict = {}
+    for alias, hvars in all_hosts.items():
+        hosts_to_parse[alias] = (hvars or {}, {})
+    for child_data in children.values():
+        if isinstance(child_data, dict):
+            g_hosts = child_data.get("hosts", {}) or {}
+            g_vars = child_data.get("vars", {}) or {}
+            for alias, hvars in g_hosts.items():
+                hosts_to_parse[alias] = (hvars or {}, g_vars)
+    return hosts_to_parse
+
+
+def _ansible_hosts_to_parse_named_child(children: dict, group: str) -> dict:
+    """A ``group`` matching a named entry under ``children``."""
+
+    hosts_to_parse: dict = {}
+    child_data = children[group]
+    if isinstance(child_data, dict):
+        g_hosts = child_data.get("hosts", {}) or {}
+        g_vars = child_data.get("vars", {}) or {}
+        for alias, hvars in g_hosts.items():
+            hosts_to_parse[alias] = (hvars or {}, g_vars)
+    return hosts_to_parse
+
+
+def _ansible_hosts_to_parse_legacy_top_level(inventory_data: dict, group: str) -> dict:
+    """A ``group`` found as a legacy top-level key (outside ``children``)."""
+
+    hosts_to_parse: dict = {}
+    legacy_hosts = inventory_data[group]["hosts"] or {}
+    legacy_vars = inventory_data[group].get("vars", {}) or {}
+    for alias, hvars in legacy_hosts.items():
+        hosts_to_parse[alias] = (hvars or {}, legacy_vars)
+    return hosts_to_parse
+
+
+def _ansible_hosts_to_parse(
+    inventory_data: dict,
+    group: str,
+    all_hosts: dict,
+    children: dict,
+    logger: logging.Logger,
+) -> dict:
+    """Select the ``alias -> (host_vars, group_vars)`` set for ``group``.
+
+    Tries, in order: the synthetic ``all`` group (direct hosts + every
+    child's hosts), a named ``children`` entry, then a legacy top-level key
+    outside ``children`` that itself carries a ``hosts`` mapping.
+    """
+
+    if group == "all":
+        return _ansible_hosts_to_parse_all(all_hosts, children)
+
+    if group in children:
+        return _ansible_hosts_to_parse_named_child(children, group)
+
+    # Group not found in children. Check if defined as a top-level key outside children
+    if (
+        group in inventory_data
+        and isinstance(inventory_data[group], dict)
+        and "hosts" in inventory_data[group]
+    ):
+        return _ansible_hosts_to_parse_legacy_top_level(inventory_data, group)
+
+    logger.error("Configured inventory group was not found or is invalid")
+    print("Error: configured inventory group is invalid", file=sys.stderr)
+    raise ValueError("configured inventory group is invalid")
+
+
+def _ansible_host_entry(alias: str, hvars: dict, g_vars: dict, all_vars: dict) -> dict:
+    """Build one host entry from Ansible-style host/group/all variable layers."""
+
+    sources = (hvars, g_vars, all_vars)
+    username = _first_field(sources, ("ansible_user", "user"), "")
+    key_path = _first_field(
+        sources, ("key_path", "identity_file", "ansible_ssh_private_key_file")
+    )
+    port = _first_field(sources, ("ansible_port", "port"), 22)
+    return {
+        "hostname": _first_field((hvars,), ("ansible_host", "hostname"), alias),
+        "username": username,
+        "password_ref": _password_ref(hvars, g_vars, all_vars),
+        "known_hosts_file": _known_hosts_file(hvars, g_vars, all_vars),
+        "key_path": key_path,
+        "port": int(port) if port else 22,
+    }
+
+
+def _hosts_from_ansible_style_inventory(
+    inventory_data: dict, group: str, logger: logging.Logger
+) -> list[dict]:
+    """Resolve ``group`` hosts from an Ansible-style inventory (``all``/``children``)."""
+
+    hosts: list[dict] = []
+    all_group = inventory_data["all"]
+    all_vars = all_group.get("vars", {}) or {}
+    all_hosts = all_group.get("hosts", {}) or {}
+    children = all_group.get("children", {}) or {}
+
+    hosts_to_parse = _ansible_hosts_to_parse(
+        inventory_data, group, all_hosts, children, logger
+    )
+
+    for alias, (hvars, g_vars) in hosts_to_parse.items():
+        host_entry = _ansible_host_entry(alias, hvars, g_vars, all_vars)
+        if not host_entry["username"]:
+            logger.error("No username specified for configured host")
+            print("Error: no username specified for configured host", file=sys.stderr)
+            continue
+        logger.debug("Added inventory host")
+        hosts.append(host_entry)
+
+    return hosts
+
+
+def _legacy_flat_host_entry(alias: str, hvars: dict) -> dict:
+    """Build one host entry for the legacy flat (``group="all"``) shape.
+
+    NOTE: field precedence here (``port`` before ``ansible_port``,
+    ``key_path`` before ``ansible_ssh_private_key_file``) intentionally
+    matches the pre-existing behavior of this branch, which differs from
+    ``_legacy_grouped_host_entry`` below -- see CXA-FL-TUNNELMANAGER-01
+    bug report for the precedence-inconsistency finding.
+    """
+
+    key_path = _first_field(
+        (hvars,), ("key_path", "identity_file", "ansible_ssh_private_key_file")
+    )
+    port = _first_field((hvars,), ("port", "ansible_port"), 22)
+    return {
+        "hostname": _first_field((hvars,), ("hostname", "ansible_host"), alias),
+        "username": _first_field((hvars,), ("user", "username", "ansible_user"), ""),
+        "password_ref": _password_ref(hvars),
+        "known_hosts_file": _known_hosts_file(hvars),
+        "key_path": key_path,
+        "port": int(port) if port else 22,
+    }
+
+
+def _legacy_grouped_host_entry(host: str, hvars: dict) -> dict:
+    """Build one host entry for the legacy group-as-top-level-key shape.
+
+    NOTE: field precedence here (``ansible_port`` before ``port``,
+    ``ansible_ssh_private_key_file`` before ``key_path``) intentionally
+    matches the pre-existing behavior of this branch -- see
+    ``_legacy_flat_host_entry`` above and the CXA-FL-TUNNELMANAGER-01 bug
+    report for the precedence-inconsistency finding.
+    """
+
+    key_path = _first_field(
+        (hvars,), ("ansible_ssh_private_key_file", "key_path", "identity_file")
+    )
+    port = _first_field((hvars,), ("ansible_port", "port"), 22)
+    return {
+        "hostname": _first_field((hvars,), ("ansible_host", "hostname"), host),
+        "username": _first_field((hvars,), ("ansible_user", "user", "username")),
+        "password_ref": _password_ref(hvars),
+        "known_hosts_file": _known_hosts_file(hvars),
+        "key_path": key_path,
+        "port": int(port) if port else 22,
+    }
+
+
+def _legacy_flat_all_hosts(inventory_data: dict, logger: logging.Logger) -> list[dict]:
+    """``group="all"``: treat every top-level dict entry as a host."""
+
+    hosts: list[dict] = []
+    for alias, hvars in inventory_data.items():
+        if isinstance(hvars, dict):
+            host_entry = _legacy_flat_host_entry(alias, hvars)
+            if not host_entry["username"]:
+                logger.error("No username specified for configured host")
+                continue
+            hosts.append(host_entry)
+    return hosts
+
+
+def _legacy_grouped_hosts(inventory_data: dict, group: str, logger: logging.Logger) -> list[dict]:
+    """Legacy style with ``group`` as a top-level key containing a ``hosts`` mapping."""
+
+    hosts: list[dict] = []
+    for host, vars in inventory_data[group]["hosts"].items():
+        host_entry = _legacy_grouped_host_entry(host, vars or {})
+        if not host_entry["username"]:
+            logger.error("No username specified for configured host")
+            continue
+        hosts.append(host_entry)
+    return hosts
+
+
+def _hosts_from_legacy_flat_inventory(
+    inventory_data: dict, group: str, logger: logging.Logger
+) -> list[dict]:
+    """Resolve ``group`` hosts from a legacy non-Ansible flat/key-value inventory."""
+
+    if group == "all":
+        return _legacy_flat_all_hosts(inventory_data, logger)
+
+    if (
+        group in inventory_data
+        and isinstance(inventory_data[group], dict)
+        and "hosts" in inventory_data[group]
+        and isinstance(inventory_data[group]["hosts"], dict)
+    ):
+        return _legacy_grouped_hosts(inventory_data, group, logger)
+
+    logger.error("Configured inventory group was not found or is invalid")
+    print("Error: configured inventory group is invalid", file=sys.stderr)
+    raise ValueError("configured inventory group is invalid")
+
+
+def _run_func_on_inventory_hosts(
+    hosts: list[dict],
+    func,
+    parallel: bool,
+    max_threads: int,
+    logger: logging.Logger,
+) -> None:
+    """Sequentially or concurrently invoke ``func(host)`` for every resolved host."""
+
+    if parallel:
+        if isinstance(max_threads, bool):
+            raise ConnectionPolicyError("Invalid fleet concurrency")
+        max_threads = max(1, min(int(max_threads), max_concurrency(), len(hosts)))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+            futures = [executor.submit(func, host) for host in hosts]
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    logger.error("Operation failed: error_type=%s", type(e).__name__)
+                    print(f"Operation failed: {type(e).__name__}", file=sys.stderr)
+    else:
+        for host in hosts:
+            func(host)
 
 
 def _atomic_private_yaml(path: str, value: object) -> None:
@@ -1007,188 +1282,13 @@ class Tunnel:
         logger.info("Processing configured inventory group")
         print("Loading configured inventory group...", file=sys.stderr)
 
-        try:
-            with open(inventory) as f:
-                inventory_data = yaml.safe_load(f) or {}
-            logger.debug("Loaded configured inventory data")
-        except FileNotFoundError:
-            logger.error("Configured inventory file was not found")
-            print("Error: configured inventory file was not found", file=sys.stderr)
-            raise
-        except yaml.YAMLError as e:
-            logger.error("Operation failed: error_type=%s", type(e).__name__)
-            print(f"Operation failed: {type(e).__name__}", file=sys.stderr)
-            raise
-
-        hosts = []
+        inventory_data = _load_execute_inventory_yaml(inventory, logger)
 
         # Check if it's an Ansible-style inventory
         if "all" in inventory_data and isinstance(inventory_data["all"], dict):
-            all_group = inventory_data["all"]
-            all_vars = all_group.get("vars", {}) or {}
-            all_hosts = all_group.get("hosts", {}) or {}
-            children = all_group.get("children", {}) or {}
-
-            # We need to collect hosts belonging to the target group
-            hosts_to_parse = {}  # alias -> (hvars, g_vars)
-
-            if group == "all":
-                # Add direct hosts from 'all'
-                for alias, hvars in all_hosts.items():
-                    hosts_to_parse[alias] = (hvars or {}, {})
-                # Add hosts from all children
-                for child_data in children.values():
-                    if isinstance(child_data, dict):
-                        g_hosts = child_data.get("hosts", {}) or {}
-                        g_vars = child_data.get("vars", {}) or {}
-                        for alias, hvars in g_hosts.items():
-                            hosts_to_parse[alias] = (hvars or {}, g_vars)
-            elif group in children:
-                child_data = children[group]
-                if isinstance(child_data, dict):
-                    g_hosts = child_data.get("hosts", {}) or {}
-                    g_vars = child_data.get("vars", {}) or {}
-                    for alias, hvars in g_hosts.items():
-                        hosts_to_parse[alias] = (hvars or {}, g_vars)
-            else:
-                # Group not found in children. Check if defined as a top-level key outside children
-                if (
-                    group in inventory_data
-                    and isinstance(inventory_data[group], dict)
-                    and "hosts" in inventory_data[group]
-                ):
-                    legacy_hosts = inventory_data[group]["hosts"] or {}
-                    legacy_vars = inventory_data[group].get("vars", {}) or {}
-                    for alias, hvars in legacy_hosts.items():
-                        hosts_to_parse[alias] = (hvars or {}, legacy_vars)
-                else:
-                    logger.error(
-                        "Configured inventory group was not found or is invalid"
-                    )
-                    print(
-                        "Error: configured inventory group is invalid", file=sys.stderr
-                    )
-                    raise ValueError("configured inventory group is invalid")
-
-            # Now build the host entries
-            for alias, (hvars, g_vars) in hosts_to_parse.items():
-                username = (
-                    hvars.get("ansible_user")
-                    or hvars.get("user")
-                    or g_vars.get("ansible_user")
-                    or g_vars.get("user")
-                    or all_vars.get("ansible_user")
-                    or all_vars.get("user")
-                    or ""
-                )
-                password_ref = _password_ref(hvars, g_vars, all_vars)
-                key_path = (
-                    hvars.get("key_path")
-                    or hvars.get("identity_file")
-                    or hvars.get("ansible_ssh_private_key_file")
-                    or g_vars.get("key_path")
-                    or g_vars.get("identity_file")
-                    or g_vars.get("ansible_ssh_private_key_file")
-                    or all_vars.get("key_path")
-                    or all_vars.get("identity_file")
-                    or all_vars.get("ansible_ssh_private_key_file")
-                )
-                port = (
-                    hvars.get("ansible_port")
-                    or hvars.get("port")
-                    or g_vars.get("ansible_port")
-                    or g_vars.get("port")
-                    or all_vars.get("ansible_port")
-                    or all_vars.get("port")
-                    or 22
-                )
-
-                host_entry = {
-                    "hostname": hvars.get("ansible_host")
-                    or hvars.get("hostname")
-                    or alias,
-                    "username": username,
-                    "password_ref": password_ref,
-                    "known_hosts_file": _known_hosts_file(hvars, g_vars, all_vars),
-                    "key_path": key_path,
-                    "port": int(port) if port else 22,
-                }
-                if not host_entry["username"]:
-                    logger.error("No username specified for configured host")
-                    print(
-                        "Error: no username specified for configured host",
-                        file=sys.stderr,
-                    )
-                    continue
-                logger.debug("Added inventory host")
-                hosts.append(host_entry)
-
+            hosts = _hosts_from_ansible_style_inventory(inventory_data, group, logger)
         else:
-            # Legacy non-Ansible flat inventory (or key-value flat structure)
-            if group == "all":
-                # Treat the entire inventory_data as flat hosts
-                for alias, hvars in inventory_data.items():
-                    if isinstance(hvars, dict):
-                        username = (
-                            hvars.get("user")
-                            or hvars.get("username")
-                            or hvars.get("ansible_user")
-                            or ""
-                        )
-                        password_ref = _password_ref(hvars)
-                        key_path = (
-                            hvars.get("key_path")
-                            or hvars.get("identity_file")
-                            or hvars.get("ansible_ssh_private_key_file")
-                        )
-                        port = hvars.get("port") or hvars.get("ansible_port") or 22
-                        host_entry = {
-                            "hostname": hvars.get("hostname")
-                            or hvars.get("ansible_host")
-                            or alias,
-                            "username": username,
-                            "password_ref": password_ref,
-                            "known_hosts_file": _known_hosts_file(hvars),
-                            "key_path": key_path,
-                            "port": int(port) if port else 22,
-                        }
-                        if not host_entry["username"]:
-                            logger.error("No username specified for configured host")
-                            continue
-                        hosts.append(host_entry)
-            elif (
-                group in inventory_data
-                and isinstance(inventory_data[group], dict)
-                and "hosts" in inventory_data[group]
-                and isinstance(inventory_data[group]["hosts"], dict)
-            ):
-                # Legacy style with group as a top-level key containing 'hosts'
-                for host, vars in inventory_data[group]["hosts"].items():
-                    hvars = vars or {}
-                    host_entry = {
-                        "hostname": hvars.get("ansible_host")
-                        or hvars.get("hostname")
-                        or host,
-                        "username": hvars.get("ansible_user")
-                        or hvars.get("user")
-                        or hvars.get("username"),
-                        "password_ref": _password_ref(hvars),
-                        "known_hosts_file": _known_hosts_file(hvars),
-                        "key_path": hvars.get("ansible_ssh_private_key_file")
-                        or hvars.get("key_path")
-                        or hvars.get("identity_file"),
-                        "port": int(
-                            hvars.get("ansible_port") or hvars.get("port") or 22
-                        ),
-                    }
-                    if not host_entry["username"]:
-                        logger.error("No username specified for configured host")
-                        continue
-                    hosts.append(host_entry)
-            else:
-                logger.error("Configured inventory group was not found or is invalid")
-                print("Error: configured inventory group is invalid", file=sys.stderr)
-                raise ValueError("configured inventory group is invalid")
+            hosts = _hosts_from_legacy_flat_inventory(inventory_data, group, logger)
 
         if len(hosts) > max_fleet_hosts():
             raise ConnectionPolicyError("Configured inventory exceeds the fleet limit")
@@ -1200,25 +1300,7 @@ class Tunnel:
             print("Warning: no valid inventory hosts found", file=sys.stderr)
             return
 
-        if parallel:
-            if isinstance(max_threads, bool):
-                raise ConnectionPolicyError("Invalid fleet concurrency")
-            max_threads = max(1, min(int(max_threads), max_concurrency(), len(hosts)))
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as executor:
-                futures = [executor.submit(func, host) for host in hosts]
-                for future in concurrent.futures.as_completed(futures):
-                    try:
-                        future.result()
-                    except Exception as e:
-                        logger.error(
-                            "Operation failed: error_type=%s", type(e).__name__
-                        )
-                        print(f"Operation failed: {type(e).__name__}", file=sys.stderr)
-        else:
-            for host in hosts:
-                func(host)
+        _run_func_on_inventory_hosts(hosts, func, parallel, max_threads, logger)
         print("Completed inventory-group processing", file=sys.stderr)
 
     def remove_host_key(

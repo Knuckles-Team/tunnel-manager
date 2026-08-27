@@ -8,6 +8,7 @@ from unittest.mock import Mock, mock_open, patch
 import pytest
 import yaml
 
+from tunnel_manager.connection_security import ConnectionPolicyError
 from tunnel_manager.models import CommandResult
 from tunnel_manager.tunnel_manager import HostManager, Tunnel
 
@@ -1142,6 +1143,127 @@ class TestTunnelStaticMethods:
                 inventory_path, lambda x: all_results.append(x), group="all"
             )
             assert len(all_results) == 2
+        finally:
+            os.unlink(inventory_path)
+
+    def test_execute_on_inventory_legacy_flat_group_all(self):
+        """CXA-FL-TUNNELMANAGER-01 characterization: legacy (non-Ansible) flat
+        inventory, group='all' branch -- every top-level dict entry is a host."""
+        inventory_data = {
+            "host1": {"hostname": "flat1.example.invalid", "user": "flatuser1"},
+            "host2": {
+                "hostname": "flat2.example.invalid",
+                "username": "flatuser2",
+                "port": 2222,
+            },
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(inventory_data, f)
+            inventory_path = f.name
+        try:
+            results = []
+            Tunnel.execute_on_inventory(
+                inventory_path, lambda h: results.append(h), group="all"
+            )
+            assert len(results) == 2
+            by_host = {r["hostname"]: r for r in results}
+            assert by_host["flat1.example.invalid"]["username"] == "flatuser1"
+            assert by_host["flat1.example.invalid"]["port"] == 22
+            assert by_host["flat2.example.invalid"]["username"] == "flatuser2"
+            assert by_host["flat2.example.invalid"]["port"] == 2222
+        finally:
+            os.unlink(inventory_path)
+
+    def test_execute_on_inventory_legacy_flat_group_missing_username_skipped(self):
+        """CXA-FL-TUNNELMANAGER-01 characterization: a legacy-flat host entry with
+        no resolvable username is logged and skipped, not passed to func."""
+        inventory_data = {
+            "host1": {"hostname": "flat1.example.invalid"},
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(inventory_data, f)
+            inventory_path = f.name
+        try:
+            results = []
+            Tunnel.execute_on_inventory(
+                inventory_path, lambda h: results.append(h), group="all"
+            )
+            assert results == []
+        finally:
+            os.unlink(inventory_path)
+
+    def test_execute_on_inventory_legacy_group_as_top_level_key(self):
+        """CXA-FL-TUNNELMANAGER-01 characterization: legacy inventory with the
+        target group as a top-level key containing a 'hosts' mapping."""
+        inventory_data = {
+            "managed": {
+                "hosts": {
+                    "node-a": {
+                        "ansible_host": "legacy-a.example.invalid",
+                        "ansible_user": "legacyuser",
+                        "ansible_port": 2200,
+                    }
+                }
+            }
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(inventory_data, f)
+            inventory_path = f.name
+        try:
+            results = []
+            Tunnel.execute_on_inventory(
+                inventory_path, lambda h: results.append(h), group="managed"
+            )
+            assert len(results) == 1
+            assert results[0]["hostname"] == "legacy-a.example.invalid"
+            assert results[0]["username"] == "legacyuser"
+            assert results[0]["port"] == 2200
+        finally:
+            os.unlink(inventory_path)
+
+    def test_execute_on_inventory_no_hosts_returns_without_calling_func(self, capsys):
+        """CXA-FL-TUNNELMANAGER-01 characterization: an empty-but-valid group
+        yields zero hosts; func is never called, no exception is raised, and the
+        explicit no-valid-hosts warning is printed (proves the dedicated
+        `if not hosts:` early-return branch executed, not just a no-op loop)."""
+        inventory_data = {"all": {"hosts": {}}}
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(inventory_data, f)
+            inventory_path = f.name
+        try:
+            called = []
+            Tunnel.execute_on_inventory(
+                inventory_path, lambda h: called.append(h), group="all"
+            )
+            assert called == []
+            captured = capsys.readouterr()
+            assert "Warning: no valid inventory hosts found" in captured.err
+            assert "Completed inventory-group processing" not in captured.err
+        finally:
+            os.unlink(inventory_path)
+
+    def test_execute_on_inventory_exceeds_fleet_limit_raises(self, monkeypatch):
+        """CXA-FL-TUNNELMANAGER-01 characterization: more hosts than
+        TUNNEL_MAX_FLEET_HOSTS raises ConnectionPolicyError before func runs."""
+        monkeypatch.setenv("TUNNEL_MAX_FLEET_HOSTS", "1")
+        inventory_data = {
+            "all": {
+                "hosts": {
+                    "host1": {"ansible_host": "h1.example.invalid", "ansible_user": "u"},
+                    "host2": {"ansible_host": "h2.example.invalid", "ansible_user": "u"},
+                }
+            }
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(inventory_data, f)
+            inventory_path = f.name
+        try:
+            called = []
+            with pytest.raises(ConnectionPolicyError):
+                Tunnel.execute_on_inventory(
+                    inventory_path, lambda h: called.append(h), group="all"
+                )
+            assert called == []
         finally:
             os.unlink(inventory_path)
 
