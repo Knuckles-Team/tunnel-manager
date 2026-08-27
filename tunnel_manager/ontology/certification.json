@@ -1,7 +1,7 @@
 {
   "api_version": "graphos.io/v1",
   "artifacts": {
-    "connector_manifest.yml": "c85949598832209460b9b4ced312509be3ad3fa5a9b8bbe010f445ab0682505d",
+    "connector_manifest.yml": "8f8091d1c415c1cecaeaca8126cd9b10652eaccad84dbf4f0c60dfd1a5a218bf",
     "tunnel_manager/connectors/mcp_source_presets.json": "14b4feede9e759ea842e50feaf47cb2821b179f4b0a09ddf40ff96d63137608c",
     "tunnel_manager/connectors/tool_schema_fingerprints.json": "db49f9c4ca5809c4a4355b29267d608a6ecdf721b9b7974e7e5e7d782fc89227",
     "tunnel_manager/ontology/fixtures/records.json": "49f7277587ed9ce506e4467a950e05f57d2d6b7ae2656a395b92bdee27ea6bbb",
@@ -18,9 +18,9 @@
     "synthetic_fixture_contract": "passed"
   },
   "compatibility": {
-    "agent_utilities": ">=2.4.0,<3",
+    "agent_utilities": ">=2.5.0,<3",
     "bundle_schema": "2",
-    "epistemic_graph": ">=2.26.0,<3"
+    "epistemic_graph": ">=2.27.0,<3"
   },
   "connector": "tunnel-manager",
   "kind": "ConnectorSourceAttestation",
@@ -32,5 +32,5 @@
   "signer": "UNSIGNED-PREVIEW",
   "signing_public_key": "",
   "status": "source-validated",
-  "validated_at": "2026-08-21T04:30:39Z"
+  "validated_at": "2026-08-26T13:42:55Z"
 }
