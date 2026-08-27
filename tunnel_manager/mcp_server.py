@@ -146,178 +146,203 @@ def _inventory_password_ref(*sources: dict) -> str | None:
     return validate_secret_ref(str(reference))
 
 
+def _ansible_hosts_to_parse(
+    inv: dict, all_group: dict, group: str, inventory: str
+) -> tuple[dict, dict | None]:
+    """Collect the (hvars, g_vars) pairs an Ansible-style group resolves to."""
+    all_hosts = all_group.get("hosts", {}) or {}
+    children = all_group.get("children", {}) or {}
+    hosts_to_parse: dict = {}  # alias -> (hvars, g_vars)
+
+    if group == "all":
+        # Add direct hosts from 'all'
+        for alias, hvars in all_hosts.items():
+            hosts_to_parse[alias] = (hvars or {}, {})
+        # Add hosts from all children
+        for child_data in children.values():
+            if isinstance(child_data, dict):
+                g_hosts = child_data.get("hosts", {}) or {}
+                g_vars = child_data.get("vars", {}) or {}
+                for alias, hvars in g_hosts.items():
+                    hosts_to_parse[alias] = (hvars or {}, g_vars)
+    elif group in children:
+        child_data = children[group]
+        if isinstance(child_data, dict):
+            g_hosts = child_data.get("hosts", {}) or {}
+            g_vars = child_data.get("vars", {}) or {}
+            for alias, hvars in g_hosts.items():
+                hosts_to_parse[alias] = (hvars or {}, g_vars)
+    else:
+        # Group not found in children. Check if defined as a top-level key outside children
+        if group in inv and isinstance(inv[group], dict) and "hosts" in inv[group]:
+            legacy_hosts = inv[group]["hosts"] or {}
+            legacy_vars = inv[group].get("vars", {}) or {}
+            for alias, hvars in legacy_hosts.items():
+                hosts_to_parse[alias] = (hvars or {}, legacy_vars)
+        else:
+            return {}, ResponseBuilder.build(
+                400,
+                "Configured inventory group is invalid",
+                {"inventory": inventory, "group": group},
+                errors=["Configured inventory group is invalid"],
+            )
+    return hosts_to_parse, None
+
+
+def _build_ansible_entries(
+    hosts_to_parse: dict, all_vars: dict, logger: logging.Logger
+) -> list[dict]:
+    hosts = []
+    for alias, (hvars, g_vars) in hosts_to_parse.items():
+        username = (
+            hvars.get("ansible_user")
+            or hvars.get("user")
+            or g_vars.get("ansible_user")
+            or g_vars.get("user")
+            or all_vars.get("ansible_user")
+            or all_vars.get("user")
+            or ""
+        )
+        password_ref = _inventory_password_ref(hvars, g_vars, all_vars)
+        key_path = (
+            hvars.get("key_path")
+            or hvars.get("identity_file")
+            or hvars.get("ansible_ssh_private_key_file")
+            or g_vars.get("key_path")
+            or g_vars.get("identity_file")
+            or g_vars.get("ansible_ssh_private_key_file")
+            or all_vars.get("key_path")
+            or all_vars.get("identity_file")
+            or all_vars.get("ansible_ssh_private_key_file")
+        )
+        port = (
+            hvars.get("ansible_port")
+            or hvars.get("port")
+            or g_vars.get("ansible_port")
+            or g_vars.get("port")
+            or all_vars.get("ansible_port")
+            or all_vars.get("port")
+            or 22
+        )
+
+        entry = {
+            "hostname": hvars.get("ansible_host") or hvars.get("hostname") or alias,
+            "username": username,
+            "password_ref": password_ref,
+            "known_hosts_file": _known_hosts_file(hvars, g_vars, all_vars),
+            "key_path": key_path,
+            "port": int(port) if port else 22,
+        }
+        if not entry["username"]:
+            logger.error("Skipping inventory host without a username")
+            continue
+        hosts.append(entry)
+    return hosts
+
+
+def _load_ansible_style_hosts(
+    inv: dict, group: str, inventory: str, logger: logging.Logger
+) -> tuple[list[dict], dict | None]:
+    all_group = inv["all"]
+    all_vars = all_group.get("vars", {}) or {}
+    hosts_to_parse, error = _ansible_hosts_to_parse(inv, all_group, group, inventory)
+    if error is not None:
+        return [], error
+    return _build_ansible_entries(hosts_to_parse, all_vars, logger), None
+
+
+def _load_legacy_flat_hosts(inv: dict, logger: logging.Logger) -> list[dict]:
+    # Treat the entire inv as flat hosts
+    hosts = []
+    for alias, hvars in inv.items():
+        if isinstance(hvars, dict):
+            username = (
+                hvars.get("user")
+                or hvars.get("username")
+                or hvars.get("ansible_user")
+                or ""
+            )
+            password_ref = _inventory_password_ref(hvars)
+            key_path = (
+                hvars.get("key_path")
+                or hvars.get("identity_file")
+                or hvars.get("ansible_ssh_private_key_file")
+            )
+            port = hvars.get("port") or hvars.get("ansible_port") or 22
+            entry = {
+                "hostname": hvars.get("hostname") or hvars.get("ansible_host") or alias,
+                "username": username,
+                "password_ref": password_ref,
+                "known_hosts_file": _known_hosts_file(hvars),
+                "key_path": key_path,
+                "port": int(port) if port else 22,
+            }
+            if not entry["username"]:
+                logger.error("Skipping inventory host without a username")
+                continue
+            hosts.append(entry)
+    return hosts
+
+
+def _load_legacy_group_hosts(inv: dict, group: str, logger: logging.Logger) -> list[dict]:
+    # Legacy style with group as a top-level key containing 'hosts'
+    hosts = []
+    for host, vars in inv[group]["hosts"].items():
+        hvars = vars or {}
+        entry = {
+            "hostname": hvars.get("ansible_host") or hvars.get("hostname") or host,
+            "username": hvars.get("ansible_user")
+            or hvars.get("user")
+            or hvars.get("username"),
+            "password_ref": _inventory_password_ref(hvars),
+            "known_hosts_file": _known_hosts_file(hvars),
+            "key_path": hvars.get("ansible_ssh_private_key_file")
+            or hvars.get("key_path")
+            or hvars.get("identity_file"),
+            "port": int(hvars.get("ansible_port") or hvars.get("port") or 22),
+        }
+        if not entry["username"]:
+            logger.error("Skipping inventory host without a username")
+            continue
+        hosts.append(entry)
+    return hosts
+
+
+def _load_legacy_style_hosts(
+    inv: dict, group: str, inventory: str, logger: logging.Logger
+) -> tuple[list[dict], dict | None]:
+    # Legacy non-Ansible flat inventory (or key-value flat structure)
+    if group == "all":
+        return _load_legacy_flat_hosts(inv, logger), None
+    if (
+        group in inv
+        and isinstance(inv[group], dict)
+        and "hosts" in inv[group]
+        and isinstance(inv[group]["hosts"], dict)
+    ):
+        return _load_legacy_group_hosts(inv, group, logger), None
+    return [], ResponseBuilder.build(
+        400,
+        "Configured inventory group is invalid",
+        {"inventory": inventory, "group": group},
+        errors=["Configured inventory group is invalid"],
+    )
+
+
 def load_inventory(
     inventory: str, group: str, logger: logging.Logger
 ) -> tuple[list[dict], dict]:
     try:
         with open(inventory) as f:
             inv = yaml.safe_load(f) or {}
-        hosts = []
 
         # Check if it's an Ansible-style inventory
         if "all" in inv and isinstance(inv["all"], dict):
-            all_group = inv["all"]
-            all_vars = all_group.get("vars", {}) or {}
-            all_hosts = all_group.get("hosts", {}) or {}
-            children = all_group.get("children", {}) or {}
-
-            # We need to collect hosts belonging to the target group
-            hosts_to_parse = {}  # alias -> (hvars, g_vars)
-
-            if group == "all":
-                # Add direct hosts from 'all'
-                for alias, hvars in all_hosts.items():
-                    hosts_to_parse[alias] = (hvars or {}, {})
-                # Add hosts from all children
-                for child_data in children.values():
-                    if isinstance(child_data, dict):
-                        g_hosts = child_data.get("hosts", {}) or {}
-                        g_vars = child_data.get("vars", {}) or {}
-                        for alias, hvars in g_hosts.items():
-                            hosts_to_parse[alias] = (hvars or {}, g_vars)
-            elif group in children:
-                child_data = children[group]
-                if isinstance(child_data, dict):
-                    g_hosts = child_data.get("hosts", {}) or {}
-                    g_vars = child_data.get("vars", {}) or {}
-                    for alias, hvars in g_hosts.items():
-                        hosts_to_parse[alias] = (hvars or {}, g_vars)
-            else:
-                # Group not found in children. Check if defined as a top-level key outside children
-                if (
-                    group in inv
-                    and isinstance(inv[group], dict)
-                    and "hosts" in inv[group]
-                ):
-                    legacy_hosts = inv[group]["hosts"] or {}
-                    legacy_vars = inv[group].get("vars", {}) or {}
-                    for alias, hvars in legacy_hosts.items():
-                        hosts_to_parse[alias] = (hvars or {}, legacy_vars)
-                else:
-                    return [], ResponseBuilder.build(
-                        400,
-                        "Configured inventory group is invalid",
-                        {"inventory": inventory, "group": group},
-                        errors=["Configured inventory group is invalid"],
-                    )
-
-            # Now build the host entries
-            for alias, (hvars, g_vars) in hosts_to_parse.items():
-                username = (
-                    hvars.get("ansible_user")
-                    or hvars.get("user")
-                    or g_vars.get("ansible_user")
-                    or g_vars.get("user")
-                    or all_vars.get("ansible_user")
-                    or all_vars.get("user")
-                    or ""
-                )
-                password_ref = _inventory_password_ref(hvars, g_vars, all_vars)
-                key_path = (
-                    hvars.get("key_path")
-                    or hvars.get("identity_file")
-                    or hvars.get("ansible_ssh_private_key_file")
-                    or g_vars.get("key_path")
-                    or g_vars.get("identity_file")
-                    or g_vars.get("ansible_ssh_private_key_file")
-                    or all_vars.get("key_path")
-                    or all_vars.get("identity_file")
-                    or all_vars.get("ansible_ssh_private_key_file")
-                )
-                port = (
-                    hvars.get("ansible_port")
-                    or hvars.get("port")
-                    or g_vars.get("ansible_port")
-                    or g_vars.get("port")
-                    or all_vars.get("ansible_port")
-                    or all_vars.get("port")
-                    or 22
-                )
-
-                entry = {
-                    "hostname": hvars.get("ansible_host")
-                    or hvars.get("hostname")
-                    or alias,
-                    "username": username,
-                    "password_ref": password_ref,
-                    "known_hosts_file": _known_hosts_file(hvars, g_vars, all_vars),
-                    "key_path": key_path,
-                    "port": int(port) if port else 22,
-                }
-                if not entry["username"]:
-                    logger.error("Skipping inventory host without a username")
-                    continue
-                hosts.append(entry)
-
+            hosts, error = _load_ansible_style_hosts(inv, group, inventory, logger)
         else:
-            # Legacy non-Ansible flat inventory (or key-value flat structure)
-            if group == "all":
-                # Treat the entire inv as flat hosts
-                for alias, hvars in inv.items():
-                    if isinstance(hvars, dict):
-                        username = (
-                            hvars.get("user")
-                            or hvars.get("username")
-                            or hvars.get("ansible_user")
-                            or ""
-                        )
-                        password_ref = _inventory_password_ref(hvars)
-                        key_path = (
-                            hvars.get("key_path")
-                            or hvars.get("identity_file")
-                            or hvars.get("ansible_ssh_private_key_file")
-                        )
-                        port = hvars.get("port") or hvars.get("ansible_port") or 22
-                        entry = {
-                            "hostname": hvars.get("hostname")
-                            or hvars.get("ansible_host")
-                            or alias,
-                            "username": username,
-                            "password_ref": password_ref,
-                            "known_hosts_file": _known_hosts_file(hvars),
-                            "key_path": key_path,
-                            "port": int(port) if port else 22,
-                        }
-                        if not entry["username"]:
-                            logger.error("Skipping inventory host without a username")
-                            continue
-                        hosts.append(entry)
-            elif (
-                group in inv
-                and isinstance(inv[group], dict)
-                and "hosts" in inv[group]
-                and isinstance(inv[group]["hosts"], dict)
-            ):
-                # Legacy style with group as a top-level key containing 'hosts'
-                for host, vars in inv[group]["hosts"].items():
-                    hvars = vars or {}
-                    entry = {
-                        "hostname": hvars.get("ansible_host")
-                        or hvars.get("hostname")
-                        or host,
-                        "username": hvars.get("ansible_user")
-                        or hvars.get("user")
-                        or hvars.get("username"),
-                        "password_ref": _inventory_password_ref(hvars),
-                        "known_hosts_file": _known_hosts_file(hvars),
-                        "key_path": hvars.get("ansible_ssh_private_key_file")
-                        or hvars.get("key_path")
-                        or hvars.get("identity_file"),
-                        "port": int(
-                            hvars.get("ansible_port") or hvars.get("port") or 22
-                        ),
-                    }
-                    if not entry["username"]:
-                        logger.error("Skipping inventory host without a username")
-                        continue
-                    hosts.append(entry)
-            else:
-                return [], ResponseBuilder.build(
-                    400,
-                    "Configured inventory group is invalid",
-                    {"inventory": inventory, "group": group},
-                    errors=["Configured inventory group is invalid"],
-                )
+            hosts, error = _load_legacy_style_hosts(inv, group, inventory, logger)
+        if error is not None:
+            return [], error
 
         if not hosts:
             return [], ResponseBuilder.build(
