@@ -146,178 +146,203 @@ def _inventory_password_ref(*sources: dict) -> str | None:
     return validate_secret_ref(str(reference))
 
 
+def _ansible_hosts_to_parse(
+    inv: dict, all_group: dict, group: str, inventory: str
+) -> tuple[dict, dict | None]:
+    """Collect the (hvars, g_vars) pairs an Ansible-style group resolves to."""
+    all_hosts = all_group.get("hosts", {}) or {}
+    children = all_group.get("children", {}) or {}
+    hosts_to_parse: dict = {}  # alias -> (hvars, g_vars)
+
+    if group == "all":
+        # Add direct hosts from 'all'
+        for alias, hvars in all_hosts.items():
+            hosts_to_parse[alias] = (hvars or {}, {})
+        # Add hosts from all children
+        for child_data in children.values():
+            if isinstance(child_data, dict):
+                g_hosts = child_data.get("hosts", {}) or {}
+                g_vars = child_data.get("vars", {}) or {}
+                for alias, hvars in g_hosts.items():
+                    hosts_to_parse[alias] = (hvars or {}, g_vars)
+    elif group in children:
+        child_data = children[group]
+        if isinstance(child_data, dict):
+            g_hosts = child_data.get("hosts", {}) or {}
+            g_vars = child_data.get("vars", {}) or {}
+            for alias, hvars in g_hosts.items():
+                hosts_to_parse[alias] = (hvars or {}, g_vars)
+    else:
+        # Group not found in children. Check if defined as a top-level key outside children
+        if group in inv and isinstance(inv[group], dict) and "hosts" in inv[group]:
+            legacy_hosts = inv[group]["hosts"] or {}
+            legacy_vars = inv[group].get("vars", {}) or {}
+            for alias, hvars in legacy_hosts.items():
+                hosts_to_parse[alias] = (hvars or {}, legacy_vars)
+        else:
+            return {}, ResponseBuilder.build(
+                400,
+                "Configured inventory group is invalid",
+                {"inventory": inventory, "group": group},
+                errors=["Configured inventory group is invalid"],
+            )
+    return hosts_to_parse, None
+
+
+def _build_ansible_entries(
+    hosts_to_parse: dict, all_vars: dict, logger: logging.Logger
+) -> list[dict]:
+    hosts = []
+    for alias, (hvars, g_vars) in hosts_to_parse.items():
+        username = (
+            hvars.get("ansible_user")
+            or hvars.get("user")
+            or g_vars.get("ansible_user")
+            or g_vars.get("user")
+            or all_vars.get("ansible_user")
+            or all_vars.get("user")
+            or ""
+        )
+        password_ref = _inventory_password_ref(hvars, g_vars, all_vars)
+        key_path = (
+            hvars.get("key_path")
+            or hvars.get("identity_file")
+            or hvars.get("ansible_ssh_private_key_file")
+            or g_vars.get("key_path")
+            or g_vars.get("identity_file")
+            or g_vars.get("ansible_ssh_private_key_file")
+            or all_vars.get("key_path")
+            or all_vars.get("identity_file")
+            or all_vars.get("ansible_ssh_private_key_file")
+        )
+        port = (
+            hvars.get("ansible_port")
+            or hvars.get("port")
+            or g_vars.get("ansible_port")
+            or g_vars.get("port")
+            or all_vars.get("ansible_port")
+            or all_vars.get("port")
+            or 22
+        )
+
+        entry = {
+            "hostname": hvars.get("ansible_host") or hvars.get("hostname") or alias,
+            "username": username,
+            "password_ref": password_ref,
+            "known_hosts_file": _known_hosts_file(hvars, g_vars, all_vars),
+            "key_path": key_path,
+            "port": int(port) if port else 22,
+        }
+        if not entry["username"]:
+            logger.error("Skipping inventory host without a username")
+            continue
+        hosts.append(entry)
+    return hosts
+
+
+def _load_ansible_style_hosts(
+    inv: dict, group: str, inventory: str, logger: logging.Logger
+) -> tuple[list[dict], dict | None]:
+    all_group = inv["all"]
+    all_vars = all_group.get("vars", {}) or {}
+    hosts_to_parse, error = _ansible_hosts_to_parse(inv, all_group, group, inventory)
+    if error is not None:
+        return [], error
+    return _build_ansible_entries(hosts_to_parse, all_vars, logger), None
+
+
+def _load_legacy_flat_hosts(inv: dict, logger: logging.Logger) -> list[dict]:
+    # Treat the entire inv as flat hosts
+    hosts = []
+    for alias, hvars in inv.items():
+        if isinstance(hvars, dict):
+            username = (
+                hvars.get("user")
+                or hvars.get("username")
+                or hvars.get("ansible_user")
+                or ""
+            )
+            password_ref = _inventory_password_ref(hvars)
+            key_path = (
+                hvars.get("key_path")
+                or hvars.get("identity_file")
+                or hvars.get("ansible_ssh_private_key_file")
+            )
+            port = hvars.get("port") or hvars.get("ansible_port") or 22
+            entry = {
+                "hostname": hvars.get("hostname") or hvars.get("ansible_host") or alias,
+                "username": username,
+                "password_ref": password_ref,
+                "known_hosts_file": _known_hosts_file(hvars),
+                "key_path": key_path,
+                "port": int(port) if port else 22,
+            }
+            if not entry["username"]:
+                logger.error("Skipping inventory host without a username")
+                continue
+            hosts.append(entry)
+    return hosts
+
+
+def _load_legacy_group_hosts(inv: dict, group: str, logger: logging.Logger) -> list[dict]:
+    # Legacy style with group as a top-level key containing 'hosts'
+    hosts = []
+    for host, vars in inv[group]["hosts"].items():
+        hvars = vars or {}
+        entry = {
+            "hostname": hvars.get("ansible_host") or hvars.get("hostname") or host,
+            "username": hvars.get("ansible_user")
+            or hvars.get("user")
+            or hvars.get("username"),
+            "password_ref": _inventory_password_ref(hvars),
+            "known_hosts_file": _known_hosts_file(hvars),
+            "key_path": hvars.get("ansible_ssh_private_key_file")
+            or hvars.get("key_path")
+            or hvars.get("identity_file"),
+            "port": int(hvars.get("ansible_port") or hvars.get("port") or 22),
+        }
+        if not entry["username"]:
+            logger.error("Skipping inventory host without a username")
+            continue
+        hosts.append(entry)
+    return hosts
+
+
+def _load_legacy_style_hosts(
+    inv: dict, group: str, inventory: str, logger: logging.Logger
+) -> tuple[list[dict], dict | None]:
+    # Legacy non-Ansible flat inventory (or key-value flat structure)
+    if group == "all":
+        return _load_legacy_flat_hosts(inv, logger), None
+    if (
+        group in inv
+        and isinstance(inv[group], dict)
+        and "hosts" in inv[group]
+        and isinstance(inv[group]["hosts"], dict)
+    ):
+        return _load_legacy_group_hosts(inv, group, logger), None
+    return [], ResponseBuilder.build(
+        400,
+        "Configured inventory group is invalid",
+        {"inventory": inventory, "group": group},
+        errors=["Configured inventory group is invalid"],
+    )
+
+
 def load_inventory(
     inventory: str, group: str, logger: logging.Logger
 ) -> tuple[list[dict], dict]:
     try:
         with open(inventory) as f:
             inv = yaml.safe_load(f) or {}
-        hosts = []
 
         # Check if it's an Ansible-style inventory
         if "all" in inv and isinstance(inv["all"], dict):
-            all_group = inv["all"]
-            all_vars = all_group.get("vars", {}) or {}
-            all_hosts = all_group.get("hosts", {}) or {}
-            children = all_group.get("children", {}) or {}
-
-            # We need to collect hosts belonging to the target group
-            hosts_to_parse = {}  # alias -> (hvars, g_vars)
-
-            if group == "all":
-                # Add direct hosts from 'all'
-                for alias, hvars in all_hosts.items():
-                    hosts_to_parse[alias] = (hvars or {}, {})
-                # Add hosts from all children
-                for child_data in children.values():
-                    if isinstance(child_data, dict):
-                        g_hosts = child_data.get("hosts", {}) or {}
-                        g_vars = child_data.get("vars", {}) or {}
-                        for alias, hvars in g_hosts.items():
-                            hosts_to_parse[alias] = (hvars or {}, g_vars)
-            elif group in children:
-                child_data = children[group]
-                if isinstance(child_data, dict):
-                    g_hosts = child_data.get("hosts", {}) or {}
-                    g_vars = child_data.get("vars", {}) or {}
-                    for alias, hvars in g_hosts.items():
-                        hosts_to_parse[alias] = (hvars or {}, g_vars)
-            else:
-                # Group not found in children. Check if defined as a top-level key outside children
-                if (
-                    group in inv
-                    and isinstance(inv[group], dict)
-                    and "hosts" in inv[group]
-                ):
-                    legacy_hosts = inv[group]["hosts"] or {}
-                    legacy_vars = inv[group].get("vars", {}) or {}
-                    for alias, hvars in legacy_hosts.items():
-                        hosts_to_parse[alias] = (hvars or {}, legacy_vars)
-                else:
-                    return [], ResponseBuilder.build(
-                        400,
-                        "Configured inventory group is invalid",
-                        {"inventory": inventory, "group": group},
-                        errors=["Configured inventory group is invalid"],
-                    )
-
-            # Now build the host entries
-            for alias, (hvars, g_vars) in hosts_to_parse.items():
-                username = (
-                    hvars.get("ansible_user")
-                    or hvars.get("user")
-                    or g_vars.get("ansible_user")
-                    or g_vars.get("user")
-                    or all_vars.get("ansible_user")
-                    or all_vars.get("user")
-                    or ""
-                )
-                password_ref = _inventory_password_ref(hvars, g_vars, all_vars)
-                key_path = (
-                    hvars.get("key_path")
-                    or hvars.get("identity_file")
-                    or hvars.get("ansible_ssh_private_key_file")
-                    or g_vars.get("key_path")
-                    or g_vars.get("identity_file")
-                    or g_vars.get("ansible_ssh_private_key_file")
-                    or all_vars.get("key_path")
-                    or all_vars.get("identity_file")
-                    or all_vars.get("ansible_ssh_private_key_file")
-                )
-                port = (
-                    hvars.get("ansible_port")
-                    or hvars.get("port")
-                    or g_vars.get("ansible_port")
-                    or g_vars.get("port")
-                    or all_vars.get("ansible_port")
-                    or all_vars.get("port")
-                    or 22
-                )
-
-                entry = {
-                    "hostname": hvars.get("ansible_host")
-                    or hvars.get("hostname")
-                    or alias,
-                    "username": username,
-                    "password_ref": password_ref,
-                    "known_hosts_file": _known_hosts_file(hvars, g_vars, all_vars),
-                    "key_path": key_path,
-                    "port": int(port) if port else 22,
-                }
-                if not entry["username"]:
-                    logger.error("Skipping inventory host without a username")
-                    continue
-                hosts.append(entry)
-
+            hosts, error = _load_ansible_style_hosts(inv, group, inventory, logger)
         else:
-            # Legacy non-Ansible flat inventory (or key-value flat structure)
-            if group == "all":
-                # Treat the entire inv as flat hosts
-                for alias, hvars in inv.items():
-                    if isinstance(hvars, dict):
-                        username = (
-                            hvars.get("user")
-                            or hvars.get("username")
-                            or hvars.get("ansible_user")
-                            or ""
-                        )
-                        password_ref = _inventory_password_ref(hvars)
-                        key_path = (
-                            hvars.get("key_path")
-                            or hvars.get("identity_file")
-                            or hvars.get("ansible_ssh_private_key_file")
-                        )
-                        port = hvars.get("port") or hvars.get("ansible_port") or 22
-                        entry = {
-                            "hostname": hvars.get("hostname")
-                            or hvars.get("ansible_host")
-                            or alias,
-                            "username": username,
-                            "password_ref": password_ref,
-                            "known_hosts_file": _known_hosts_file(hvars),
-                            "key_path": key_path,
-                            "port": int(port) if port else 22,
-                        }
-                        if not entry["username"]:
-                            logger.error("Skipping inventory host without a username")
-                            continue
-                        hosts.append(entry)
-            elif (
-                group in inv
-                and isinstance(inv[group], dict)
-                and "hosts" in inv[group]
-                and isinstance(inv[group]["hosts"], dict)
-            ):
-                # Legacy style with group as a top-level key containing 'hosts'
-                for host, vars in inv[group]["hosts"].items():
-                    hvars = vars or {}
-                    entry = {
-                        "hostname": hvars.get("ansible_host")
-                        or hvars.get("hostname")
-                        or host,
-                        "username": hvars.get("ansible_user")
-                        or hvars.get("user")
-                        or hvars.get("username"),
-                        "password_ref": _inventory_password_ref(hvars),
-                        "known_hosts_file": _known_hosts_file(hvars),
-                        "key_path": hvars.get("ansible_ssh_private_key_file")
-                        or hvars.get("key_path")
-                        or hvars.get("identity_file"),
-                        "port": int(
-                            hvars.get("ansible_port") or hvars.get("port") or 22
-                        ),
-                    }
-                    if not entry["username"]:
-                        logger.error("Skipping inventory host without a username")
-                        continue
-                    hosts.append(entry)
-            else:
-                return [], ResponseBuilder.build(
-                    400,
-                    "Configured inventory group is invalid",
-                    {"inventory": inventory, "group": group},
-                    errors=["Configured inventory group is invalid"],
-                )
+            hosts, error = _load_legacy_style_hosts(inv, group, inventory, logger)
+        if error is not None:
+            return [], error
 
         if not hosts:
             return [], ResponseBuilder.build(
@@ -529,6 +554,606 @@ def register_host_tools(mcp: FastMCP):
             )
 
 
+async def _tm_remote_run_command(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+    if not host or not cmd:
+        return ResponseBuilder.build(
+            400,
+            "Need host, cmd",
+            {"host": host, "cmd": cmd},
+            errors=["Need host, cmd"],
+        )
+    try:
+        conf, final_cfg = _resolve_host(
+            host_alias=host,
+            user=user,
+            password=password,
+            port=port,
+            identity_file=id_file,
+            certificate_file=certificate,
+            proxy_command=proxy,
+            ssh_config_file=cfg,
+        )
+        t = Tunnel(
+            remote_host=conf["hostname"],
+            username=conf["user"],
+            password=conf["password"],
+            port=conf["port"],
+            identity_file=conf["identity_file"],
+            certificate_file=conf.get("certificate_file"),
+            proxy_command=conf.get("proxy_command"),
+            known_hosts_file=conf.get("known_hosts_file"),
+            ssh_config_file=final_cfg,
+        )
+        if ctx:
+            await ctx.report_progress(progress=0, total=100)
+        await run_blocking(t.connect)
+        out, error = await run_blocking(t.run_command, cmd, timeout=timeout)
+        if ctx:
+            await ctx.report_progress(progress=100, total=100)
+        return ResponseBuilder.build(
+            200,
+            f"Cmd '{cmd}' done on {host} ({conf['hostname']})",
+            {"host": host, "real_host": conf["hostname"], "cmd": cmd},
+            error,
+            stdout=out,
+            files=[],
+            locations=[],
+            errors=[],
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Cmd fail")
+        await ctx_progress(ctx, 100, 100)
+        return ResponseBuilder.build(
+            500, "Cmd fail", {"host": host, "cmd": cmd}, type(e).__name__
+        )
+    finally:
+        if "t" in locals():
+            await run_blocking(t.close)
+
+
+
+async def _tm_remote_send_file(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+    _logger = logging.getLogger("TunnelServer")
+    _lpath = os.path.abspath(os.path.expanduser(lpath))
+    _rpath = os.path.expanduser(rpath)
+    if not host or not _lpath or not _rpath:
+        return ResponseBuilder.build(
+            400,
+            "Need host, lpath, rpath",
+            {"host": host, "lpath": _lpath, "rpath": _rpath},
+            errors=["Need host, lpath, rpath"],
+        )
+    if not os.path.exists(_lpath) or not os.path.isfile(_lpath):
+        return ResponseBuilder.build(
+            400,
+            f"Invalid file: {_lpath}",
+            {"host": host, "lpath": _lpath, "rpath": _rpath},
+            errors=[f"Invalid file: {_lpath}"],
+        )
+    if os.path.getsize(_lpath) > max_transfer_bytes():
+        return ResponseBuilder.build(
+            400,
+            "Managed file transfer limit exceeded",
+            {},
+            errors=["Managed file transfer limit exceeded"],
+        )
+    try:
+        conf, final_cfg = _resolve_host(
+            host_alias=host,
+            user=user,
+            password=password,
+            port=port,
+            identity_file=id_file,
+            certificate_file=certificate,
+            proxy_command=proxy,
+            ssh_config_file=cfg,
+        )
+        t = Tunnel(
+            remote_host=conf["hostname"],
+            username=conf["user"],
+            password=conf["password"],
+            port=conf["port"],
+            identity_file=conf["identity_file"],
+            certificate_file=conf.get("certificate_file"),
+            proxy_command=conf.get("proxy_command"),
+            known_hosts_file=conf.get("known_hosts_file"),
+            ssh_config_file=final_cfg,
+        )
+        if ctx:
+            await ctx.report_progress(progress=0, total=100)
+        await run_blocking(t.send_file, _lpath, _rpath)
+        if ctx:
+            await ctx.report_progress(progress=100, total=100)
+        return ResponseBuilder.build(
+            200,
+            f"Uploaded to {_rpath}",
+            {"host": host, "lpath": _lpath, "rpath": _rpath},
+            files=[_lpath],
+            locations=[_rpath],
+            errors=[],
+        )
+    except Exception as e:
+        ctx_log(ctx, _logger, "error", "Upload fail")
+        return ResponseBuilder.build(
+            500,
+            "Upload fail",
+            {"host": host, "lpath": _lpath, "rpath": _rpath},
+            type(e).__name__,
+        )
+    finally:
+        if "t" in locals():
+            await run_blocking(t.close)
+
+
+
+async def _tm_remote_receive_file(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+    _lpath = os.path.abspath(os.path.expanduser(lpath))
+    if not host or not rpath or not _lpath:
+        return ResponseBuilder.build(
+            400,
+            "Need host, rpath, lpath",
+            {"host": host, "rpath": rpath, "lpath": _lpath},
+            errors=["Need host, rpath, lpath"],
+        )
+    try:
+        conf, final_cfg = _resolve_host(
+            host_alias=host,
+            user=user,
+            password=password,
+            port=port,
+            identity_file=id_file,
+            certificate_file=certificate,
+            proxy_command=proxy,
+            ssh_config_file=cfg,
+        )
+        t = Tunnel(
+            remote_host=conf["hostname"],
+            username=conf["user"],
+            password=conf["password"],
+            port=conf["port"],
+            identity_file=conf["identity_file"],
+            certificate_file=conf.get("certificate_file"),
+            proxy_command=conf.get("proxy_command"),
+            known_hosts_file=conf.get("known_hosts_file"),
+            ssh_config_file=final_cfg,
+        )
+        if ctx:
+            await ctx.report_progress(progress=0, total=100)
+        await run_blocking(t.receive_file, rpath, _lpath)
+        if ctx:
+            await ctx.report_progress(progress=100, total=100)
+        return ResponseBuilder.build(
+            200,
+            f"Downloaded to {_lpath}",
+            {"host": host, "rpath": rpath, "lpath": _lpath},
+            files=[rpath],
+            locations=[_lpath],
+            errors=[],
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Download fail")
+        return ResponseBuilder.build(
+            500,
+            "Download fail",
+            {"host": host, "rpath": rpath, "lpath": _lpath},
+            type(e).__name__,
+        )
+    finally:
+        if "t" in locals():
+            await run_blocking(t.close)
+
+
+
+async def _tm_remote_check_ssh(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+    if not host:
+        return ResponseBuilder.build(
+            400, "Need host", {"host": host}, errors=["Need host"]
+        )
+    try:
+        conf, final_cfg = _resolve_host(
+            host_alias=host,
+            user=user,
+            password=password,
+            port=port,
+            identity_file=id_file,
+            certificate_file=certificate,
+            proxy_command=proxy,
+            ssh_config_file=cfg,
+        )
+        t = Tunnel(
+            remote_host=conf["hostname"],
+            username=conf["user"],
+            password=conf["password"],
+            port=conf["port"],
+            identity_file=conf["identity_file"],
+            certificate_file=conf.get("certificate_file"),
+            proxy_command=conf.get("proxy_command"),
+            known_hosts_file=conf.get("known_hosts_file"),
+            ssh_config_file=final_cfg,
+        )
+        if ctx:
+            await ctx.report_progress(progress=0, total=100)
+        success, msg = await run_blocking(t.check_ssh_server)
+        if ctx:
+            await ctx.report_progress(progress=100, total=100)
+        return ResponseBuilder.build(
+            200 if success else 400,
+            f"SSH check: {msg}",
+            {"host": host, "success": success},
+            files=[],
+            locations=[],
+            errors=[] if success else [msg],
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Check fail")
+        return ResponseBuilder.build(
+            500, "Check fail", {"host": host}, type(e).__name__
+        )
+    finally:
+        if "t" in locals():
+            await run_blocking(t.close)
+
+
+
+async def _tm_remote_test_key_auth(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+    _key = key or setting("TUNNEL_IDENTITY_FILE", "")
+    if not host or not _key:
+        return ResponseBuilder.build(
+            400,
+            "Need host, key",
+            {"host": host, "key": _key},
+            errors=["Need host, key"],
+        )
+    try:
+        conf, final_cfg = _resolve_host(
+            host_alias=host, user=user, port=port, ssh_config_file=cfg
+        )
+        t = Tunnel(
+            remote_host=conf["hostname"],
+            username=conf["user"],
+            port=conf["port"],
+            known_hosts_file=conf.get("known_hosts_file"),
+            ssh_config_file=final_cfg,
+        )
+        if ctx:
+            await ctx.report_progress(progress=0, total=100)
+        success, msg = await run_blocking(t.test_key_auth, _key)
+        if ctx:
+            await ctx.report_progress(progress=100, total=100)
+        return ResponseBuilder.build(
+            200 if success else 400,
+            f"Key test: {msg}",
+            {"host": host, "key": _key, "success": success},
+            files=[],
+            locations=[],
+            errors=[] if success else [msg],
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Key test fail")
+        return ResponseBuilder.build(
+            500, "Key test fail", {"host": host, "key": _key}, type(e).__name__
+        )
+
+
+
+async def _tm_remote_setup_passwordless(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+    _key = key or os.path.expanduser("~/.ssh/id_rsa")
+    if not host or not password:
+        return ResponseBuilder.build(
+            400,
+            "Need host, password_ref",
+            {"host": host},
+            errors=["Need host, password_ref"],
+        )
+    if key_type not in ["rsa", "ed25519"]:
+        return ResponseBuilder.build(
+            400,
+            f"Invalid key_type: {key_type}",
+            {"host": host},
+            errors=["key_type must be 'rsa' or 'ed25519'"],
+        )
+    try:
+        conf, final_cfg = _resolve_host(
+            host_alias=host,
+            user=user,
+            password=password,
+            port=port,
+            ssh_config_file=cfg,
+        )
+        t = Tunnel(
+            remote_host=conf["hostname"],
+            username=conf["user"],
+            password=conf["password"],
+            port=conf["port"],
+            known_hosts_file=conf.get("known_hosts_file"),
+            ssh_config_file=final_cfg,
+        )
+        if ctx:
+            await ctx.report_progress(progress=0, total=100)
+        _key = os.path.expanduser(_key)
+        pub_key = _key + ".pub"
+        if not os.path.exists(pub_key):
+            if key_type == "rsa":
+                await run_blocking(
+                    subprocess.run,
+                    [
+                        "/usr/bin/ssh-keygen",
+                        "-t",
+                        "rsa",
+                        "-b",
+                        "4096",
+                        "-f",
+                        _key,
+                        "-N",
+                        "",
+                    ],
+                    check=True,
+                    timeout=30,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                await run_blocking(
+                    subprocess.run,
+                    [
+                        "/usr/bin/ssh-keygen",
+                        "-t",
+                        "ed25519",
+                        "-f",
+                        _key,
+                        "-N",
+                        "",
+                    ],
+                    check=True,
+                    timeout=30,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+        await run_blocking(
+            t.setup_passwordless_ssh, local_key_path=_key, key_type=key_type
+        )
+        if ctx:
+            await ctx.report_progress(progress=100, total=100)
+        return ResponseBuilder.build(
+            200,
+            f"SSH setup for {user}@{host}",
+            {"host": host, "key": _key, "user": user, "key_type": key_type},
+            files=[pub_key],
+            locations=[f"~/.ssh/authorized_keys on {host}"],
+            errors=[],
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "SSH setup fail")
+        return ResponseBuilder.build(
+            500,
+            "SSH setup fail",
+            {"host": host, "key_type": key_type},
+            type(e).__name__,
+        )
+    finally:
+        if "t" in locals():
+            await run_blocking(t.close)
+
+
+
+async def _tm_remote_copy_ssh_config(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+    if not host or not lcfg:
+        return ResponseBuilder.build(
+            400,
+            "Need host, lcfg",
+            {"host": host, "lcfg": lcfg, "rcfg": rcfg},
+            errors=["Need host, lcfg"],
+        )
+    try:
+        conf, final_cfg = _resolve_host(
+            host_alias=host,
+            user=user,
+            password=password,
+            port=port,
+            identity_file=id_file,
+            certificate_file=certificate,
+            proxy_command=proxy,
+            ssh_config_file=cfg,
+        )
+        t = Tunnel(
+            remote_host=conf["hostname"],
+            username=conf["user"],
+            password=conf["password"],
+            port=conf["port"],
+            identity_file=conf["identity_file"],
+            certificate_file=conf.get("certificate_file"),
+            proxy_command=conf.get("proxy_command"),
+            known_hosts_file=conf.get("known_hosts_file"),
+            ssh_config_file=final_cfg,
+        )
+        if ctx:
+            await ctx.report_progress(progress=0, total=100)
+        await run_blocking(t.copy_ssh_config, lcfg, rcfg)
+        if ctx:
+            await ctx.report_progress(progress=100, total=100)
+        return ResponseBuilder.build(
+            200,
+            f"Copied cfg to {rcfg} on {host}",
+            {"host": host, "lcfg": lcfg, "rcfg": rcfg},
+            files=[lcfg],
+            locations=[rcfg],
+            errors=[],
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Copy cfg fail")
+        return ResponseBuilder.build(
+            500,
+            "Copy cfg fail",
+            {"host": host, "lcfg": lcfg, "rcfg": rcfg},
+            type(e).__name__,
+        )
+    finally:
+        if "t" in locals():
+            await run_blocking(t.close)
+
+
+
+async def _tm_remote_rotate_key(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+    if not host or not new_key:
+        return ResponseBuilder.build(
+            400,
+            "Need host, new_key",
+            {"host": host, "new_key": new_key},
+            errors=["Need host, new_key"],
+        )
+    if key_type not in ["rsa", "ed25519"]:
+        return ResponseBuilder.build(
+            400,
+            f"Invalid key_type: {key_type}",
+            {"host": host},
+            errors=["key_type must be 'rsa' or 'ed25519'"],
+        )
+    try:
+        conf, final_cfg = _resolve_host(
+            host_alias=host,
+            user=user,
+            password=password,
+            port=port,
+            identity_file=id_file,
+            certificate_file=certificate,
+            proxy_command=proxy,
+            ssh_config_file=cfg,
+        )
+        t = Tunnel(
+            remote_host=conf["hostname"],
+            username=conf["user"],
+            password=conf["password"],
+            port=conf["port"],
+            identity_file=conf["identity_file"],
+            certificate_file=conf.get("certificate_file"),
+            proxy_command=conf.get("proxy_command"),
+            known_hosts_file=conf.get("known_hosts_file"),
+            ssh_config_file=final_cfg,
+        )
+        if ctx:
+            await ctx.report_progress(progress=0, total=100)
+        _new_key = os.path.expanduser(new_key)
+        new_public_key = _new_key + ".pub"
+        if not os.path.exists(_new_key):
+            if key_type == "rsa":
+                await run_blocking(
+                    subprocess.run,
+                    [
+                        "/usr/bin/ssh-keygen",
+                        "-t",
+                        "rsa",
+                        "-b",
+                        "4096",
+                        "-f",
+                        _new_key,
+                        "-N",
+                        "",
+                    ],
+                    check=True,
+                    timeout=30,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                await run_blocking(
+                    subprocess.run,
+                    [
+                        "/usr/bin/ssh-keygen",
+                        "-t",
+                        "ed25519",
+                        "-f",
+                        _new_key,
+                        "-N",
+                        "",
+                    ],
+                    check=True,
+                    timeout=30,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+        await run_blocking(t.rotate_ssh_key, _new_key, key_type=key_type)
+        if ctx:
+            await ctx.report_progress(progress=100, total=100)
+        return ResponseBuilder.build(
+            200,
+            f"Rotated {key_type} key to {_new_key} on {host}",
+            {
+                "host": host,
+                "new_key": _new_key,
+                "old_key": id_file,
+                "key_type": key_type,
+            },
+            files=[new_public_key],
+            locations=[f"~/.ssh/authorized_keys on {host}"],
+            errors=[],
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Rotate fail")
+        return ResponseBuilder.build(
+            500,
+            "Rotate fail",
+            {"host": host, "new_key": new_key, "key_type": key_type},
+            type(e).__name__,
+        )
+    finally:
+        if "t" in locals():
+            await run_blocking(t.close)
+
+
+
+async def _tm_remote_remove_host_key(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+    if not host:
+        return ResponseBuilder.build(
+            400, "Need host", {"host": host}, errors=["Need host"]
+        )
+    if not await ctx_confirm_destructive(ctx, "remove host key"):
+        return {"status": "cancelled", "message": "Operation cancelled by user"}
+    try:
+        conf, _ = _resolve_host(host_alias=host)
+        t = Tunnel(remote_host=conf["hostname"])
+        if ctx:
+            await ctx.report_progress(progress=0, total=100)
+        _known_hosts = os.path.expanduser(known_hosts)
+        msg = await run_blocking(
+            t.remove_host_key, known_hosts_path=_known_hosts
+        )
+        if ctx:
+            await ctx.report_progress(progress=100, total=100)
+        return ResponseBuilder.build(
+            200 if "Removed" in msg else 400,
+            msg,
+            {"host": host, "known_hosts": _known_hosts},
+            files=[],
+            locations=[],
+            errors=[] if "Removed" in msg else [msg],
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Remove fail")
+        return ResponseBuilder.build(
+            500,
+            "Remove fail",
+            {"host": host, "known_hosts": known_hosts},
+            type(e).__name__,
+        )
+
+
+
+async def _tm_remote_unknown_action(action) -> dict:
+    return ResponseBuilder.build(
+        400,
+        f"Unknown action: {action}",
+        {"action": action},
+        errors=[
+            "Valid: run_command, send_file, receive_file, check_ssh, test_key_auth, setup_passwordless, copy_ssh_config, rotate_key, remove_host_key"
+        ],
+    )
+
+
+
 def register_remote_tools(mcp: FastMCP):
     """Register single-host SSH operations tool."""
 
@@ -640,583 +1265,941 @@ def register_remote_tools(mcp: FastMCP):
                 400, "Invalid SSH timeout", {}, errors=["Invalid SSH timeout"]
             )
         if action == "run_command":
-            if not host or not cmd:
-                return ResponseBuilder.build(
-                    400,
-                    "Need host, cmd",
-                    {"host": host, "cmd": cmd},
-                    errors=["Need host, cmd"],
-                )
-            try:
-                conf, final_cfg = _resolve_host(
-                    host_alias=host,
-                    user=user,
-                    password=password,
-                    port=port,
-                    identity_file=id_file,
-                    certificate_file=certificate,
-                    proxy_command=proxy,
-                    ssh_config_file=cfg,
-                )
-                t = Tunnel(
-                    remote_host=conf["hostname"],
-                    username=conf["user"],
-                    password=conf["password"],
-                    port=conf["port"],
-                    identity_file=conf["identity_file"],
-                    certificate_file=conf.get("certificate_file"),
-                    proxy_command=conf.get("proxy_command"),
-                    known_hosts_file=conf.get("known_hosts_file"),
-                    ssh_config_file=final_cfg,
-                )
-                if ctx:
-                    await ctx.report_progress(progress=0, total=100)
-                await run_blocking(t.connect)
-                out, error = await run_blocking(t.run_command, cmd, timeout=timeout)
-                if ctx:
-                    await ctx.report_progress(progress=100, total=100)
-                return ResponseBuilder.build(
-                    200,
-                    f"Cmd '{cmd}' done on {host} ({conf['hostname']})",
-                    {"host": host, "real_host": conf["hostname"], "cmd": cmd},
-                    error,
-                    stdout=out,
-                    files=[],
-                    locations=[],
-                    errors=[],
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Cmd fail")
-                await ctx_progress(ctx, 100, 100)
-                return ResponseBuilder.build(
-                    500, "Cmd fail", {"host": host, "cmd": cmd}, type(e).__name__
-                )
-            finally:
-                if "t" in locals():
-                    await run_blocking(t.close)
-
+            return await _tm_remote_run_command(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
         elif action == "send_file":
-            _logger = logging.getLogger("TunnelServer")
-            _lpath = os.path.abspath(os.path.expanduser(lpath))
-            _rpath = os.path.expanduser(rpath)
-            if not host or not _lpath or not _rpath:
-                return ResponseBuilder.build(
-                    400,
-                    "Need host, lpath, rpath",
-                    {"host": host, "lpath": _lpath, "rpath": _rpath},
-                    errors=["Need host, lpath, rpath"],
-                )
-            if not os.path.exists(_lpath) or not os.path.isfile(_lpath):
-                return ResponseBuilder.build(
-                    400,
-                    f"Invalid file: {_lpath}",
-                    {"host": host, "lpath": _lpath, "rpath": _rpath},
-                    errors=[f"Invalid file: {_lpath}"],
-                )
-            if os.path.getsize(_lpath) > max_transfer_bytes():
-                return ResponseBuilder.build(
-                    400,
-                    "Managed file transfer limit exceeded",
-                    {},
-                    errors=["Managed file transfer limit exceeded"],
-                )
-            try:
-                conf, final_cfg = _resolve_host(
-                    host_alias=host,
-                    user=user,
-                    password=password,
-                    port=port,
-                    identity_file=id_file,
-                    certificate_file=certificate,
-                    proxy_command=proxy,
-                    ssh_config_file=cfg,
-                )
-                t = Tunnel(
-                    remote_host=conf["hostname"],
-                    username=conf["user"],
-                    password=conf["password"],
-                    port=conf["port"],
-                    identity_file=conf["identity_file"],
-                    certificate_file=conf.get("certificate_file"),
-                    proxy_command=conf.get("proxy_command"),
-                    known_hosts_file=conf.get("known_hosts_file"),
-                    ssh_config_file=final_cfg,
-                )
-                if ctx:
-                    await ctx.report_progress(progress=0, total=100)
-                await run_blocking(t.send_file, _lpath, _rpath)
-                if ctx:
-                    await ctx.report_progress(progress=100, total=100)
-                return ResponseBuilder.build(
-                    200,
-                    f"Uploaded to {_rpath}",
-                    {"host": host, "lpath": _lpath, "rpath": _rpath},
-                    files=[_lpath],
-                    locations=[_rpath],
-                    errors=[],
-                )
-            except Exception as e:
-                ctx_log(ctx, _logger, "error", "Upload fail")
-                return ResponseBuilder.build(
-                    500,
-                    "Upload fail",
-                    {"host": host, "lpath": _lpath, "rpath": _rpath},
-                    type(e).__name__,
-                )
-            finally:
-                if "t" in locals():
-                    await run_blocking(t.close)
-
+            return await _tm_remote_send_file(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
         elif action == "receive_file":
-            _lpath = os.path.abspath(os.path.expanduser(lpath))
-            if not host or not rpath or not _lpath:
-                return ResponseBuilder.build(
-                    400,
-                    "Need host, rpath, lpath",
-                    {"host": host, "rpath": rpath, "lpath": _lpath},
-                    errors=["Need host, rpath, lpath"],
-                )
-            try:
-                conf, final_cfg = _resolve_host(
-                    host_alias=host,
-                    user=user,
-                    password=password,
-                    port=port,
-                    identity_file=id_file,
-                    certificate_file=certificate,
-                    proxy_command=proxy,
-                    ssh_config_file=cfg,
-                )
-                t = Tunnel(
-                    remote_host=conf["hostname"],
-                    username=conf["user"],
-                    password=conf["password"],
-                    port=conf["port"],
-                    identity_file=conf["identity_file"],
-                    certificate_file=conf.get("certificate_file"),
-                    proxy_command=conf.get("proxy_command"),
-                    known_hosts_file=conf.get("known_hosts_file"),
-                    ssh_config_file=final_cfg,
-                )
-                if ctx:
-                    await ctx.report_progress(progress=0, total=100)
-                await run_blocking(t.receive_file, rpath, _lpath)
-                if ctx:
-                    await ctx.report_progress(progress=100, total=100)
-                return ResponseBuilder.build(
-                    200,
-                    f"Downloaded to {_lpath}",
-                    {"host": host, "rpath": rpath, "lpath": _lpath},
-                    files=[rpath],
-                    locations=[_lpath],
-                    errors=[],
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Download fail")
-                return ResponseBuilder.build(
-                    500,
-                    "Download fail",
-                    {"host": host, "rpath": rpath, "lpath": _lpath},
-                    type(e).__name__,
-                )
-            finally:
-                if "t" in locals():
-                    await run_blocking(t.close)
-
+            return await _tm_remote_receive_file(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
         elif action == "check_ssh":
-            if not host:
-                return ResponseBuilder.build(
-                    400, "Need host", {"host": host}, errors=["Need host"]
-                )
-            try:
-                conf, final_cfg = _resolve_host(
-                    host_alias=host,
-                    user=user,
-                    password=password,
-                    port=port,
-                    identity_file=id_file,
-                    certificate_file=certificate,
-                    proxy_command=proxy,
-                    ssh_config_file=cfg,
-                )
-                t = Tunnel(
-                    remote_host=conf["hostname"],
-                    username=conf["user"],
-                    password=conf["password"],
-                    port=conf["port"],
-                    identity_file=conf["identity_file"],
-                    certificate_file=conf.get("certificate_file"),
-                    proxy_command=conf.get("proxy_command"),
-                    known_hosts_file=conf.get("known_hosts_file"),
-                    ssh_config_file=final_cfg,
-                )
-                if ctx:
-                    await ctx.report_progress(progress=0, total=100)
-                success, msg = await run_blocking(t.check_ssh_server)
-                if ctx:
-                    await ctx.report_progress(progress=100, total=100)
-                return ResponseBuilder.build(
-                    200 if success else 400,
-                    f"SSH check: {msg}",
-                    {"host": host, "success": success},
-                    files=[],
-                    locations=[],
-                    errors=[] if success else [msg],
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Check fail")
-                return ResponseBuilder.build(
-                    500, "Check fail", {"host": host}, type(e).__name__
-                )
-            finally:
-                if "t" in locals():
-                    await run_blocking(t.close)
-
+            return await _tm_remote_check_ssh(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
         elif action == "test_key_auth":
-            _key = key or setting("TUNNEL_IDENTITY_FILE", "")
-            if not host or not _key:
-                return ResponseBuilder.build(
-                    400,
-                    "Need host, key",
-                    {"host": host, "key": _key},
-                    errors=["Need host, key"],
-                )
-            try:
-                conf, final_cfg = _resolve_host(
-                    host_alias=host, user=user, port=port, ssh_config_file=cfg
-                )
-                t = Tunnel(
-                    remote_host=conf["hostname"],
-                    username=conf["user"],
-                    port=conf["port"],
-                    known_hosts_file=conf.get("known_hosts_file"),
-                    ssh_config_file=final_cfg,
-                )
-                if ctx:
-                    await ctx.report_progress(progress=0, total=100)
-                success, msg = await run_blocking(t.test_key_auth, _key)
-                if ctx:
-                    await ctx.report_progress(progress=100, total=100)
-                return ResponseBuilder.build(
-                    200 if success else 400,
-                    f"Key test: {msg}",
-                    {"host": host, "key": _key, "success": success},
-                    files=[],
-                    locations=[],
-                    errors=[] if success else [msg],
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Key test fail")
-                return ResponseBuilder.build(
-                    500, "Key test fail", {"host": host, "key": _key}, type(e).__name__
-                )
-
+            return await _tm_remote_test_key_auth(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
         elif action == "setup_passwordless":
-            _key = key or os.path.expanduser("~/.ssh/id_rsa")
-            if not host or not password:
-                return ResponseBuilder.build(
-                    400,
-                    "Need host, password_ref",
-                    {"host": host},
-                    errors=["Need host, password_ref"],
-                )
-            if key_type not in ["rsa", "ed25519"]:
-                return ResponseBuilder.build(
-                    400,
-                    f"Invalid key_type: {key_type}",
-                    {"host": host},
-                    errors=["key_type must be 'rsa' or 'ed25519'"],
-                )
-            try:
-                conf, final_cfg = _resolve_host(
-                    host_alias=host,
-                    user=user,
-                    password=password,
-                    port=port,
-                    ssh_config_file=cfg,
-                )
-                t = Tunnel(
-                    remote_host=conf["hostname"],
-                    username=conf["user"],
-                    password=conf["password"],
-                    port=conf["port"],
-                    known_hosts_file=conf.get("known_hosts_file"),
-                    ssh_config_file=final_cfg,
-                )
-                if ctx:
-                    await ctx.report_progress(progress=0, total=100)
-                _key = os.path.expanduser(_key)
-                pub_key = _key + ".pub"
-                if not os.path.exists(pub_key):
-                    if key_type == "rsa":
-                        await run_blocking(
-                            subprocess.run,
-                            [
-                                "/usr/bin/ssh-keygen",
-                                "-t",
-                                "rsa",
-                                "-b",
-                                "4096",
-                                "-f",
-                                _key,
-                                "-N",
-                                "",
-                            ],
-                            check=True,
-                            timeout=30,
-                            stdin=subprocess.DEVNULL,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
-                    else:
-                        await run_blocking(
-                            subprocess.run,
-                            [
-                                "/usr/bin/ssh-keygen",
-                                "-t",
-                                "ed25519",
-                                "-f",
-                                _key,
-                                "-N",
-                                "",
-                            ],
-                            check=True,
-                            timeout=30,
-                            stdin=subprocess.DEVNULL,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
-                await run_blocking(
-                    t.setup_passwordless_ssh, local_key_path=_key, key_type=key_type
-                )
-                if ctx:
-                    await ctx.report_progress(progress=100, total=100)
-                return ResponseBuilder.build(
-                    200,
-                    f"SSH setup for {user}@{host}",
-                    {"host": host, "key": _key, "user": user, "key_type": key_type},
-                    files=[pub_key],
-                    locations=[f"~/.ssh/authorized_keys on {host}"],
-                    errors=[],
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "SSH setup fail")
-                return ResponseBuilder.build(
-                    500,
-                    "SSH setup fail",
-                    {"host": host, "key_type": key_type},
-                    type(e).__name__,
-                )
-            finally:
-                if "t" in locals():
-                    await run_blocking(t.close)
-
+            return await _tm_remote_setup_passwordless(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
         elif action == "copy_ssh_config":
-            if not host or not lcfg:
-                return ResponseBuilder.build(
-                    400,
-                    "Need host, lcfg",
-                    {"host": host, "lcfg": lcfg, "rcfg": rcfg},
-                    errors=["Need host, lcfg"],
-                )
-            try:
-                conf, final_cfg = _resolve_host(
-                    host_alias=host,
-                    user=user,
-                    password=password,
-                    port=port,
-                    identity_file=id_file,
-                    certificate_file=certificate,
-                    proxy_command=proxy,
-                    ssh_config_file=cfg,
-                )
-                t = Tunnel(
-                    remote_host=conf["hostname"],
-                    username=conf["user"],
-                    password=conf["password"],
-                    port=conf["port"],
-                    identity_file=conf["identity_file"],
-                    certificate_file=conf.get("certificate_file"),
-                    proxy_command=conf.get("proxy_command"),
-                    known_hosts_file=conf.get("known_hosts_file"),
-                    ssh_config_file=final_cfg,
-                )
-                if ctx:
-                    await ctx.report_progress(progress=0, total=100)
-                await run_blocking(t.copy_ssh_config, lcfg, rcfg)
-                if ctx:
-                    await ctx.report_progress(progress=100, total=100)
-                return ResponseBuilder.build(
-                    200,
-                    f"Copied cfg to {rcfg} on {host}",
-                    {"host": host, "lcfg": lcfg, "rcfg": rcfg},
-                    files=[lcfg],
-                    locations=[rcfg],
-                    errors=[],
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Copy cfg fail")
-                return ResponseBuilder.build(
-                    500,
-                    "Copy cfg fail",
-                    {"host": host, "lcfg": lcfg, "rcfg": rcfg},
-                    type(e).__name__,
-                )
-            finally:
-                if "t" in locals():
-                    await run_blocking(t.close)
-
+            return await _tm_remote_copy_ssh_config(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
         elif action == "rotate_key":
-            if not host or not new_key:
-                return ResponseBuilder.build(
-                    400,
-                    "Need host, new_key",
-                    {"host": host, "new_key": new_key},
-                    errors=["Need host, new_key"],
+            return await _tm_remote_rotate_key(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
+        elif action == "remove_host_key":
+            return await _tm_remote_remove_host_key(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
+        else:
+            return await _tm_remote_unknown_action(action)
+
+
+async def _tm_inventory_configure_key_auth(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx) -> dict:
+    if key_type not in ["rsa", "ed25519"]:
+        return ResponseBuilder.build(
+            400,
+            f"Invalid key_type: {key_type}",
+            {"action": action},
+            errors=["key_type must be 'rsa' or 'ed25519'"],
+        )
+    try:
+        _key = os.path.expanduser(key)
+        pub_key = _key + ".pub"
+        if not os.path.exists(_key):
+            if key_type == "rsa":
+                await run_blocking(
+                    subprocess.run,
+                    [
+                        "/usr/bin/ssh-keygen",
+                        "-t",
+                        "rsa",
+                        "-b",
+                        "4096",
+                        "-f",
+                        _key,
+                        "-N",
+                        "",
+                    ],
+                    check=True,
+                    timeout=30,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                 )
-            if key_type not in ["rsa", "ed25519"]:
-                return ResponseBuilder.build(
-                    400,
-                    f"Invalid key_type: {key_type}",
-                    {"host": host},
-                    errors=["key_type must be 'rsa' or 'ed25519'"],
+            else:
+                await run_blocking(
+                    subprocess.run,
+                    [
+                        "/usr/bin/ssh-keygen",
+                        "-t",
+                        "ed25519",
+                        "-f",
+                        _key,
+                        "-N",
+                        "",
+                    ],
+                    check=True,
+                    timeout=30,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                 )
+        with open(pub_key) as f:
+            pub = validate_public_key(f.read())
+        hosts, error = load_inventory(inventory, group, logger)
+        if error:
+            return error
+        total = len(hosts)
+        if ctx:
+            await ctx.report_progress(progress=0, total=total)
+
+        async def setup_host(h: dict, ctx: Context) -> dict:
+            host, _user = h["hostname"], h["username"]
+            kpath = h.get("key_path", _key)
             try:
-                conf, final_cfg = _resolve_host(
-                    host_alias=host,
-                    user=user,
-                    password=password,
-                    port=port,
-                    identity_file=id_file,
-                    certificate_file=certificate,
-                    proxy_command=proxy,
-                    ssh_config_file=cfg,
-                )
                 t = Tunnel(
-                    remote_host=conf["hostname"],
-                    username=conf["user"],
-                    password=conf["password"],
-                    port=conf["port"],
-                    identity_file=conf["identity_file"],
-                    certificate_file=conf.get("certificate_file"),
-                    proxy_command=conf.get("proxy_command"),
-                    known_hosts_file=conf.get("known_hosts_file"),
-                    ssh_config_file=final_cfg,
+                    config=HostConfig(
+                        hostname=host,
+                        user=_user,
+                        port=h.get("port", 22),
+                        password_ref=h.get("password_ref"),
+                        known_hosts_file=h.get("known_hosts_file"),
+                    )
                 )
-                if ctx:
-                    await ctx.report_progress(progress=0, total=100)
-                _new_key = os.path.expanduser(new_key)
-                new_public_key = _new_key + ".pub"
-                if not os.path.exists(_new_key):
-                    if key_type == "rsa":
-                        await run_blocking(
-                            subprocess.run,
-                            [
-                                "/usr/bin/ssh-keygen",
-                                "-t",
-                                "rsa",
-                                "-b",
-                                "4096",
-                                "-f",
-                                _new_key,
-                                "-N",
-                                "",
-                            ],
-                            check=True,
-                            timeout=30,
-                            stdin=subprocess.DEVNULL,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
-                    else:
-                        await run_blocking(
-                            subprocess.run,
-                            [
-                                "/usr/bin/ssh-keygen",
-                                "-t",
-                                "ed25519",
-                                "-f",
-                                _new_key,
-                                "-N",
-                                "",
-                            ],
-                            check=True,
-                            timeout=30,
-                            stdin=subprocess.DEVNULL,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
-                await run_blocking(t.rotate_ssh_key, _new_key, key_type=key_type)
-                if ctx:
-                    await ctx.report_progress(progress=100, total=100)
-                return ResponseBuilder.build(
-                    200,
-                    f"Rotated {key_type} key to {_new_key} on {host}",
-                    {
-                        "host": host,
-                        "new_key": _new_key,
-                        "old_key": id_file,
-                        "key_type": key_type,
-                    },
-                    files=[new_public_key],
-                    locations=[f"~/.ssh/authorized_keys on {host}"],
-                    errors=[],
+                await run_blocking(
+                    t.setup_passwordless_ssh,
+                    local_key_path=kpath,
+                    key_type=key_type,
                 )
+                await run_blocking(t.connect)
+                await run_blocking(
+                    t.run_command,
+                    f"printf '%s\\n' {shlex.quote(pub)} >> ~/.ssh/authorized_keys",
+                )
+                await run_blocking(
+                    t.run_command, "chmod 600 ~/.ssh/authorized_keys"
+                )
+                res, msg = await run_blocking(t.test_key_auth, kpath)
+                return {
+                    "hostname": host,
+                    "status": "success",
+                    "message": f"SSH setup for {_user}@{host} with {key_type} key",
+                    "errors": [] if res else [msg],
+                }
             except Exception as e:
-                ctx_log(ctx, logger, "error", "Rotate fail")
-                return ResponseBuilder.build(
-                    500,
-                    "Rotate fail",
-                    {"host": host, "new_key": new_key, "key_type": key_type},
-                    type(e).__name__,
-                )
+                return {
+                    "hostname": host,
+                    "status": "failed",
+                    "message": "Setup fail",
+                    "errors": [type(e).__name__],
+                }
             finally:
                 if "t" in locals():
                     await run_blocking(t.close)
 
-        elif action == "remove_host_key":
-            if not host:
-                return ResponseBuilder.build(
-                    400, "Need host", {"host": host}, errors=["Need host"]
-                )
-            if not await ctx_confirm_destructive(ctx, "remove host key"):
-                return {"status": "cancelled", "message": "Operation cancelled by user"}
-            try:
-                conf, _ = _resolve_host(host_alias=host)
-                t = Tunnel(remote_host=conf["hostname"])
-                if ctx:
-                    await ctx.report_progress(progress=0, total=100)
-                _known_hosts = os.path.expanduser(known_hosts)
-                msg = await run_blocking(
-                    t.remove_host_key, known_hosts_path=_known_hosts
-                )
-                if ctx:
-                    await ctx.report_progress(progress=100, total=100)
-                return ResponseBuilder.build(
-                    200 if "Removed" in msg else 400,
-                    msg,
-                    {"host": host, "known_hosts": _known_hosts},
-                    files=[],
-                    locations=[],
-                    errors=[] if "Removed" in msg else [msg],
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Remove fail")
-                return ResponseBuilder.build(
-                    500,
-                    "Remove fail",
-                    {"host": host, "known_hosts": known_hosts},
-                    type(e).__name__,
-                )
+        results, files, locations, errors = [], [], [], []
+        if parallel:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_threads
+            ) as ex:
+                futures = [
+                    ex.submit(lambda h: asyncio.run(setup_host(h, ctx)), h)
+                    for h in hosts
+                ]
+                for i, future in enumerate(
+                    concurrent.futures.as_completed(futures), 1
+                ):
+                    try:
+                        r = future.result()
+                        results.append(r)
+                        if r["status"] == "success":
+                            files.append(pub_key)
+                            locations.append(
+                                f"~/.ssh/authorized_keys on {r['hostname']}"
+                            )
+                        else:
+                            errors.extend(r["errors"])
+                        if ctx:
+                            await ctx.report_progress(progress=i, total=total)
+                    except Exception as e:
+                        results.append(
+                            {
+                                "hostname": "unknown",
+                                "status": "failed",
+                                "message": "Parallel error",
+                                "errors": [type(e).__name__],
+                            }
+                        )
+                        errors.append(type(e).__name__)
         else:
+            for i, h in enumerate(hosts, 1):
+                r = await setup_host(h, ctx)
+                results.append(r)
+                if r["status"] == "success":
+                    files.append(pub_key)
+                    locations.append(
+                        f"~/.ssh/authorized_keys on {r['hostname']}"
+                    )
+                else:
+                    errors.extend(r["errors"])
+                if ctx:
+                    await ctx.report_progress(progress=i, total=total)
+        msg = (
+            f"SSH setup done for {group}"
+            if not errors
+            else f"SSH setup failed for some in {group}"
+        )
+        return ResponseBuilder.build(
+            200 if not errors else 500,
+            msg,
+            {
+                "inventory": inventory,
+                "group": group,
+                "key_type": key_type,
+                "host_results": results,
+            },
+            stdout="; ".join(errors),
+            files=files,
+            locations=locations,
+            errors=errors,
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Setup all fail")
+        return ResponseBuilder.build(
+            500,
+            "Setup all fail",
+            {"inventory": inventory, "group": group, "key_type": key_type},
+            type(e).__name__,
+        )
+
+
+
+async def _tm_inventory_mesh_bootstrap(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx) -> dict:
+    if key_type not in ["rsa", "ed25519"]:
+        return ResponseBuilder.build(
+            400,
+            f"Invalid key_type: {key_type}",
+            {"action": action},
+            errors=["key_type must be 'rsa' or 'ed25519'"],
+        )
+    try:
+        res = await asyncio.to_thread(
+            Tunnel.setup_full_mesh_ssh,
+            inventory=inventory,
+            key_path=key,
+            key_type=key_type,
+            group=group,
+            parallel=parallel,
+            max_threads=max_threads,
+        )
+
+        status_code = 200 if res["status"] == "success" else 500
+        msg = (
+            "Full-mesh SSH bootstrap completed successfully"
+            if status_code == 200
+            else "Full-mesh SSH bootstrap failed for some hosts"
+        )
+
+        return ResponseBuilder.build(
+            status_code,
+            msg,
+            {
+                "inventory": inventory,
+                "group": group,
+                "key_type": key_type,
+                "host_results": res["host_results"],
+            },
+            stdout="; ".join(res["errors"]),
+            errors=res["errors"],
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Mesh bootstrap fail")
+        return ResponseBuilder.build(
+            500,
+            "Mesh bootstrap fail",
+            {"inventory": inventory, "group": group, "key_type": key_type},
+            type(e).__name__,
+        )
+
+
+
+async def _tm_inventory_run_command(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx) -> dict:
+    if not cmd:
+        return ResponseBuilder.build(
+            400, "Need cmd", {"action": action, "cmd": cmd}, errors=["Need cmd"]
+        )
+    try:
+        if host:
+            hosts, error = resolve_single_host(inventory, host, logger)
+        else:
+            hosts, error = load_inventory(inventory, group, logger)
+        if error:
+            return error
+        resolved_hosts = [h["hostname"] for h in hosts]
+        total = len(hosts)
+        if preview:
             return ResponseBuilder.build(
-                400,
-                f"Unknown action: {action}",
-                {"action": action},
-                errors=[
-                    "Valid: run_command, send_file, receive_file, check_ssh, test_key_auth, setup_passwordless, copy_ssh_config, rotate_key, remove_host_key"
-                ],
+                200,
+                f"Preview: '{cmd}' would run on {len(hosts)} host(s)"
+                + (f" (host={host})" if host else f" (group={group})"),
+                {
+                    "inventory": inventory,
+                    "group": group,
+                    "host": host,
+                    "cmd": cmd,
+                    "resolved_hosts": resolved_hosts,
+                    "preview": True,
+                },
+                errors=[],
             )
+        if ctx:
+            await ctx.report_progress(progress=0, total=total)
+
+        async def run_host(h: dict, ctx: Context) -> dict:
+            await ctx_progress(ctx, 0, 100)
+            host = h["hostname"]
+            try:
+                t = Tunnel(
+                    config=HostConfig(
+                        hostname=host,
+                        user=h["username"],
+                        port=h.get("port", 22),
+                        password_ref=h.get("password_ref"),
+                        identity_file=h.get("key_path"),
+                        known_hosts_file=h.get("known_hosts_file"),
+                    )
+                )
+                out, error = await run_blocking(
+                    t.run_command, cmd, timeout=timeout
+                )
+                return {
+                    "hostname": host,
+                    "status": "success",
+                    "message": f"Cmd '{cmd}' done on {host}",
+                    "stdout": out,
+                    "stderr": error,
+                    "errors": [],
+                }
+            except Exception as e:
+                return {
+                    "hostname": host,
+                    "status": "failed",
+                    "message": "Cmd fail",
+                    "stdout": "",
+                    "stderr": type(e).__name__,
+                    "errors": [type(e).__name__],
+                }
+            finally:
+                if "t" in locals():
+                    await run_blocking(t.close)
+
+        results, errors = [], []
+        if parallel:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_threads
+            ) as ex:
+                futures = [
+                    ex.submit(lambda h: asyncio.run(run_host(h, ctx)), h)
+                    for h in hosts
+                ]
+                for i, future in enumerate(
+                    concurrent.futures.as_completed(futures), 1
+                ):
+                    try:
+                        r = future.result()
+                        results.append(r)
+                        errors.extend(r["errors"])
+                        if ctx:
+                            await ctx.report_progress(progress=i, total=total)
+                    except Exception as e:
+                        results.append(
+                            {
+                                "hostname": "unknown",
+                                "status": "failed",
+                                "message": "Parallel error",
+                                "stdout": "",
+                                "stderr": type(e).__name__,
+                                "errors": [type(e).__name__],
+                            }
+                        )
+                        errors.append(type(e).__name__)
+        else:
+            for i, h in enumerate(hosts, 1):
+                r = await run_host(h, ctx)
+                results.append(r)
+                errors.extend(r["errors"])
+                if ctx:
+                    await ctx.report_progress(progress=i, total=total)
+        target_label = f"host={host}" if host else f"group={group}"
+        msg = (
+            f"Cmd '{cmd}' done on {target_label}"
+            if not errors
+            else f"Cmd '{cmd}' failed for some in {target_label}"
+        )
+        return ResponseBuilder.build(
+            200 if not errors else 500,
+            msg,
+            {
+                "inventory": inventory,
+                "group": group,
+                "host": host,
+                "cmd": cmd,
+                "resolved_hosts": resolved_hosts,
+                "host_results": results,
+            },
+            error="; ".join(errors),
+            files=[],
+            locations=[],
+            errors=errors,
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Cmd all fail")
+        await ctx_progress(ctx, 100, 100)
+        return ResponseBuilder.build(
+            500,
+            "Cmd all fail",
+            {"inventory": inventory, "group": group, "host": host, "cmd": cmd},
+            type(e).__name__,
+        )
+
+
+
+async def _tm_inventory_copy_ssh_config(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx) -> dict:
+    if not cfg:
+        return ResponseBuilder.build(
+            400, "Need cfg", {"action": action}, errors=["Need cfg"]
+        )
+    if not os.path.exists(cfg):
+        return ResponseBuilder.build(
+            400,
+            f"No cfg file: {cfg}",
+            {"action": action},
+            errors=[f"No cfg file: {cfg}"],
+        )
+    try:
+        hosts, error = load_inventory(inventory, group, logger)
+        if error:
+            return error
+        total = len(hosts)
+        if ctx:
+            await ctx.report_progress(progress=0, total=total)
+        results, files, locations, errors = [], [], [], []
+
+        async def copy_host(h: dict) -> dict:
+            try:
+                t = Tunnel(
+                    config=HostConfig(
+                        hostname=h["hostname"],
+                        user=h["username"],
+                        port=h.get("port", 22),
+                        password_ref=h.get("password_ref"),
+                        identity_file=h.get("key_path"),
+                        known_hosts_file=h.get("known_hosts_file"),
+                    )
+                )
+                await run_blocking(t.copy_ssh_config, cfg, rmt_cfg)
+                return {
+                    "hostname": h["hostname"],
+                    "status": "success",
+                    "message": f"Copied cfg to {rmt_cfg}",
+                    "errors": [],
+                }
+            except Exception as e:
+                return {
+                    "hostname": h["hostname"],
+                    "status": "failed",
+                    "message": "Copy fail",
+                    "errors": [type(e).__name__],
+                }
+            finally:
+                if "t" in locals():
+                    await run_blocking(t.close)
+
+        if parallel:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_threads
+            ) as ex:
+                futures = [
+                    ex.submit(lambda h: asyncio.run(copy_host(h)), h)
+                    for h in hosts
+                ]
+                for i, future in enumerate(
+                    concurrent.futures.as_completed(futures), 1
+                ):
+                    try:
+                        r = future.result()
+                        results.append(r)
+                        if r["status"] == "success":
+                            files.append(cfg)
+                            locations.append(f"{rmt_cfg} on {r['hostname']}")
+                        else:
+                            errors.extend(r["errors"])
+                        if ctx:
+                            await ctx.report_progress(progress=i, total=total)
+                    except Exception as e:
+                        results.append(
+                            {
+                                "hostname": "unknown",
+                                "status": "failed",
+                                "message": "Parallel error",
+                                "errors": [type(e).__name__],
+                            }
+                        )
+                        errors.append(type(e).__name__)
+        else:
+            for i, h in enumerate(hosts, 1):
+                r = await copy_host(h)
+                results.append(r)
+                if r["status"] == "success":
+                    files.append(cfg)
+                    locations.append(f"{rmt_cfg} on {r['hostname']}")
+                else:
+                    errors.extend(r["errors"])
+                if ctx:
+                    await ctx.report_progress(progress=i, total=total)
+        msg = (
+            f"Copied cfg to {group}"
+            if not errors
+            else f"Copy failed for some in {group}"
+        )
+        return ResponseBuilder.build(
+            200 if not errors else 500,
+            msg,
+            {
+                "inventory": inventory,
+                "group": group,
+                "cfg": cfg,
+                "rmt_cfg": rmt_cfg,
+                "host_results": results,
+            },
+            error="; ".join(errors),
+            files=files,
+            locations=locations,
+            errors=errors,
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Copy all fail")
+        return ResponseBuilder.build(
+            500,
+            "Copy all fail",
+            {
+                "inventory": inventory,
+                "group": group,
+                "cfg": cfg,
+                "rmt_cfg": rmt_cfg,
+            },
+            type(e).__name__,
+        )
+
+
+
+async def _tm_inventory_rotate_key(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx) -> dict:
+    if key_type not in ["rsa", "ed25519"]:
+        return ResponseBuilder.build(
+            400,
+            f"Invalid key_type: {key_type}",
+            {"action": action},
+            errors=["key_type must be 'rsa' or 'ed25519'"],
+        )
+    try:
+        hosts, error = load_inventory(inventory, group, logger)
+        if error:
+            return error
+        total = len(hosts)
+        if ctx:
+            await ctx.report_progress(progress=0, total=total)
+        results, files, locations, errors = [], [], [], []
+
+        async def rotate_host(h: dict) -> dict:
+            _key = os.path.expanduser(key_pfx + h["hostname"])
+            try:
+                t = Tunnel(
+                    config=HostConfig(
+                        hostname=h["hostname"],
+                        user=h["username"],
+                        port=h.get("port", 22),
+                        password_ref=h.get("password_ref"),
+                        identity_file=h.get("key_path"),
+                        known_hosts_file=h.get("known_hosts_file"),
+                    )
+                )
+                await run_blocking(t.rotate_ssh_key, _key, key_type=key_type)
+                return {
+                    "hostname": h["hostname"],
+                    "status": "success",
+                    "message": f"Rotated {key_type} key to {_key}",
+                    "errors": [],
+                    "new_key_path": _key,
+                }
+            except Exception as e:
+                return {
+                    "hostname": h["hostname"],
+                    "status": "failed",
+                    "message": "Rotate fail",
+                    "errors": [type(e).__name__],
+                    "new_key_path": _key,
+                }
+            finally:
+                if "t" in locals():
+                    await run_blocking(t.close)
+
+        if parallel:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_threads
+            ) as ex:
+                futures = [
+                    ex.submit(lambda h: asyncio.run(rotate_host(h)), h)
+                    for h in hosts
+                ]
+                for i, future in enumerate(
+                    concurrent.futures.as_completed(futures), 1
+                ):
+                    try:
+                        r = future.result()
+                        results.append(r)
+                        if r["status"] == "success":
+                            files.append(r["new_key_path"] + ".pub")
+                            locations.append(
+                                f"~/.ssh/authorized_keys on {r['hostname']}"
+                            )
+                        else:
+                            errors.extend(r["errors"])
+                        if ctx:
+                            await ctx.report_progress(progress=i, total=total)
+                    except Exception as e:
+                        results.append(
+                            {
+                                "hostname": "unknown",
+                                "status": "failed",
+                                "message": "Parallel error",
+                                "errors": [type(e).__name__],
+                                "new_key_path": None,
+                            }
+                        )
+                        errors.append(type(e).__name__)
+        else:
+            for i, h in enumerate(hosts, 1):
+                r = await rotate_host(h)
+                results.append(r)
+                if r["status"] == "success":
+                    files.append(r["new_key_path"] + ".pub")
+                    locations.append(
+                        f"~/.ssh/authorized_keys on {r['hostname']}"
+                    )
+                else:
+                    errors.extend(r["errors"])
+                if ctx:
+                    await ctx.report_progress(progress=i, total=total)
+        msg = (
+            f"Rotated {key_type} keys for {group}"
+            if not errors
+            else f"Rotate failed for some in {group}"
+        )
+        return ResponseBuilder.build(
+            200 if not errors else 500,
+            msg,
+            {
+                "inventory": inventory,
+                "group": group,
+                "key_prefix": key_pfx,
+                "key_type": key_type,
+                "host_results": results,
+            },
+            error="; ".join(errors),
+            files=files,
+            locations=locations,
+            errors=errors,
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Rotate all fail")
+        return ResponseBuilder.build(
+            500,
+            "Rotate all fail",
+            {
+                "inventory": inventory,
+                "group": group,
+                "key_pfx": key_pfx,
+                "key_type": key_type,
+            },
+            error=type(e).__name__,
+        )
+
+
+
+async def _tm_inventory_send_file(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx) -> dict:
+    _lpath = os.path.abspath(os.path.expanduser(lpath))
+    _rpath = os.path.expanduser(rpath)
+    if not _lpath or not _rpath:
+        return ResponseBuilder.build(
+            400,
+            "Need lpath, rpath",
+            {"action": action},
+            errors=["Need lpath, rpath"],
+        )
+    if not os.path.exists(_lpath) or not os.path.isfile(_lpath):
+        return ResponseBuilder.build(
+            400,
+            f"Invalid file: {_lpath}",
+            {"action": action},
+            errors=[f"Invalid file: {_lpath}"],
+        )
+    if os.path.getsize(_lpath) > max_transfer_bytes():
+        return ResponseBuilder.build(
+            400,
+            "Managed file transfer limit exceeded",
+            {},
+            errors=["Managed file transfer limit exceeded"],
+        )
+    try:
+        hosts, error = load_inventory(inventory, group, logger)
+        if error:
+            return error
+        total = len(hosts)
+        if ctx:
+            await ctx.report_progress(progress=0, total=total)
+
+        async def send_host(h: dict) -> dict:
+            host = h["hostname"]
+            try:
+                t = Tunnel(
+                    config=HostConfig(
+                        hostname=host,
+                        user=h["username"],
+                        port=h.get("port", 22),
+                        password_ref=h.get("password_ref"),
+                        identity_file=h.get("key_path"),
+                        known_hosts_file=h.get("known_hosts_file"),
+                    )
+                )
+                await run_blocking(t.send_file, _lpath, _rpath)
+                return {
+                    "hostname": host,
+                    "status": "success",
+                    "message": f"Uploaded {_lpath} to {_rpath}",
+                    "errors": [],
+                }
+            except Exception as e:
+                return {
+                    "hostname": host,
+                    "status": "failed",
+                    "message": "Upload fail",
+                    "errors": [type(e).__name__],
+                }
+            finally:
+                if "t" in locals():
+                    await run_blocking(t.close)
+
+        results, files, locations, errors = [_lpath], [], [], []
+        if parallel:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_threads
+            ) as ex:
+                futures = [
+                    ex.submit(lambda h: asyncio.run(send_host(h)), h)
+                    for h in hosts
+                ]
+                for i, future in enumerate(
+                    concurrent.futures.as_completed(futures), 1
+                ):
+                    try:
+                        r = future.result()
+                        results.append(r)
+                        if r["status"] == "success":
+                            locations.append(f"{_rpath} on {r['hostname']}")
+                        else:
+                            errors.extend(r["errors"])
+                        if ctx:
+                            await ctx.report_progress(progress=i, total=total)
+                    except Exception as e:
+                        results.append(
+                            {
+                                "hostname": "unknown",
+                                "status": "failed",
+                                "message": "Parallel error",
+                                "errors": [type(e).__name__],
+                            }
+                        )
+                        errors.append(type(e).__name__)
+        else:
+            for i, h in enumerate(hosts, 1):
+                r = await send_host(h)
+                results.append(r)
+                if r["status"] == "success":
+                    locations.append(f"{_rpath} on {r['hostname']}")
+                else:
+                    errors.extend(r["errors"])
+                if ctx:
+                    await ctx.report_progress(progress=i, total=total)
+        msg = (
+            f"Uploaded {_lpath} to {group}"
+            if not errors
+            else f"Upload failed for some in {group}"
+        )
+        return ResponseBuilder.build(
+            200 if not errors else 500,
+            msg,
+            {
+                "inventory": inventory,
+                "group": group,
+                "local_path": _lpath,
+                "remote_path": _rpath,
+                "host_results": results,
+            },
+            error="; ".join(errors),
+            files=files,
+            locations=locations,
+            errors=errors,
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Upload all fail")
+        return ResponseBuilder.build(
+            500,
+            "Upload all fail",
+            {
+                "inventory": inventory,
+                "group": group,
+                "lpath": _lpath,
+                "rpath": _rpath,
+            },
+            type(e).__name__,
+        )
+
+
+
+async def _tm_inventory_receive_file(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx) -> dict:
+    if not rpath or not lpath_prefix:
+        return ResponseBuilder.build(
+            400,
+            "Need rpath, lpath_prefix",
+            {"action": action},
+            errors=["Need rpath, lpath_prefix"],
+        )
+    try:
+        os.makedirs(lpath_prefix, exist_ok=True)
+        hosts, error = load_inventory(inventory, group, logger)
+        if error:
+            return error
+        total = len(hosts)
+        if ctx:
+            await ctx.report_progress(progress=0, total=total)
+
+        async def receive_host(h: dict) -> dict:
+            host = h["hostname"]
+            _lpath = os.path.join(lpath_prefix, host, os.path.basename(rpath))
+            os.makedirs(os.path.dirname(_lpath), exist_ok=True)
+            try:
+                t = Tunnel(
+                    config=HostConfig(
+                        hostname=host,
+                        user=h["username"],
+                        port=h.get("port", 22),
+                        password_ref=h.get("password_ref"),
+                        identity_file=h.get("key_path"),
+                        known_hosts_file=h.get("known_hosts_file"),
+                    )
+                )
+                await run_blocking(t.receive_file, rpath, _lpath)
+                return {
+                    "hostname": host,
+                    "status": "success",
+                    "message": f"Downloaded {rpath} to {_lpath}",
+                    "errors": [],
+                    "local_path": _lpath,
+                }
+            except Exception as e:
+                return {
+                    "hostname": host,
+                    "status": "failed",
+                    "message": "Download fail",
+                    "errors": [type(e).__name__],
+                    "local_path": _lpath,
+                }
+            finally:
+                if "t" in locals():
+                    await run_blocking(t.close)
+
+        results, files, locations, errors = [], [], [], []
+        if parallel:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_threads
+            ) as ex:
+                futures = [
+                    ex.submit(lambda h: asyncio.run(receive_host(h)), h)
+                    for h in hosts
+                ]
+                for i, future in enumerate(
+                    concurrent.futures.as_completed(futures), 1
+                ):
+                    try:
+                        r = future.result()
+                        results.append(r)
+                        if r["status"] == "success":
+                            files.append(rpath)
+                            locations.append(r["local_path"])
+                        else:
+                            errors.extend(r["errors"])
+                        if ctx:
+                            await ctx.report_progress(progress=i, total=total)
+                    except Exception as e:
+                        results.append(
+                            {
+                                "hostname": "unknown",
+                                "status": "failed",
+                                "message": "Parallel error",
+                                "errors": [type(e).__name__],
+                                "local_path": None,
+                            }
+                        )
+                        errors.append(type(e).__name__)
+        else:
+            for i, h in enumerate(hosts, 1):
+                r = await receive_host(h)
+                results.append(r)
+                if r["status"] == "success":
+                    files.append(rpath)
+                    locations.append(r["local_path"])
+                else:
+                    errors.extend(r["errors"])
+                if ctx:
+                    await ctx.report_progress(progress=i, total=total)
+        msg = (
+            f"Downloaded {rpath} from {group}"
+            if not errors
+            else f"Download failed for some in {group}"
+        )
+        return ResponseBuilder.build(
+            200 if not errors else 500,
+            msg,
+            {
+                "inventory": inventory,
+                "group": group,
+                "rpath": rpath,
+                "lpath_prefix": lpath_prefix,
+                "host_results": results,
+            },
+            error="; ".join(errors),
+            files=files,
+            locations=locations,
+            errors=errors,
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Download all fail")
+        return ResponseBuilder.build(
+            500,
+            "Download all fail",
+            {
+                "inventory": inventory,
+                "group": group,
+                "rpath": rpath,
+                "lpath_prefix": lpath_prefix,
+            },
+            type(e).__name__,
+        )
+
+
+
+async def _tm_inventory_unknown_action(action) -> dict:
+    return ResponseBuilder.build(
+        400,
+        f"Unknown action: {action}",
+        {"action": action},
+        errors=[
+            "Valid: configure_key_auth, run_command, copy_ssh_config, rotate_key, send_file, receive_file"
+        ],
+    )
+
 
 
 def register_inventory_tools(mcp: FastMCP):
@@ -1341,903 +2324,21 @@ def register_inventory_tools(mcp: FastMCP):
             )
 
         if action == "configure_key_auth":
-            if key_type not in ["rsa", "ed25519"]:
-                return ResponseBuilder.build(
-                    400,
-                    f"Invalid key_type: {key_type}",
-                    {"action": action},
-                    errors=["key_type must be 'rsa' or 'ed25519'"],
-                )
-            try:
-                _key = os.path.expanduser(key)
-                pub_key = _key + ".pub"
-                if not os.path.exists(_key):
-                    if key_type == "rsa":
-                        await run_blocking(
-                            subprocess.run,
-                            [
-                                "/usr/bin/ssh-keygen",
-                                "-t",
-                                "rsa",
-                                "-b",
-                                "4096",
-                                "-f",
-                                _key,
-                                "-N",
-                                "",
-                            ],
-                            check=True,
-                            timeout=30,
-                            stdin=subprocess.DEVNULL,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
-                    else:
-                        await run_blocking(
-                            subprocess.run,
-                            [
-                                "/usr/bin/ssh-keygen",
-                                "-t",
-                                "ed25519",
-                                "-f",
-                                _key,
-                                "-N",
-                                "",
-                            ],
-                            check=True,
-                            timeout=30,
-                            stdin=subprocess.DEVNULL,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
-                with open(pub_key) as f:
-                    pub = validate_public_key(f.read())
-                hosts, error = load_inventory(inventory, group, logger)
-                if error:
-                    return error
-                total = len(hosts)
-                if ctx:
-                    await ctx.report_progress(progress=0, total=total)
-
-                async def setup_host(h: dict, ctx: Context) -> dict:
-                    host, _user = h["hostname"], h["username"]
-                    kpath = h.get("key_path", _key)
-                    try:
-                        t = Tunnel(
-                            config=HostConfig(
-                                hostname=host,
-                                user=_user,
-                                port=h.get("port", 22),
-                                password_ref=h.get("password_ref"),
-                                known_hosts_file=h.get("known_hosts_file"),
-                            )
-                        )
-                        await run_blocking(
-                            t.setup_passwordless_ssh,
-                            local_key_path=kpath,
-                            key_type=key_type,
-                        )
-                        await run_blocking(t.connect)
-                        await run_blocking(
-                            t.run_command,
-                            f"printf '%s\\n' {shlex.quote(pub)} >> ~/.ssh/authorized_keys",
-                        )
-                        await run_blocking(
-                            t.run_command, "chmod 600 ~/.ssh/authorized_keys"
-                        )
-                        res, msg = await run_blocking(t.test_key_auth, kpath)
-                        return {
-                            "hostname": host,
-                            "status": "success",
-                            "message": f"SSH setup for {_user}@{host} with {key_type} key",
-                            "errors": [] if res else [msg],
-                        }
-                    except Exception as e:
-                        return {
-                            "hostname": host,
-                            "status": "failed",
-                            "message": "Setup fail",
-                            "errors": [type(e).__name__],
-                        }
-                    finally:
-                        if "t" in locals():
-                            await run_blocking(t.close)
-
-                results, files, locations, errors = [], [], [], []
-                if parallel:
-                    with concurrent.futures.ThreadPoolExecutor(
-                        max_workers=max_threads
-                    ) as ex:
-                        futures = [
-                            ex.submit(lambda h: asyncio.run(setup_host(h, ctx)), h)
-                            for h in hosts
-                        ]
-                        for i, future in enumerate(
-                            concurrent.futures.as_completed(futures), 1
-                        ):
-                            try:
-                                r = future.result()
-                                results.append(r)
-                                if r["status"] == "success":
-                                    files.append(pub_key)
-                                    locations.append(
-                                        f"~/.ssh/authorized_keys on {r['hostname']}"
-                                    )
-                                else:
-                                    errors.extend(r["errors"])
-                                if ctx:
-                                    await ctx.report_progress(progress=i, total=total)
-                            except Exception as e:
-                                results.append(
-                                    {
-                                        "hostname": "unknown",
-                                        "status": "failed",
-                                        "message": "Parallel error",
-                                        "errors": [type(e).__name__],
-                                    }
-                                )
-                                errors.append(type(e).__name__)
-                else:
-                    for i, h in enumerate(hosts, 1):
-                        r = await setup_host(h, ctx)
-                        results.append(r)
-                        if r["status"] == "success":
-                            files.append(pub_key)
-                            locations.append(
-                                f"~/.ssh/authorized_keys on {r['hostname']}"
-                            )
-                        else:
-                            errors.extend(r["errors"])
-                        if ctx:
-                            await ctx.report_progress(progress=i, total=total)
-                msg = (
-                    f"SSH setup done for {group}"
-                    if not errors
-                    else f"SSH setup failed for some in {group}"
-                )
-                return ResponseBuilder.build(
-                    200 if not errors else 500,
-                    msg,
-                    {
-                        "inventory": inventory,
-                        "group": group,
-                        "key_type": key_type,
-                        "host_results": results,
-                    },
-                    stdout="; ".join(errors),
-                    files=files,
-                    locations=locations,
-                    errors=errors,
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Setup all fail")
-                return ResponseBuilder.build(
-                    500,
-                    "Setup all fail",
-                    {"inventory": inventory, "group": group, "key_type": key_type},
-                    type(e).__name__,
-                )
-
+            return await _tm_inventory_configure_key_auth(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx)
         elif action == "mesh_bootstrap":
-            if key_type not in ["rsa", "ed25519"]:
-                return ResponseBuilder.build(
-                    400,
-                    f"Invalid key_type: {key_type}",
-                    {"action": action},
-                    errors=["key_type must be 'rsa' or 'ed25519'"],
-                )
-            try:
-                res = await asyncio.to_thread(
-                    Tunnel.setup_full_mesh_ssh,
-                    inventory=inventory,
-                    key_path=key,
-                    key_type=key_type,
-                    group=group,
-                    parallel=parallel,
-                    max_threads=max_threads,
-                )
-
-                status_code = 200 if res["status"] == "success" else 500
-                msg = (
-                    "Full-mesh SSH bootstrap completed successfully"
-                    if status_code == 200
-                    else "Full-mesh SSH bootstrap failed for some hosts"
-                )
-
-                return ResponseBuilder.build(
-                    status_code,
-                    msg,
-                    {
-                        "inventory": inventory,
-                        "group": group,
-                        "key_type": key_type,
-                        "host_results": res["host_results"],
-                    },
-                    stdout="; ".join(res["errors"]),
-                    errors=res["errors"],
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Mesh bootstrap fail")
-                return ResponseBuilder.build(
-                    500,
-                    "Mesh bootstrap fail",
-                    {"inventory": inventory, "group": group, "key_type": key_type},
-                    type(e).__name__,
-                )
-
+            return await _tm_inventory_mesh_bootstrap(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx)
         elif action == "run_command":
-            if not cmd:
-                return ResponseBuilder.build(
-                    400, "Need cmd", {"action": action, "cmd": cmd}, errors=["Need cmd"]
-                )
-            try:
-                if host:
-                    hosts, error = resolve_single_host(inventory, host, logger)
-                else:
-                    hosts, error = load_inventory(inventory, group, logger)
-                if error:
-                    return error
-                resolved_hosts = [h["hostname"] for h in hosts]
-                total = len(hosts)
-                if preview:
-                    return ResponseBuilder.build(
-                        200,
-                        f"Preview: '{cmd}' would run on {len(hosts)} host(s)"
-                        + (f" (host={host})" if host else f" (group={group})"),
-                        {
-                            "inventory": inventory,
-                            "group": group,
-                            "host": host,
-                            "cmd": cmd,
-                            "resolved_hosts": resolved_hosts,
-                            "preview": True,
-                        },
-                        errors=[],
-                    )
-                if ctx:
-                    await ctx.report_progress(progress=0, total=total)
-
-                async def run_host(h: dict, ctx: Context) -> dict:
-                    await ctx_progress(ctx, 0, 100)
-                    host = h["hostname"]
-                    try:
-                        t = Tunnel(
-                            config=HostConfig(
-                                hostname=host,
-                                user=h["username"],
-                                port=h.get("port", 22),
-                                password_ref=h.get("password_ref"),
-                                identity_file=h.get("key_path"),
-                                known_hosts_file=h.get("known_hosts_file"),
-                            )
-                        )
-                        out, error = await run_blocking(
-                            t.run_command, cmd, timeout=timeout
-                        )
-                        return {
-                            "hostname": host,
-                            "status": "success",
-                            "message": f"Cmd '{cmd}' done on {host}",
-                            "stdout": out,
-                            "stderr": error,
-                            "errors": [],
-                        }
-                    except Exception as e:
-                        return {
-                            "hostname": host,
-                            "status": "failed",
-                            "message": "Cmd fail",
-                            "stdout": "",
-                            "stderr": type(e).__name__,
-                            "errors": [type(e).__name__],
-                        }
-                    finally:
-                        if "t" in locals():
-                            await run_blocking(t.close)
-
-                results, errors = [], []
-                if parallel:
-                    with concurrent.futures.ThreadPoolExecutor(
-                        max_workers=max_threads
-                    ) as ex:
-                        futures = [
-                            ex.submit(lambda h: asyncio.run(run_host(h, ctx)), h)
-                            for h in hosts
-                        ]
-                        for i, future in enumerate(
-                            concurrent.futures.as_completed(futures), 1
-                        ):
-                            try:
-                                r = future.result()
-                                results.append(r)
-                                errors.extend(r["errors"])
-                                if ctx:
-                                    await ctx.report_progress(progress=i, total=total)
-                            except Exception as e:
-                                results.append(
-                                    {
-                                        "hostname": "unknown",
-                                        "status": "failed",
-                                        "message": "Parallel error",
-                                        "stdout": "",
-                                        "stderr": type(e).__name__,
-                                        "errors": [type(e).__name__],
-                                    }
-                                )
-                                errors.append(type(e).__name__)
-                else:
-                    for i, h in enumerate(hosts, 1):
-                        r = await run_host(h, ctx)
-                        results.append(r)
-                        errors.extend(r["errors"])
-                        if ctx:
-                            await ctx.report_progress(progress=i, total=total)
-                target_label = f"host={host}" if host else f"group={group}"
-                msg = (
-                    f"Cmd '{cmd}' done on {target_label}"
-                    if not errors
-                    else f"Cmd '{cmd}' failed for some in {target_label}"
-                )
-                return ResponseBuilder.build(
-                    200 if not errors else 500,
-                    msg,
-                    {
-                        "inventory": inventory,
-                        "group": group,
-                        "host": host,
-                        "cmd": cmd,
-                        "resolved_hosts": resolved_hosts,
-                        "host_results": results,
-                    },
-                    error="; ".join(errors),
-                    files=[],
-                    locations=[],
-                    errors=errors,
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Cmd all fail")
-                await ctx_progress(ctx, 100, 100)
-                return ResponseBuilder.build(
-                    500,
-                    "Cmd all fail",
-                    {"inventory": inventory, "group": group, "host": host, "cmd": cmd},
-                    type(e).__name__,
-                )
-
+            return await _tm_inventory_run_command(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx)
         elif action == "copy_ssh_config":
-            if not cfg:
-                return ResponseBuilder.build(
-                    400, "Need cfg", {"action": action}, errors=["Need cfg"]
-                )
-            if not os.path.exists(cfg):
-                return ResponseBuilder.build(
-                    400,
-                    f"No cfg file: {cfg}",
-                    {"action": action},
-                    errors=[f"No cfg file: {cfg}"],
-                )
-            try:
-                hosts, error = load_inventory(inventory, group, logger)
-                if error:
-                    return error
-                total = len(hosts)
-                if ctx:
-                    await ctx.report_progress(progress=0, total=total)
-                results, files, locations, errors = [], [], [], []
-
-                async def copy_host(h: dict) -> dict:
-                    try:
-                        t = Tunnel(
-                            config=HostConfig(
-                                hostname=h["hostname"],
-                                user=h["username"],
-                                port=h.get("port", 22),
-                                password_ref=h.get("password_ref"),
-                                identity_file=h.get("key_path"),
-                                known_hosts_file=h.get("known_hosts_file"),
-                            )
-                        )
-                        await run_blocking(t.copy_ssh_config, cfg, rmt_cfg)
-                        return {
-                            "hostname": h["hostname"],
-                            "status": "success",
-                            "message": f"Copied cfg to {rmt_cfg}",
-                            "errors": [],
-                        }
-                    except Exception as e:
-                        return {
-                            "hostname": h["hostname"],
-                            "status": "failed",
-                            "message": "Copy fail",
-                            "errors": [type(e).__name__],
-                        }
-                    finally:
-                        if "t" in locals():
-                            await run_blocking(t.close)
-
-                if parallel:
-                    with concurrent.futures.ThreadPoolExecutor(
-                        max_workers=max_threads
-                    ) as ex:
-                        futures = [
-                            ex.submit(lambda h: asyncio.run(copy_host(h)), h)
-                            for h in hosts
-                        ]
-                        for i, future in enumerate(
-                            concurrent.futures.as_completed(futures), 1
-                        ):
-                            try:
-                                r = future.result()
-                                results.append(r)
-                                if r["status"] == "success":
-                                    files.append(cfg)
-                                    locations.append(f"{rmt_cfg} on {r['hostname']}")
-                                else:
-                                    errors.extend(r["errors"])
-                                if ctx:
-                                    await ctx.report_progress(progress=i, total=total)
-                            except Exception as e:
-                                results.append(
-                                    {
-                                        "hostname": "unknown",
-                                        "status": "failed",
-                                        "message": "Parallel error",
-                                        "errors": [type(e).__name__],
-                                    }
-                                )
-                                errors.append(type(e).__name__)
-                else:
-                    for i, h in enumerate(hosts, 1):
-                        r = await copy_host(h)
-                        results.append(r)
-                        if r["status"] == "success":
-                            files.append(cfg)
-                            locations.append(f"{rmt_cfg} on {r['hostname']}")
-                        else:
-                            errors.extend(r["errors"])
-                        if ctx:
-                            await ctx.report_progress(progress=i, total=total)
-                msg = (
-                    f"Copied cfg to {group}"
-                    if not errors
-                    else f"Copy failed for some in {group}"
-                )
-                return ResponseBuilder.build(
-                    200 if not errors else 500,
-                    msg,
-                    {
-                        "inventory": inventory,
-                        "group": group,
-                        "cfg": cfg,
-                        "rmt_cfg": rmt_cfg,
-                        "host_results": results,
-                    },
-                    error="; ".join(errors),
-                    files=files,
-                    locations=locations,
-                    errors=errors,
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Copy all fail")
-                return ResponseBuilder.build(
-                    500,
-                    "Copy all fail",
-                    {
-                        "inventory": inventory,
-                        "group": group,
-                        "cfg": cfg,
-                        "rmt_cfg": rmt_cfg,
-                    },
-                    type(e).__name__,
-                )
-
+            return await _tm_inventory_copy_ssh_config(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx)
         elif action == "rotate_key":
-            if key_type not in ["rsa", "ed25519"]:
-                return ResponseBuilder.build(
-                    400,
-                    f"Invalid key_type: {key_type}",
-                    {"action": action},
-                    errors=["key_type must be 'rsa' or 'ed25519'"],
-                )
-            try:
-                hosts, error = load_inventory(inventory, group, logger)
-                if error:
-                    return error
-                total = len(hosts)
-                if ctx:
-                    await ctx.report_progress(progress=0, total=total)
-                results, files, locations, errors = [], [], [], []
-
-                async def rotate_host(h: dict) -> dict:
-                    _key = os.path.expanduser(key_pfx + h["hostname"])
-                    try:
-                        t = Tunnel(
-                            config=HostConfig(
-                                hostname=h["hostname"],
-                                user=h["username"],
-                                port=h.get("port", 22),
-                                password_ref=h.get("password_ref"),
-                                identity_file=h.get("key_path"),
-                                known_hosts_file=h.get("known_hosts_file"),
-                            )
-                        )
-                        await run_blocking(t.rotate_ssh_key, _key, key_type=key_type)
-                        return {
-                            "hostname": h["hostname"],
-                            "status": "success",
-                            "message": f"Rotated {key_type} key to {_key}",
-                            "errors": [],
-                            "new_key_path": _key,
-                        }
-                    except Exception as e:
-                        return {
-                            "hostname": h["hostname"],
-                            "status": "failed",
-                            "message": "Rotate fail",
-                            "errors": [type(e).__name__],
-                            "new_key_path": _key,
-                        }
-                    finally:
-                        if "t" in locals():
-                            await run_blocking(t.close)
-
-                if parallel:
-                    with concurrent.futures.ThreadPoolExecutor(
-                        max_workers=max_threads
-                    ) as ex:
-                        futures = [
-                            ex.submit(lambda h: asyncio.run(rotate_host(h)), h)
-                            for h in hosts
-                        ]
-                        for i, future in enumerate(
-                            concurrent.futures.as_completed(futures), 1
-                        ):
-                            try:
-                                r = future.result()
-                                results.append(r)
-                                if r["status"] == "success":
-                                    files.append(r["new_key_path"] + ".pub")
-                                    locations.append(
-                                        f"~/.ssh/authorized_keys on {r['hostname']}"
-                                    )
-                                else:
-                                    errors.extend(r["errors"])
-                                if ctx:
-                                    await ctx.report_progress(progress=i, total=total)
-                            except Exception as e:
-                                results.append(
-                                    {
-                                        "hostname": "unknown",
-                                        "status": "failed",
-                                        "message": "Parallel error",
-                                        "errors": [type(e).__name__],
-                                        "new_key_path": None,
-                                    }
-                                )
-                                errors.append(type(e).__name__)
-                else:
-                    for i, h in enumerate(hosts, 1):
-                        r = await rotate_host(h)
-                        results.append(r)
-                        if r["status"] == "success":
-                            files.append(r["new_key_path"] + ".pub")
-                            locations.append(
-                                f"~/.ssh/authorized_keys on {r['hostname']}"
-                            )
-                        else:
-                            errors.extend(r["errors"])
-                        if ctx:
-                            await ctx.report_progress(progress=i, total=total)
-                msg = (
-                    f"Rotated {key_type} keys for {group}"
-                    if not errors
-                    else f"Rotate failed for some in {group}"
-                )
-                return ResponseBuilder.build(
-                    200 if not errors else 500,
-                    msg,
-                    {
-                        "inventory": inventory,
-                        "group": group,
-                        "key_prefix": key_pfx,
-                        "key_type": key_type,
-                        "host_results": results,
-                    },
-                    error="; ".join(errors),
-                    files=files,
-                    locations=locations,
-                    errors=errors,
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Rotate all fail")
-                return ResponseBuilder.build(
-                    500,
-                    "Rotate all fail",
-                    {
-                        "inventory": inventory,
-                        "group": group,
-                        "key_pfx": key_pfx,
-                        "key_type": key_type,
-                    },
-                    error=type(e).__name__,
-                )
-
+            return await _tm_inventory_rotate_key(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx)
         elif action == "send_file":
-            _lpath = os.path.abspath(os.path.expanduser(lpath))
-            _rpath = os.path.expanduser(rpath)
-            if not _lpath or not _rpath:
-                return ResponseBuilder.build(
-                    400,
-                    "Need lpath, rpath",
-                    {"action": action},
-                    errors=["Need lpath, rpath"],
-                )
-            if not os.path.exists(_lpath) or not os.path.isfile(_lpath):
-                return ResponseBuilder.build(
-                    400,
-                    f"Invalid file: {_lpath}",
-                    {"action": action},
-                    errors=[f"Invalid file: {_lpath}"],
-                )
-            if os.path.getsize(_lpath) > max_transfer_bytes():
-                return ResponseBuilder.build(
-                    400,
-                    "Managed file transfer limit exceeded",
-                    {},
-                    errors=["Managed file transfer limit exceeded"],
-                )
-            try:
-                hosts, error = load_inventory(inventory, group, logger)
-                if error:
-                    return error
-                total = len(hosts)
-                if ctx:
-                    await ctx.report_progress(progress=0, total=total)
-
-                async def send_host(h: dict) -> dict:
-                    host = h["hostname"]
-                    try:
-                        t = Tunnel(
-                            config=HostConfig(
-                                hostname=host,
-                                user=h["username"],
-                                port=h.get("port", 22),
-                                password_ref=h.get("password_ref"),
-                                identity_file=h.get("key_path"),
-                                known_hosts_file=h.get("known_hosts_file"),
-                            )
-                        )
-                        await run_blocking(t.send_file, _lpath, _rpath)
-                        return {
-                            "hostname": host,
-                            "status": "success",
-                            "message": f"Uploaded {_lpath} to {_rpath}",
-                            "errors": [],
-                        }
-                    except Exception as e:
-                        return {
-                            "hostname": host,
-                            "status": "failed",
-                            "message": "Upload fail",
-                            "errors": [type(e).__name__],
-                        }
-                    finally:
-                        if "t" in locals():
-                            await run_blocking(t.close)
-
-                results, files, locations, errors = [_lpath], [], [], []
-                if parallel:
-                    with concurrent.futures.ThreadPoolExecutor(
-                        max_workers=max_threads
-                    ) as ex:
-                        futures = [
-                            ex.submit(lambda h: asyncio.run(send_host(h)), h)
-                            for h in hosts
-                        ]
-                        for i, future in enumerate(
-                            concurrent.futures.as_completed(futures), 1
-                        ):
-                            try:
-                                r = future.result()
-                                results.append(r)
-                                if r["status"] == "success":
-                                    locations.append(f"{_rpath} on {r['hostname']}")
-                                else:
-                                    errors.extend(r["errors"])
-                                if ctx:
-                                    await ctx.report_progress(progress=i, total=total)
-                            except Exception as e:
-                                results.append(
-                                    {
-                                        "hostname": "unknown",
-                                        "status": "failed",
-                                        "message": "Parallel error",
-                                        "errors": [type(e).__name__],
-                                    }
-                                )
-                                errors.append(type(e).__name__)
-                else:
-                    for i, h in enumerate(hosts, 1):
-                        r = await send_host(h)
-                        results.append(r)
-                        if r["status"] == "success":
-                            locations.append(f"{_rpath} on {r['hostname']}")
-                        else:
-                            errors.extend(r["errors"])
-                        if ctx:
-                            await ctx.report_progress(progress=i, total=total)
-                msg = (
-                    f"Uploaded {_lpath} to {group}"
-                    if not errors
-                    else f"Upload failed for some in {group}"
-                )
-                return ResponseBuilder.build(
-                    200 if not errors else 500,
-                    msg,
-                    {
-                        "inventory": inventory,
-                        "group": group,
-                        "local_path": _lpath,
-                        "remote_path": _rpath,
-                        "host_results": results,
-                    },
-                    error="; ".join(errors),
-                    files=files,
-                    locations=locations,
-                    errors=errors,
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Upload all fail")
-                return ResponseBuilder.build(
-                    500,
-                    "Upload all fail",
-                    {
-                        "inventory": inventory,
-                        "group": group,
-                        "lpath": _lpath,
-                        "rpath": _rpath,
-                    },
-                    type(e).__name__,
-                )
-
+            return await _tm_inventory_send_file(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx)
         elif action == "receive_file":
-            if not rpath or not lpath_prefix:
-                return ResponseBuilder.build(
-                    400,
-                    "Need rpath, lpath_prefix",
-                    {"action": action},
-                    errors=["Need rpath, lpath_prefix"],
-                )
-            try:
-                os.makedirs(lpath_prefix, exist_ok=True)
-                hosts, error = load_inventory(inventory, group, logger)
-                if error:
-                    return error
-                total = len(hosts)
-                if ctx:
-                    await ctx.report_progress(progress=0, total=total)
-
-                async def receive_host(h: dict) -> dict:
-                    host = h["hostname"]
-                    _lpath = os.path.join(lpath_prefix, host, os.path.basename(rpath))
-                    os.makedirs(os.path.dirname(_lpath), exist_ok=True)
-                    try:
-                        t = Tunnel(
-                            config=HostConfig(
-                                hostname=host,
-                                user=h["username"],
-                                port=h.get("port", 22),
-                                password_ref=h.get("password_ref"),
-                                identity_file=h.get("key_path"),
-                                known_hosts_file=h.get("known_hosts_file"),
-                            )
-                        )
-                        await run_blocking(t.receive_file, rpath, _lpath)
-                        return {
-                            "hostname": host,
-                            "status": "success",
-                            "message": f"Downloaded {rpath} to {_lpath}",
-                            "errors": [],
-                            "local_path": _lpath,
-                        }
-                    except Exception as e:
-                        return {
-                            "hostname": host,
-                            "status": "failed",
-                            "message": "Download fail",
-                            "errors": [type(e).__name__],
-                            "local_path": _lpath,
-                        }
-                    finally:
-                        if "t" in locals():
-                            await run_blocking(t.close)
-
-                results, files, locations, errors = [], [], [], []
-                if parallel:
-                    with concurrent.futures.ThreadPoolExecutor(
-                        max_workers=max_threads
-                    ) as ex:
-                        futures = [
-                            ex.submit(lambda h: asyncio.run(receive_host(h)), h)
-                            for h in hosts
-                        ]
-                        for i, future in enumerate(
-                            concurrent.futures.as_completed(futures), 1
-                        ):
-                            try:
-                                r = future.result()
-                                results.append(r)
-                                if r["status"] == "success":
-                                    files.append(rpath)
-                                    locations.append(r["local_path"])
-                                else:
-                                    errors.extend(r["errors"])
-                                if ctx:
-                                    await ctx.report_progress(progress=i, total=total)
-                            except Exception as e:
-                                results.append(
-                                    {
-                                        "hostname": "unknown",
-                                        "status": "failed",
-                                        "message": "Parallel error",
-                                        "errors": [type(e).__name__],
-                                        "local_path": None,
-                                    }
-                                )
-                                errors.append(type(e).__name__)
-                else:
-                    for i, h in enumerate(hosts, 1):
-                        r = await receive_host(h)
-                        results.append(r)
-                        if r["status"] == "success":
-                            files.append(rpath)
-                            locations.append(r["local_path"])
-                        else:
-                            errors.extend(r["errors"])
-                        if ctx:
-                            await ctx.report_progress(progress=i, total=total)
-                msg = (
-                    f"Downloaded {rpath} from {group}"
-                    if not errors
-                    else f"Download failed for some in {group}"
-                )
-                return ResponseBuilder.build(
-                    200 if not errors else 500,
-                    msg,
-                    {
-                        "inventory": inventory,
-                        "group": group,
-                        "rpath": rpath,
-                        "lpath_prefix": lpath_prefix,
-                        "host_results": results,
-                    },
-                    error="; ".join(errors),
-                    files=files,
-                    locations=locations,
-                    errors=errors,
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Download all fail")
-                return ResponseBuilder.build(
-                    500,
-                    "Download all fail",
-                    {
-                        "inventory": inventory,
-                        "group": group,
-                        "rpath": rpath,
-                        "lpath_prefix": lpath_prefix,
-                    },
-                    type(e).__name__,
-                )
+            return await _tm_inventory_receive_file(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx)
         else:
-            return ResponseBuilder.build(
-                400,
-                f"Unknown action: {action}",
-                {"action": action},
-                errors=[
-                    "Valid: configure_key_auth, run_command, copy_ssh_config, rotate_key, send_file, receive_file"
-                ],
-            )
+            return await _tm_inventory_unknown_action(action)
 
 
 def register_operations_tools(mcp: FastMCP):
