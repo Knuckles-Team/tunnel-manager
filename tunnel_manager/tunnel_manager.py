@@ -1714,8 +1714,6 @@ class Tunnel:
         Ensures every host can SSH to every other host, including the local machine,
         without password prompts. Supports POSIX and Windows remotes.
         """
-        import subprocess
-
         logger = logging.getLogger("Tunnel")
         logger.info("Starting native full-mesh SSH bootstrap")
 
@@ -1726,68 +1724,13 @@ class Tunnel:
             raise ValueError("key_type must be 'rsa' or 'ed25519'")
 
         if not os.path.exists(key_path):
-            os.makedirs(os.path.dirname(key_path), exist_ok=True)
-            if key_type == "rsa":
-                subprocess.run(
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "rsa",
-                        "-b",
-                        "4096",
-                        "-f",
-                        key_path,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                subprocess.run(
-                    ["/usr/bin/ssh-keygen", "-t", "ed25519", "-f", key_path, "-N", ""],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            logger.info("Generated local managed key pair: key_type=%s", key_type)
+            _generate_mesh_key_pair(key_path, key_type, logger)
 
         with open(pub_key_path) as f:
             local_pub_key = validate_public_key(f.read())
 
         # 2. Parse inventory hosts
-        try:
-            with open(inventory) as f:
-                inventory_data = yaml.safe_load(f)
-        except Exception:
-            logger.error("Failed to read inventory file")
-            raise
-
-        hosts = []
-        if (
-            group in inventory_data
-            and isinstance(inventory_data[group], dict)
-            and "hosts" in inventory_data[group]
-            and isinstance(inventory_data[group]["hosts"], dict)
-        ):
-            for host_name, vars in inventory_data[group]["hosts"].items():
-                host_entry = {
-                    "name": host_name,
-                    "hostname": vars.get("ansible_host", host_name),
-                    "username": vars.get("ansible_user"),
-                    "password_ref": _password_ref(vars),
-                    "known_hosts_file": _known_hosts_file(vars),
-                    "key_path": vars.get("ansible_ssh_private_key_file") or key_path,
-                }
-                if host_entry["username"]:
-                    hosts.append(host_entry)
-        else:
-            raise ValueError("configured inventory group is invalid")
+        hosts = _parse_mesh_inventory_hosts(inventory, group, key_path, logger)
 
         if not hosts:
             logger.warning("No valid hosts found in configured inventory group")
@@ -1796,246 +1739,31 @@ class Tunnel:
         # First pass - setup passwordless access, detect remote OS, ensure keygen and read pubkey
         host_results = {}
 
-        def process_first_pass(host):
-            hostname = host["hostname"]
-            username = host["username"]
-            password_ref = host.get("password_ref")
-            kpath = host["key_path"]
-
-            tunnel = Tunnel(
-                config=HostConfig(
-                    hostname=hostname,
-                    user=username,
-                    password_ref=password_ref,
-                    identity_file=kpath,
-                    known_hosts_file=host.get("known_hosts_file"),
-                )
+        def first_pass(host):
+            _mesh_process_first_pass(
+                host, host_results, key_type, local_pub_key, logger
             )
 
-            # Test key auth
-            res, _ = tunnel.test_key_auth(kpath)
-            if not res:
-                if not password_ref:
-                    raise ValueError(
-                        "Key authentication failed without a credential reference"
-                    )
-                logger.info("Key authentication failed; attempting governed key setup")
-                tunnel.setup_passwordless_ssh(local_key_path=kpath, key_type=key_type)
-
-            # Re-connect to perform remote generation and detection
-            tunnel.connect()
-            try:
-                # Detect OS
-                is_windows = False
-                res_os = tunnel.run_command("uname -s")
-                if (
-                    not res_os.success
-                    or "uname" in res_os.stderr.lower()
-                    or not res_os.stdout
-                ):
-                    is_windows = True
-
-                # Check / generate key on remote
-                if is_windows:
-                    tunnel.run_command(
-                        'if not exist "%USERPROFILE%\\.ssh" mkdir "%USERPROFILE%\\.ssh"'
-                    )
-                    gen_cmd = f'if not exist "%USERPROFILE%\\.ssh\\id_{key_type}" (ssh-keygen -t {key_type} -N "" -f "%USERPROFILE%\\.ssh\\id_{key_type}")'
-                else:
-                    tunnel.run_command("mkdir -p ~/.ssh && chmod 700 ~/.ssh")
-                    gen_cmd = f"if [ ! -f ~/.ssh/id_{key_type} ]; then ssh-keygen -t {key_type} -N '' -f ~/.ssh/id_{key_type}; fi"
-
-                res_gen = tunnel.run_command(gen_cmd)
-                if not res_gen.success:
-                    raise RuntimeError(
-                        f"Failed to generate key on remote host: {res_gen.stderr or res_gen.error_message}"
-                    )
-
-                # Read remote public key
-                if is_windows:
-                    read_cmd = f'type "%USERPROFILE%\\.ssh\\id_{key_type}.pub"'
-                else:
-                    read_cmd = f"cat ~/.ssh/id_{key_type}.pub"
-
-                res_pub = tunnel.run_command(read_cmd)
-                if not res_pub.success or not res_pub.stdout:
-                    raise RuntimeError(
-                        f"Failed to read public key from remote: {res_pub.stderr or res_pub.error_message}"
-                    )
-                remote_pub_key = validate_public_key(res_pub.stdout)
-
-                # Extract local-perceived IP via SSH_CONNECTION
-                if is_windows:
-                    ip_cmd = "echo %SSH_CONNECTION%"
-                else:
-                    ip_cmd = "echo $SSH_CONNECTION"
-
-                res_ip = tunnel.run_command(ip_cmd)
-                client_ip = None
-                if res_ip.success and res_ip.stdout:
-                    parts = res_ip.stdout.strip().split()
-                    if parts:
-                        client_ip = parts[0]
-
-                # Ensure local pub key is explicitly inside remote authorized_keys
-                if is_windows:
-                    tunnel.run_command(
-                        f'echo {local_pub_key} >> "%USERPROFILE%\\.ssh\\authorized_keys"'
-                    )
-                else:
-                    tunnel.run_command(
-                        f"printf '%s\\n' {shlex.quote(local_pub_key)} >> "
-                        "~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
-                    )
-
-                host_results[hostname] = {
-                    "name": host["name"],
-                    "hostname": hostname,
-                    "username": username,
-                    "key_path": kpath,
-                    "is_windows": is_windows,
-                    "remote_pub_key": remote_pub_key,
-                    "client_ip": client_ip,
-                    "status": "success",
-                    "errors": [],
-                }
-            except Exception as e:
-                host_results[hostname] = {
-                    "name": host["name"],
-                    "hostname": hostname,
-                    "username": username,
-                    "status": "failed",
-                    "errors": [type(e).__name__],
-                }
-            finally:
-                tunnel.close()
-
-        # Run first pass (parallel or sequential)
-        if parallel:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as executor:
-                futures = [executor.submit(process_first_pass, h) for h in hosts]
-                for future in concurrent.futures.as_completed(futures):
-                    try:
-                        future.result()
-                    except Exception:
-                        logger.error("Error in first pass")
-        else:
-            for h in hosts:
-                try:
-                    process_first_pass(h)
-                except Exception:
-                    logger.error("Error in first pass")
+        _run_mesh_pass(hosts, first_pass, parallel, max_threads, logger, "first pass")
 
         # Filter out failed hosts from second pass
         successful_hosts = [
             r for r in host_results.values() if r["status"] == "success"
         ]
 
-        # Second pass distributes only authenticated public keys. Host-key trust
-        # must be pre-provisioned through a governed known_hosts file; keyscan is
-        # intentionally unsupported because it does not authenticate the key.
-        def process_second_pass(host):
-            hostname = host["hostname"]
-            username = host["username"]
-            kpath = host["key_path"]
-            is_windows = host["is_windows"]
-
-            tunnel = Tunnel(
-                remote_host=hostname, username=username, identity_file=kpath
+        # Second pass distributes only authenticated public keys.
+        def second_pass(host):
+            _mesh_process_second_pass(
+                host, host_results, local_pub_key, successful_hosts
             )
-            tunnel.connect()
-            try:
-                # Read existing authorized_keys
-                if is_windows:
-                    cat_cmd = 'type "%USERPROFILE%\\.ssh\\authorized_keys"'
-                else:
-                    cat_cmd = "cat ~/.ssh/authorized_keys"
 
-                res_auth = tunnel.run_command(cat_cmd)
-                existing_keys = res_auth.stdout if res_auth.success else ""
+        _run_mesh_pass(
+            successful_hosts, second_pass, parallel, max_threads, logger, "second pass"
+        )
 
-                # Collect and append keys
-                keys_to_add = []
-                if local_pub_key not in existing_keys:
-                    keys_to_add.append(local_pub_key)
+        _update_local_mesh_authorized_keys(successful_hosts, logger)
 
-                for other_host in successful_hosts:
-                    if other_host["hostname"] != hostname:
-                        other_pub = other_host["remote_pub_key"]
-                        if other_pub not in existing_keys:
-                            keys_to_add.append(other_pub)
-
-                if keys_to_add:
-                    for key_to_add in keys_to_add:
-                        if is_windows:
-                            tunnel.run_command(
-                                f'echo {key_to_add} >> "%USERPROFILE%\\.ssh\\authorized_keys"'
-                            )
-                        else:
-                            tunnel.run_command(
-                                f"printf '%s\\n' {shlex.quote(key_to_add)} >> "
-                                "~/.ssh/authorized_keys"
-                            )
-                    if not is_windows:
-                        tunnel.run_command("chmod 600 ~/.ssh/authorized_keys")
-
-            except Exception as e:
-                host_results[hostname]["status"] = "failed"
-                host_results[hostname]["errors"].append(type(e).__name__)
-            finally:
-                tunnel.close()
-
-        # Run second pass (parallel or sequential)
-        if parallel:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as executor:
-                futures = [
-                    executor.submit(process_second_pass, h) for h in successful_hosts
-                ]
-                for future in concurrent.futures.as_completed(futures):
-                    try:
-                        future.result()
-                    except Exception:
-                        logger.error("Error in second pass")
-        else:
-            for h in successful_hosts:
-                try:
-                    process_second_pass(h)
-                except Exception:
-                    logger.error("Error in second pass")
-
-        # Local authorized_keys updates. known_hosts remains an independently
-        # governed trust input and is never populated via unauthenticated scans.
-        try:
-            local_auth_path = os.path.expanduser("~/.ssh/authorized_keys")
-            local_existing_keys = ""
-            if os.path.exists(local_auth_path):
-                with open(local_auth_path) as f:
-                    local_existing_keys = f.read()
-
-            with open(local_auth_path, "a") as f:
-                for h in successful_hosts:
-                    if h["remote_pub_key"] not in local_existing_keys:
-                        f.write("\n" + h["remote_pub_key"] + "\n")
-
-        except Exception:
-            logger.error("Failed to update local authorized keys")
-
-        # Assemble final result
-        final_results = list(host_results.values())
-        errors = []
-        for r in final_results:
-            errors.extend(r["errors"])
-
-        return {
-            "status": "success" if not errors else "failed",
-            "host_results": final_results,
-            "errors": errors,
-            "known_hosts_preprovisioning_required": True,
-        }
+        return _assemble_mesh_results(host_results)
 
     @staticmethod
     def run_command_on_inventory(
@@ -2298,6 +2026,323 @@ all:
 
 # Per-host keys that must resolve to a value for a host to be usable.
 _REQUIRED_HOST_FIELDS = ("hostname", "user")
+
+
+def _generate_mesh_key_pair(
+    key_path: str, key_type: str, logger: logging.Logger
+) -> None:
+    """Generate the local full-mesh key pair (``setup_full_mesh_ssh``)."""
+    import subprocess
+
+    os.makedirs(os.path.dirname(key_path), exist_ok=True)
+    type_args = ["-t", "rsa", "-b", "4096"] if key_type == "rsa" else ["-t", "ed25519"]
+    subprocess.run(
+        ["/usr/bin/ssh-keygen", *type_args, "-f", key_path, "-N", ""],
+        check=True,
+        timeout=30,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    logger.info("Generated local managed key pair: key_type=%s", key_type)
+
+
+def _parse_mesh_inventory_hosts(
+    inventory: str, group: str, key_path: str, logger: logging.Logger
+) -> list[dict]:
+    """Resolve ``group``'s hosts from a full-mesh Ansible-style inventory."""
+    try:
+        with open(inventory) as f:
+            inventory_data = yaml.safe_load(f)
+    except Exception:
+        logger.error("Failed to read inventory file")
+        raise
+
+    hosts = []
+    if (
+        group in inventory_data
+        and isinstance(inventory_data[group], dict)
+        and "hosts" in inventory_data[group]
+        and isinstance(inventory_data[group]["hosts"], dict)
+    ):
+        for host_name, host_vars in inventory_data[group]["hosts"].items():
+            host_entry = {
+                "name": host_name,
+                "hostname": host_vars.get("ansible_host", host_name),
+                "username": host_vars.get("ansible_user"),
+                "password_ref": _password_ref(host_vars),
+                "known_hosts_file": _known_hosts_file(host_vars),
+                "key_path": host_vars.get("ansible_ssh_private_key_file") or key_path,
+            }
+            if host_entry["username"]:
+                hosts.append(host_entry)
+    else:
+        raise ValueError("configured inventory group is invalid")
+    return hosts
+
+
+def _mesh_first_pass_detect_os(tunnel) -> bool:
+    res_os = tunnel.run_command("uname -s")
+    return not res_os.success or "uname" in res_os.stderr.lower() or not res_os.stdout
+
+
+def _mesh_first_pass_ensure_remote_key(tunnel, key_type: str, is_windows: bool) -> None:
+    if is_windows:
+        tunnel.run_command(
+            'if not exist "%USERPROFILE%\\.ssh" mkdir "%USERPROFILE%\\.ssh"'
+        )
+        gen_cmd = f'if not exist "%USERPROFILE%\\.ssh\\id_{key_type}" (ssh-keygen -t {key_type} -N "" -f "%USERPROFILE%\\.ssh\\id_{key_type}")'
+    else:
+        tunnel.run_command("mkdir -p ~/.ssh && chmod 700 ~/.ssh")
+        gen_cmd = f"if [ ! -f ~/.ssh/id_{key_type} ]; then ssh-keygen -t {key_type} -N '' -f ~/.ssh/id_{key_type}; fi"
+
+    res_gen = tunnel.run_command(gen_cmd)
+    if not res_gen.success:
+        raise RuntimeError(
+            f"Failed to generate key on remote host: {res_gen.stderr or res_gen.error_message}"
+        )
+
+
+def _mesh_first_pass_read_remote_pubkey(tunnel, key_type: str, is_windows: bool) -> str:
+    if is_windows:
+        read_cmd = f'type "%USERPROFILE%\\.ssh\\id_{key_type}.pub"'
+    else:
+        read_cmd = f"cat ~/.ssh/id_{key_type}.pub"
+
+    res_pub = tunnel.run_command(read_cmd)
+    if not res_pub.success or not res_pub.stdout:
+        raise RuntimeError(
+            f"Failed to read public key from remote: {res_pub.stderr or res_pub.error_message}"
+        )
+    return validate_public_key(res_pub.stdout)
+
+
+def _mesh_first_pass_client_ip(tunnel, is_windows: bool):
+    ip_cmd = "echo %SSH_CONNECTION%" if is_windows else "echo $SSH_CONNECTION"
+    res_ip = tunnel.run_command(ip_cmd)
+    if res_ip.success and res_ip.stdout:
+        parts = res_ip.stdout.strip().split()
+        if parts:
+            return parts[0]
+    return None
+
+
+def _mesh_first_pass_authorize_local_key(
+    tunnel, is_windows: bool, local_pub_key: str
+) -> None:
+    if is_windows:
+        tunnel.run_command(
+            f'echo {local_pub_key} >> "%USERPROFILE%\\.ssh\\authorized_keys"'
+        )
+    else:
+        tunnel.run_command(
+            f"printf '%s\\n' {shlex.quote(local_pub_key)} >> "
+            "~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+        )
+
+
+def _mesh_first_pass_remote_bootstrap(
+    tunnel, host: dict, key_type: str, local_pub_key: str
+) -> dict:
+    """Detect OS, ensure a remote keypair, read its pubkey, resolve the
+    client-perceived IP, and authorize the local pubkey against this host.
+    Returns the successful ``host_results`` entry."""
+    hostname = host["hostname"]
+    is_windows = _mesh_first_pass_detect_os(tunnel)
+    _mesh_first_pass_ensure_remote_key(tunnel, key_type, is_windows)
+    remote_pub_key = _mesh_first_pass_read_remote_pubkey(tunnel, key_type, is_windows)
+    client_ip = _mesh_first_pass_client_ip(tunnel, is_windows)
+    _mesh_first_pass_authorize_local_key(tunnel, is_windows, local_pub_key)
+    return {
+        "name": host["name"],
+        "hostname": hostname,
+        "username": host["username"],
+        "key_path": host["key_path"],
+        "is_windows": is_windows,
+        "remote_pub_key": remote_pub_key,
+        "client_ip": client_ip,
+        "status": "success",
+        "errors": [],
+    }
+
+
+def _mesh_process_first_pass(
+    host: dict,
+    host_results: dict,
+    key_type: str,
+    local_pub_key: str,
+    logger: logging.Logger,
+) -> None:
+    """First pass: ensure passwordless access, then detect remote OS, ensure
+    a remote keypair, and authorize the local pubkey. Records the outcome in
+    ``host_results[host["hostname"]]``."""
+    hostname = host["hostname"]
+    username = host["username"]
+    password_ref = host.get("password_ref")
+    kpath = host["key_path"]
+
+    tunnel = Tunnel(
+        config=HostConfig(
+            hostname=hostname,
+            user=username,
+            password_ref=password_ref,
+            identity_file=kpath,
+            known_hosts_file=host.get("known_hosts_file"),
+        )
+    )
+
+    res, _ = tunnel.test_key_auth(kpath)
+    if not res:
+        if not password_ref:
+            raise ValueError("Key authentication failed without a credential reference")
+        logger.info("Key authentication failed; attempting governed key setup")
+        tunnel.setup_passwordless_ssh(local_key_path=kpath, key_type=key_type)
+
+    # Re-connect to perform remote generation and detection
+    tunnel.connect()
+    try:
+        host_results[hostname] = _mesh_first_pass_remote_bootstrap(
+            tunnel, host, key_type, local_pub_key
+        )
+    except Exception as e:
+        host_results[hostname] = {
+            "name": host["name"],
+            "hostname": hostname,
+            "username": username,
+            "status": "failed",
+            "errors": [type(e).__name__],
+        }
+    finally:
+        tunnel.close()
+
+
+def _mesh_second_pass_collect_new_keys(
+    existing_keys: str, local_pub_key: str, hostname: str, successful_hosts: list
+) -> list:
+    keys_to_add = []
+    if local_pub_key not in existing_keys:
+        keys_to_add.append(local_pub_key)
+
+    for other_host in successful_hosts:
+        if other_host["hostname"] != hostname:
+            other_pub = other_host["remote_pub_key"]
+            if other_pub not in existing_keys:
+                keys_to_add.append(other_pub)
+    return keys_to_add
+
+
+def _mesh_second_pass_apply_keys(tunnel, keys_to_add: list, is_windows: bool) -> None:
+    for key_to_add in keys_to_add:
+        if is_windows:
+            tunnel.run_command(
+                f'echo {key_to_add} >> "%USERPROFILE%\\.ssh\\authorized_keys"'
+            )
+        else:
+            tunnel.run_command(
+                f"printf '%s\\n' {shlex.quote(key_to_add)} >> ~/.ssh/authorized_keys"
+            )
+    if not is_windows:
+        tunnel.run_command("chmod 600 ~/.ssh/authorized_keys")
+
+
+def _mesh_process_second_pass(
+    host: dict, host_results: dict, local_pub_key: str, successful_hosts: list
+) -> None:
+    """Second pass: distribute the mesh's authenticated public keys to
+    ``host``. Host-key trust must be pre-provisioned through a governed
+    known_hosts file; keyscan is intentionally unsupported because it does
+    not authenticate the key."""
+    hostname = host["hostname"]
+    username = host["username"]
+    kpath = host["key_path"]
+    is_windows = host["is_windows"]
+
+    tunnel = Tunnel(remote_host=hostname, username=username, identity_file=kpath)
+    tunnel.connect()
+    try:
+        cat_cmd = (
+            'type "%USERPROFILE%\\.ssh\\authorized_keys"'
+            if is_windows
+            else "cat ~/.ssh/authorized_keys"
+        )
+        res_auth = tunnel.run_command(cat_cmd)
+        existing_keys = res_auth.stdout if res_auth.success else ""
+
+        keys_to_add = _mesh_second_pass_collect_new_keys(
+            existing_keys, local_pub_key, hostname, successful_hosts
+        )
+        if keys_to_add:
+            _mesh_second_pass_apply_keys(tunnel, keys_to_add, is_windows)
+
+    except Exception as e:
+        host_results[hostname]["status"] = "failed"
+        host_results[hostname]["errors"].append(type(e).__name__)
+    finally:
+        tunnel.close()
+
+
+def _run_mesh_pass(
+    hosts: list,
+    func,
+    parallel: bool,
+    max_threads: int,
+    logger: logging.Logger,
+    pass_label: str,
+) -> None:
+    """Run ``func(host)`` over ``hosts``, parallel or sequential, matching
+    ``setup_full_mesh_ssh``'s own dispatch shape: every failure -- parallel or
+    sequential -- is caught and logged per-host rather than propagating (this
+    is deliberately distinct from ``_run_func_on_inventory_hosts``, whose
+    sequential path does not catch per-host errors)."""
+    if parallel:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+            futures = [executor.submit(func, h) for h in hosts]
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    future.result()
+                except Exception:
+                    logger.error("Error in %s", pass_label)
+    else:
+        for h in hosts:
+            try:
+                func(h)
+            except Exception:
+                logger.error("Error in %s", pass_label)
+
+
+def _update_local_mesh_authorized_keys(
+    successful_hosts: list, logger: logging.Logger
+) -> None:
+    # Local authorized_keys updates. known_hosts remains an independently
+    # governed trust input and is never populated via unauthenticated scans.
+    try:
+        local_auth_path = os.path.expanduser("~/.ssh/authorized_keys")
+        local_existing_keys = ""
+        if os.path.exists(local_auth_path):
+            with open(local_auth_path) as f:
+                local_existing_keys = f.read()
+
+        with open(local_auth_path, "a") as f:
+            for h in successful_hosts:
+                if h["remote_pub_key"] not in local_existing_keys:
+                    f.write("\n" + h["remote_pub_key"] + "\n")
+
+    except Exception:
+        logger.error("Failed to update local authorized keys")
+
+
+def _assemble_mesh_results(host_results: dict) -> dict:
+    final_results = list(host_results.values())
+    errors = []
+    for r in final_results:
+        errors.extend(r["errors"])
+
+    return {
+        "status": "success" if not errors else "failed",
+        "host_results": final_results,
+        "errors": errors,
+        "known_hosts_preprovisioning_required": True,
+    }
 
 
 def _inventory_init(dest: str, force: bool) -> int:
