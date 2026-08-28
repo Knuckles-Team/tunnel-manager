@@ -2362,34 +2362,36 @@ def _inventory_init(dest: str, force: bool) -> int:
     return 0
 
 
-def _inventory_doctor(inventory: str, fix: bool) -> int:
-    """Validate the inventory; return a non-zero exit code on hard errors."""
-    xdg_config = setting("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-    config_dir = os.path.join(xdg_config, "agent-utilities")
-    yml_path = os.path.join(config_dir, "inventory.yml")
-    yaml_path = os.path.join(config_dir, "inventory.yaml")
+def _migrate_legacy_inventory_path(
+    inventory: str, yaml_path: str, yml_path: str, fix: bool
+) -> str:
+    """Migrate a legacy ``inventory.yaml`` to ``inventory.yml`` when ``fix`` is
+    set; otherwise just note it. Returns the inventory path doctor should use."""
+    if not (os.path.exists(yaml_path) and not os.path.exists(yml_path)):
+        return inventory
+    if fix:
+        os.rename(yaml_path, yml_path)
+        print("Migrated legacy inventory configuration")
+        return yml_path
+    print(
+        f"NOTE: legacy {yaml_path} found but no {yml_path}.\n"
+        f"  Fix: re-run `tunnel-manager inventory doctor --fix` to migrate to .yml.",
+    )
+    return inventory
 
-    problems: list[str] = []
 
-    # Legacy-migration check: a .yaml exists but no .yml at the shared location.
-    if os.path.exists(yaml_path) and not os.path.exists(yml_path):
-        if fix:
-            os.rename(yaml_path, yml_path)
-            print("Migrated legacy inventory configuration")
-            inventory = yml_path
-        else:
-            print(
-                f"NOTE: legacy {yaml_path} found but no {yml_path}.\n"
-                f"  Fix: re-run `tunnel-manager inventory doctor --fix` to migrate to .yml.",
-            )
+def _read_inventory_yaml_for_doctor(inventory: str):
+    """Read and shape-check ``inventory`` for doctor.
 
+    Returns ``(raw, None)`` on success or ``(None, exit_code)`` on a hard error.
+    """
     if not os.path.exists(inventory):
         print(
             f"ERROR: inventory file not found: {inventory}\n"
             f"  Fix: run `tunnel-manager inventory init` to create a template.",
             file=sys.stderr,
         )
-        return 1
+        return None, 1
 
     try:
         with open(inventory) as f:
@@ -2400,7 +2402,7 @@ def _inventory_doctor(inventory: str, fix: bool) -> int:
             f"  Fix: correct the YAML syntax (check indentation and colons).",
             file=sys.stderr,
         )
-        return 1
+        return None, 1
 
     if not isinstance(raw, dict):
         print(
@@ -2408,12 +2410,13 @@ def _inventory_doctor(inventory: str, fix: bool) -> int:
             f"{type(raw).__name__}.",
             file=sys.stderr,
         )
-        return 1
+        return None, 1
 
-    # Reuse the existing parsing so doctor sees exactly what the runtime sees.
-    hm = HostManager(config_file=inventory)
-    hosts = hm.hosts
+    return raw, None
 
+
+def _check_host_field_problems(hosts: dict) -> list[str]:
+    problems: list[str] = []
     if not hosts:
         problems.append(
             "no hosts defined — add at least one host under `all.hosts` or a child group."
@@ -2434,20 +2437,48 @@ def _inventory_doctor(inventory: str, fix: bool) -> int:
                 problems.append(
                     f"host '{alias}': missing required field '{field}' — {hint}."
                 )
+    return problems
 
-    # Groups must reference hosts that actually parse into the inventory.
-    if isinstance(raw.get("all"), dict):
-        children = raw["all"].get("children", {}) or {}
-        for group_name, group_data in children.items():
-            if not isinstance(group_data, dict):
-                problems.append(f"group '{group_name}': entry is not a mapping.")
-                continue
-            for ghost in group_data.get("hosts", {}) or {}:
-                if ghost not in hosts:
-                    problems.append(
-                        f"group '{group_name}': references host '{ghost}' which did "
-                        f"not parse into the inventory — check its definition."
-                    )
+
+def _check_group_reference_problems(raw: dict, hosts: dict) -> list[str]:
+    """Groups must reference hosts that actually parse into the inventory."""
+    problems: list[str] = []
+    if not isinstance(raw.get("all"), dict):
+        return problems
+    children = raw["all"].get("children", {}) or {}
+    for group_name, group_data in children.items():
+        if not isinstance(group_data, dict):
+            problems.append(f"group '{group_name}': entry is not a mapping.")
+            continue
+        for ghost in group_data.get("hosts", {}) or {}:
+            if ghost not in hosts:
+                problems.append(
+                    f"group '{group_name}': references host '{ghost}' which did "
+                    f"not parse into the inventory — check its definition."
+                )
+    return problems
+
+
+def _inventory_doctor(inventory: str, fix: bool) -> int:
+    """Validate the inventory; return a non-zero exit code on hard errors."""
+    xdg_config = setting("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+    config_dir = os.path.join(xdg_config, "agent-utilities")
+    yml_path = os.path.join(config_dir, "inventory.yml")
+    yaml_path = os.path.join(config_dir, "inventory.yaml")
+
+    # Legacy-migration check: a .yaml exists but no .yml at the shared location.
+    inventory = _migrate_legacy_inventory_path(inventory, yaml_path, yml_path, fix)
+
+    raw, exit_code = _read_inventory_yaml_for_doctor(inventory)
+    if exit_code is not None:
+        return exit_code
+
+    # Reuse the existing parsing so doctor sees exactly what the runtime sees.
+    hm = HostManager(config_file=inventory)
+    hosts = hm.hosts
+
+    problems = _check_host_field_problems(hosts)
+    problems.extend(_check_group_reference_problems(raw, hosts))
 
     if problems:
         print(f"Inventory validation found {len(problems)} problem(s):")
@@ -2482,12 +2513,9 @@ def _inventory_show(inventory: str) -> int:
     return 0
 
 
-def tunnel_manager():
-    print(f"tunnel_manager v{__version__}", file=sys.stderr)
+def _build_tunnel_manager_parser(default_inventory: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Tunnel Manager CLI")
     parser.add_argument("--log-file", help="Log to this file (default: console output)")
-
-    default_inventory = setting("TUNNEL_INVENTORY") or default_inventory_path()
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -2658,22 +2686,20 @@ def tunnel_manager():
         help="Inventory path to show (default: resolved shared inventory path)",
     )
 
-    args = parser.parse_args()
+    return parser
 
-    if not args.command:
-        parser.print_help()
-        sys.exit(0)
 
-    if args.log_file:
+def _configure_tunnel_manager_logging(log_file: str | None) -> None:
+    if log_file:
         log_dir = (
-            os.path.dirname(os.path.abspath(args.log_file))
-            if os.path.dirname(args.log_file)
+            os.path.dirname(os.path.abspath(log_file))
+            if os.path.dirname(log_file)
             else os.getcwd()
         )
         os.makedirs(log_dir, exist_ok=True)
         try:
             logging.basicConfig(
-                filename=args.log_file,
+                filename=log_file,
                 level=logging.DEBUG,
                 format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             )
@@ -2689,74 +2715,123 @@ def tunnel_manager():
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         )
 
+
+def _dispatch_inventory_command(args) -> None:
+    """Handle the ``inventory init|doctor|show`` subcommands. Exits the
+    process via ``sys.exit()`` when it recognizes ``args.inventory_action``."""
+    target = getattr(args, "inventory", None) or default_inventory_path()
+    if args.inventory_action == "init":
+        sys.exit(_inventory_init(target, args.force))
+    elif args.inventory_action == "doctor":
+        sys.exit(_inventory_doctor(target, args.fix))
+    elif args.inventory_action == "show":
+        sys.exit(_inventory_show(target))
+
+
+def _run_setup_all(args) -> None:
+    Tunnel.setup_all_passwordless_ssh(
+        args.inventory,
+        args.shared_key_path,
+        args.key_type,
+        args.group,
+        args.parallel,
+        args.max_threads,
+    )
+
+
+def _run_run_command(args) -> None:
+    Tunnel.run_command_on_inventory(
+        args.inventory,
+        args.remote_command,
+        args.group,
+        args.parallel,
+        args.max_threads,
+        timeout=args.timeout,
+    )
+
+
+def _run_copy_config(args) -> None:
+    Tunnel.copy_ssh_config_on_inventory(
+        args.inventory,
+        args.local_config_path,
+        args.remote_config_path,
+        args.group,
+        args.parallel,
+        args.max_threads,
+    )
+
+
+def _run_rotate_key(args) -> None:
+    Tunnel.rotate_ssh_key_on_inventory(
+        args.inventory,
+        args.key_prefix,
+        args.key_type,
+        args.group,
+        args.parallel,
+        args.max_threads,
+    )
+
+
+def _run_send_file(args) -> None:
+    Tunnel.send_file_on_inventory(
+        args.inventory,
+        args.local_path,
+        args.remote_path,
+        args.group,
+        args.parallel,
+        args.max_threads,
+    )
+
+
+def _run_receive_file(args) -> None:
+    Tunnel.receive_file_on_inventory(
+        args.inventory,
+        args.remote_path,
+        args.local_path_prefix,
+        args.group,
+        args.parallel,
+        args.max_threads,
+    )
+
+
+# Dispatch table for tunnel_manager()'s non-"inventory" subcommands. cccc
+# counts each case of a flat if/elif dispatch toward cyclomatic; a table has
+# the same fan-out with cyclomatic 1 and is the documented preferred shape
+# (plans/complex program method table: dict dispatch = cyc 2 / cog 1).
+_TUNNEL_MANAGER_COMMANDS = {
+    "setup-all": _run_setup_all,
+    "run-command": _run_run_command,
+    "copy-config": _run_copy_config,
+    "rotate-key": _run_rotate_key,
+    "send-file": _run_send_file,
+    "receive-file": _run_receive_file,
+}
+
+
+def tunnel_manager():
+    print(f"tunnel_manager v{__version__}", file=sys.stderr)
+    default_inventory = setting("TUNNEL_INVENTORY") or default_inventory_path()
+    parser = _build_tunnel_manager_parser(default_inventory)
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        sys.exit(0)
+
+    _configure_tunnel_manager_logging(args.log_file)
+
     logger = logging.getLogger("Tunnel")
     logger.debug("Starting tunnel automation: command_type=%s", args.command)
     print("Starting tunnel automation", file=sys.stderr)
 
     if args.command == "inventory":
-        target = getattr(args, "inventory", None) or default_inventory_path()
-        if args.inventory_action == "init":
-            sys.exit(_inventory_init(target, args.force))
-        elif args.inventory_action == "doctor":
-            sys.exit(_inventory_doctor(target, args.fix))
-        elif args.inventory_action == "show":
-            sys.exit(_inventory_show(target))
+        _dispatch_inventory_command(args)
 
     try:
-        if args.command == "setup-all":
-            Tunnel.setup_all_passwordless_ssh(
-                args.inventory,
-                args.shared_key_path,
-                args.key_type,
-                args.group,
-                args.parallel,
-                args.max_threads,
-            )
-        elif args.command == "run-command":
-            Tunnel.run_command_on_inventory(
-                args.inventory,
-                args.remote_command,
-                args.group,
-                args.parallel,
-                args.max_threads,
-                timeout=args.timeout,
-            )
-        elif args.command == "copy-config":
-            Tunnel.copy_ssh_config_on_inventory(
-                args.inventory,
-                args.local_config_path,
-                args.remote_config_path,
-                args.group,
-                args.parallel,
-                args.max_threads,
-            )
-        elif args.command == "rotate-key":
-            Tunnel.rotate_ssh_key_on_inventory(
-                args.inventory,
-                args.key_prefix,
-                args.key_type,
-                args.group,
-                args.parallel,
-                args.max_threads,
-            )
-        elif args.command == "send-file":
-            Tunnel.send_file_on_inventory(
-                args.inventory,
-                args.local_path,
-                args.remote_path,
-                args.group,
-                args.parallel,
-                args.max_threads,
-            )
-        elif args.command == "receive-file":
-            Tunnel.receive_file_on_inventory(
-                args.inventory,
-                args.remote_path,
-                args.local_path_prefix,
-                args.group,
-                args.parallel,
-                args.max_threads,
-            )
+        handler = _TUNNEL_MANAGER_COMMANDS.get(args.command)
+        if handler:
+            handler(args)
         logger.debug("Automation Complete")
         print("Automation Complete", file=sys.stderr)
     except Exception as e:
