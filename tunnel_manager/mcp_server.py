@@ -665,6 +665,36 @@ async def _tm_remote_run_command(
             await run_blocking(t.close)
 
 
+def _validate_upload_request(host: str, lpath: str, rpath: str) -> dict | None:
+    """Reject an unusable ``send_file`` request; ``None`` means "go ahead".
+
+    Checks run in the order of the inline block this replaces: presence, then
+    file-ness, then the managed transfer-size limit.
+    """
+    if not host or not lpath or not rpath:
+        return ResponseBuilder.build(
+            400,
+            "Need host, lpath, rpath",
+            {"host": host, "lpath": lpath, "rpath": rpath},
+            errors=["Need host, lpath, rpath"],
+        )
+    if not os.path.exists(lpath) or not os.path.isfile(lpath):
+        return ResponseBuilder.build(
+            400,
+            f"Invalid file: {lpath}",
+            {"host": host, "lpath": lpath, "rpath": rpath},
+            errors=[f"Invalid file: {lpath}"],
+        )
+    if os.path.getsize(lpath) > max_transfer_bytes():
+        return ResponseBuilder.build(
+            400,
+            "Managed file transfer limit exceeded",
+            {},
+            errors=["Managed file transfer limit exceeded"],
+        )
+    return None
+
+
 async def _tm_remote_send_file(
     action,
     host,
@@ -691,27 +721,9 @@ async def _tm_remote_send_file(
     _logger = logging.getLogger("TunnelServer")
     _lpath = os.path.abspath(os.path.expanduser(lpath))
     _rpath = os.path.expanduser(rpath)
-    if not host or not _lpath or not _rpath:
-        return ResponseBuilder.build(
-            400,
-            "Need host, lpath, rpath",
-            {"host": host, "lpath": _lpath, "rpath": _rpath},
-            errors=["Need host, lpath, rpath"],
-        )
-    if not os.path.exists(_lpath) or not os.path.isfile(_lpath):
-        return ResponseBuilder.build(
-            400,
-            f"Invalid file: {_lpath}",
-            {"host": host, "lpath": _lpath, "rpath": _rpath},
-            errors=[f"Invalid file: {_lpath}"],
-        )
-    if os.path.getsize(_lpath) > max_transfer_bytes():
-        return ResponseBuilder.build(
-            400,
-            "Managed file transfer limit exceeded",
-            {},
-            errors=["Managed file transfer limit exceeded"],
-        )
+    invalid = _validate_upload_request(host, _lpath, _rpath)
+    if invalid is not None:
+        return invalid
     try:
         conf, final_cfg = _resolve_host(
             host_alias=host,
@@ -973,6 +985,43 @@ async def _tm_remote_test_key_auth(
         )
 
 
+def _validate_passwordless_request(
+    host: str, password: str, key_type: str
+) -> dict | None:
+    """Reject an unusable ``setup_passwordless`` request; ``None`` means proceed."""
+    if not host or not password:
+        return ResponseBuilder.build(
+            400,
+            "Need host, password_ref",
+            {"host": host},
+            errors=["Need host, password_ref"],
+        )
+    if key_type not in ["rsa", "ed25519"]:
+        return ResponseBuilder.build(
+            400,
+            f"Invalid key_type: {key_type}",
+            {"host": host},
+            errors=["key_type must be 'rsa' or 'ed25519'"],
+        )
+    return None
+
+
+async def _ensure_ssh_keypair(key_path: str, key_type: str) -> None:
+    """Generate ``key_path`` with ssh-keygen when its ``.pub`` is missing."""
+    if os.path.exists(key_path + ".pub"):
+        return
+    type_args = ["-t", "rsa", "-b", "4096"] if key_type == "rsa" else ["-t", "ed25519"]
+    await run_blocking(
+        subprocess.run,
+        ["/usr/bin/ssh-keygen", *type_args, "-f", key_path, "-N", ""],
+        check=True,
+        timeout=30,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 async def _tm_remote_setup_passwordless(
     action,
     host,
@@ -997,20 +1046,9 @@ async def _tm_remote_setup_passwordless(
     ctx,
 ) -> dict:
     _key = key or os.path.expanduser("~/.ssh/id_rsa")
-    if not host or not password:
-        return ResponseBuilder.build(
-            400,
-            "Need host, password_ref",
-            {"host": host},
-            errors=["Need host, password_ref"],
-        )
-    if key_type not in ["rsa", "ed25519"]:
-        return ResponseBuilder.build(
-            400,
-            f"Invalid key_type: {key_type}",
-            {"host": host},
-            errors=["key_type must be 'rsa' or 'ed25519'"],
-        )
+    invalid = _validate_passwordless_request(host, password, key_type)
+    if invalid is not None:
+        return invalid
     try:
         conf, final_cfg = _resolve_host(
             host_alias=host,
@@ -1031,45 +1069,7 @@ async def _tm_remote_setup_passwordless(
             await ctx.report_progress(progress=0, total=100)
         _key = os.path.expanduser(_key)
         pub_key = _key + ".pub"
-        if not os.path.exists(pub_key):
-            if key_type == "rsa":
-                await run_blocking(
-                    subprocess.run,
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "rsa",
-                        "-b",
-                        "4096",
-                        "-f",
-                        _key,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                await run_blocking(
-                    subprocess.run,
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "ed25519",
-                        "-f",
-                        _key,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+        await _ensure_ssh_keypair(_key, key_type)
         await run_blocking(
             t.setup_passwordless_ssh, local_key_path=_key, key_type=key_type
         )
@@ -3078,6 +3078,225 @@ def register_system_tools(mcp: FastMCP):
             )
 
 
+def _file_manager(conn: dict) -> AdvancedFileManager:
+    """Build the AdvancedFileManager every ``tm_files`` action works through.
+
+    ``conn`` carries remote_host/username/password/identity_file; blank strings
+    mean "unset" and are normalised to ``None`` exactly as the inline
+    ``Tunnel(...)`` constructions this replaces did.
+    """
+    return AdvancedFileManager(
+        Tunnel(
+            remote_host=conn["remote_host"],
+            username=conn["username"] or None,
+            password=conn["password"] or None,
+            identity_file=conn["identity_file"] or None,
+        )
+    )
+
+
+def _recursive_ops_options(operation: str, params: dict) -> dict:
+    """Per-operation option bag for ``recursive_ops``."""
+    if operation == "chmod":
+        return {"mode": params["mode"]}
+    if operation == "chown":
+        return {"owner": params["owner"], "group": params["group"]}
+    return {}
+
+
+async def _tm_files_recursive_ops(action: str, conn: dict, params: dict, ctx) -> dict:
+    """``tm_files`` ``recursive_ops``."""
+    remote_host = conn["remote_host"]
+    operation = params["operation"]
+    source = params["source"]
+    if not remote_host or not operation or not source:
+        return ResponseBuilder.build(
+            400,
+            "Need remote_host, operation, source",
+            {"action": action},
+            errors=["Need remote_host, operation, source"],
+        )
+    try:
+        fm = _file_manager(conn)
+        options = _recursive_ops_options(operation, params)
+        result = await run_blocking(
+            fm.recursive_file_operations,
+            operation,
+            source,
+            params["destination"],
+            options,
+        )
+        return ResponseBuilder.build(
+            200 if result["success"] else 500,
+            f"Recursive {operation} completed",
+            {"host": remote_host, "operation": operation, "result": result},
+            error=result.get("error", ""),
+            errors=result.get("errors", []),
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Recursive file ops fail")
+        return ResponseBuilder.build(
+            500,
+            "Recursive file ops fail",
+            {"host": remote_host, "operation": operation},
+            type(e).__name__,
+        )
+
+
+async def _tm_files_content_search(action: str, conn: dict, params: dict, ctx) -> dict:
+    """``tm_files`` ``content_search``."""
+    remote_host = conn["remote_host"]
+    search_paths = params["search_paths"]
+    pattern = params["pattern"]
+    if not remote_host or not search_paths or not pattern:
+        return ResponseBuilder.build(
+            400,
+            "Need remote_host, search_paths, pattern",
+            {"action": action},
+            errors=["Need remote_host, search_paths, pattern"],
+        )
+    try:
+        fm = _file_manager(conn)
+        options = {
+            "case_sensitive": params["case_sensitive"],
+            "recursive": params["recursive"],
+            "max_results": params["max_results"],
+        }
+        result = await run_blocking(
+            fm.file_content_search, search_paths, pattern, options
+        )
+        return ResponseBuilder.build(
+            200 if result["success"] else 500,
+            "File content search completed",
+            {"host": remote_host, "pattern": pattern, "result": result},
+            error=result.get("error", ""),
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "File content search fail")
+        return ResponseBuilder.build(
+            500,
+            "File content search fail",
+            {"host": remote_host, "pattern": pattern},
+            type(e).__name__,
+        )
+
+
+async def _tm_files_watch(action: str, conn: dict, params: dict, ctx) -> dict:
+    """``tm_files`` ``watch``."""
+    remote_host = conn["remote_host"]
+    watch_paths = params["watch_paths"]
+    if not remote_host or not watch_paths:
+        return ResponseBuilder.build(
+            400,
+            "Need remote_host, watch_paths",
+            {"action": action},
+            errors=["Need remote_host, watch_paths"],
+        )
+    try:
+        fm = _file_manager(conn)
+        result = await run_blocking(
+            fm.file_watch_monitor, watch_paths, params["duration"]
+        )
+        return ResponseBuilder.build(
+            200 if result["success"] else 500,
+            "File monitoring completed",
+            {"host": remote_host, "watch_paths": watch_paths, "result": result},
+            error=result.get("error", ""),
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "File watch fail")
+        return ResponseBuilder.build(
+            500,
+            "File watch fail",
+            {"host": remote_host, "watch_paths": watch_paths},
+            type(e).__name__,
+        )
+
+
+async def _tm_files_diff_compare(action: str, conn: dict, params: dict, ctx) -> dict:
+    """``tm_files`` ``diff_compare`` (connects to ``host1``, not remote_host)."""
+    file_path = params["file_path"]
+    host1 = params["host1"]
+    host2 = params["host2"]
+    if not file_path or not host1 or not host2:
+        return ResponseBuilder.build(
+            400,
+            "Need file_path, host1, host2",
+            {"action": action},
+            errors=["Need file_path, host1, host2"],
+        )
+    try:
+        fm = _file_manager({**conn, "remote_host": host1})
+        result = await run_blocking(fm.file_diff_compare, host1, host2, file_path)
+        return ResponseBuilder.build(
+            200 if result["success"] else 500,
+            "File comparison completed",
+            {
+                "file": file_path,
+                "host1": host1,
+                "host2": host2,
+                "result": result,
+            },
+            error=result.get("error", ""),
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "File diff fail")
+        return ResponseBuilder.build(
+            500,
+            "File diff fail",
+            {"file": file_path, "host1": host1, "host2": host2},
+            type(e).__name__,
+        )
+
+
+async def _tm_files_backup(action: str, conn: dict, params: dict, ctx) -> dict:
+    """``tm_files`` ``backup``."""
+    remote_host = conn["remote_host"]
+    backup_paths = params["backup_paths"]
+    backup_dest = params["backup_dest"]
+    if not remote_host or not backup_paths or not backup_dest:
+        return ResponseBuilder.build(
+            400,
+            "Need remote_host, backup_paths, backup_dest",
+            {"action": action},
+            errors=["Need remote_host, backup_paths, backup_dest"],
+        )
+    try:
+        fm = _file_manager(conn)
+        options = {
+            "compression": params["compression"],
+            "incremental": params["incremental"],
+        }
+        result = await run_blocking(fm.smart_backup, backup_paths, backup_dest, options)
+        return ResponseBuilder.build(
+            200 if result["success"] else 500,
+            "Backup completed",
+            {
+                "host": remote_host,
+                "backup_paths": backup_paths,
+                "result": result,
+            },
+            error=result.get("error", ""),
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Backup fail")
+        return ResponseBuilder.build(
+            500,
+            "Backup fail",
+            {"host": remote_host, "backup_paths": backup_paths},
+            type(e).__name__,
+        )
+
+
+_TM_FILES_ACTIONS = {
+    "recursive_ops": _tm_files_recursive_ops,
+    "content_search": _tm_files_content_search,
+    "watch": _tm_files_watch,
+    "diff_compare": _tm_files_diff_compare,
+    "backup": _tm_files_backup,
+}
+
+
 def register_file_tools(mcp: FastMCP):
     """Register advanced file operations tool."""
 
@@ -3169,202 +3388,8 @@ def register_file_tools(mcp: FastMCP):
                 {"credential_ref_configured": bool(password_ref)},
                 errors=["A supported runtime secret reference is required"],
             )
-        if action == "recursive_ops":
-            if not remote_host or not operation or not source:
-                return ResponseBuilder.build(
-                    400,
-                    "Need remote_host, operation, source",
-                    {"action": action},
-                    errors=["Need remote_host, operation, source"],
-                )
-            try:
-                tunnel = Tunnel(
-                    remote_host=remote_host,
-                    username=username or None,
-                    password=password or None,
-                    identity_file=identity_file or None,
-                )
-                fm = AdvancedFileManager(tunnel)
-                options = {}
-                if operation == "chmod":
-                    options["mode"] = mode
-                elif operation == "chown":
-                    options["owner"] = owner
-                    options["group"] = group
-                result = await run_blocking(
-                    fm.recursive_file_operations,
-                    operation,
-                    source,
-                    destination,
-                    options,
-                )
-                return ResponseBuilder.build(
-                    200 if result["success"] else 500,
-                    f"Recursive {operation} completed",
-                    {"host": remote_host, "operation": operation, "result": result},
-                    error=result.get("error", ""),
-                    errors=result.get("errors", []),
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Recursive file ops fail")
-                return ResponseBuilder.build(
-                    500,
-                    "Recursive file ops fail",
-                    {"host": remote_host, "operation": operation},
-                    type(e).__name__,
-                )
-
-        elif action == "content_search":
-            if not remote_host or not search_paths or not pattern:
-                return ResponseBuilder.build(
-                    400,
-                    "Need remote_host, search_paths, pattern",
-                    {"action": action},
-                    errors=["Need remote_host, search_paths, pattern"],
-                )
-            try:
-                tunnel = Tunnel(
-                    remote_host=remote_host,
-                    username=username or None,
-                    password=password or None,
-                    identity_file=identity_file or None,
-                )
-                fm = AdvancedFileManager(tunnel)
-                options = {
-                    "case_sensitive": case_sensitive,
-                    "recursive": recursive,
-                    "max_results": max_results,
-                }
-                result = await run_blocking(
-                    fm.file_content_search, search_paths, pattern, options
-                )
-                return ResponseBuilder.build(
-                    200 if result["success"] else 500,
-                    "File content search completed",
-                    {"host": remote_host, "pattern": pattern, "result": result},
-                    error=result.get("error", ""),
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "File content search fail")
-                return ResponseBuilder.build(
-                    500,
-                    "File content search fail",
-                    {"host": remote_host, "pattern": pattern},
-                    type(e).__name__,
-                )
-
-        elif action == "watch":
-            if not remote_host or not watch_paths:
-                return ResponseBuilder.build(
-                    400,
-                    "Need remote_host, watch_paths",
-                    {"action": action},
-                    errors=["Need remote_host, watch_paths"],
-                )
-            try:
-                tunnel = Tunnel(
-                    remote_host=remote_host,
-                    username=username or None,
-                    password=password or None,
-                    identity_file=identity_file or None,
-                )
-                fm = AdvancedFileManager(tunnel)
-                result = await run_blocking(
-                    fm.file_watch_monitor, watch_paths, duration
-                )
-                return ResponseBuilder.build(
-                    200 if result["success"] else 500,
-                    "File monitoring completed",
-                    {"host": remote_host, "watch_paths": watch_paths, "result": result},
-                    error=result.get("error", ""),
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "File watch fail")
-                return ResponseBuilder.build(
-                    500,
-                    "File watch fail",
-                    {"host": remote_host, "watch_paths": watch_paths},
-                    type(e).__name__,
-                )
-
-        elif action == "diff_compare":
-            if not file_path or not host1 or not host2:
-                return ResponseBuilder.build(
-                    400,
-                    "Need file_path, host1, host2",
-                    {"action": action},
-                    errors=["Need file_path, host1, host2"],
-                )
-            try:
-                tunnel1 = Tunnel(
-                    remote_host=host1,
-                    username=username or None,
-                    password=password or None,
-                    identity_file=identity_file or None,
-                )
-                fm = AdvancedFileManager(tunnel1)
-                result = await run_blocking(
-                    fm.file_diff_compare, host1, host2, file_path
-                )
-                return ResponseBuilder.build(
-                    200 if result["success"] else 500,
-                    "File comparison completed",
-                    {
-                        "file": file_path,
-                        "host1": host1,
-                        "host2": host2,
-                        "result": result,
-                    },
-                    error=result.get("error", ""),
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "File diff fail")
-                return ResponseBuilder.build(
-                    500,
-                    "File diff fail",
-                    {"file": file_path, "host1": host1, "host2": host2},
-                    type(e).__name__,
-                )
-
-        elif action == "backup":
-            if not remote_host or not backup_paths or not backup_dest:
-                return ResponseBuilder.build(
-                    400,
-                    "Need remote_host, backup_paths, backup_dest",
-                    {"action": action},
-                    errors=["Need remote_host, backup_paths, backup_dest"],
-                )
-            try:
-                tunnel = Tunnel(
-                    remote_host=remote_host,
-                    username=username or None,
-                    password=password or None,
-                    identity_file=identity_file or None,
-                )
-                fm = AdvancedFileManager(tunnel)
-                options = {"compression": compression, "incremental": incremental}
-                result = await run_blocking(
-                    fm.smart_backup, backup_paths, backup_dest, options
-                )
-                return ResponseBuilder.build(
-                    200 if result["success"] else 500,
-                    "Backup completed",
-                    {
-                        "host": remote_host,
-                        "backup_paths": backup_paths,
-                        "result": result,
-                    },
-                    error=result.get("error", ""),
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Backup fail")
-                return ResponseBuilder.build(
-                    500,
-                    "Backup fail",
-                    {"host": remote_host, "backup_paths": backup_paths},
-                    type(e).__name__,
-                )
-        else:
+        handler = _TM_FILES_ACTIONS.get(action)
+        if handler is None:
             return ResponseBuilder.build(
                 400,
                 f"Unknown action: {action}",
@@ -3373,6 +3398,38 @@ def register_file_tools(mcp: FastMCP):
                     "Valid: recursive_ops, content_search, watch, diff_compare, backup"
                 ],
             )
+        return await handler(
+            action,
+            {
+                "remote_host": remote_host,
+                "username": username,
+                "password": password,
+                "identity_file": identity_file,
+            },
+            {
+                "operation": operation,
+                "source": source,
+                "destination": destination,
+                "mode": mode,
+                "owner": owner,
+                "group": group,
+                "search_paths": search_paths,
+                "pattern": pattern,
+                "case_sensitive": case_sensitive,
+                "recursive": recursive,
+                "max_results": max_results,
+                "watch_paths": watch_paths,
+                "duration": duration,
+                "file_path": file_path,
+                "host1": host1,
+                "host2": host2,
+                "backup_paths": backup_paths,
+                "backup_dest": backup_dest,
+                "compression": compression,
+                "incremental": incremental,
+            },
+            ctx,
+        )
 
 
 async def _tm_security_audit(
