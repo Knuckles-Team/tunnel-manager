@@ -790,6 +790,23 @@ class HostManager:
         return HostConfig(**data)
 
 
+def _resolve_tunnel_connection_fields(config: HostConfig | None, legacy: dict) -> dict:
+    """Resolve Tunnel.__init__'s raw connection fields from either a
+    ``HostConfig`` or the legacy individual kwargs (as ``legacy``)."""
+    if config:
+        return {
+            "remote_host": config.hostname,
+            "username": config.user,
+            "password": config.resolved_password(),
+            "port": config.port,
+            "identity_file": config.identity_file or config.key_path,
+            "proxy_command": config.proxy_command,
+            "certificate_file": config.extra_config.get("certificate_file"),
+            "known_hosts_file": config.known_hosts_file,
+        }
+    return legacy
+
+
 class Tunnel:
     def __init__(
         self,
@@ -816,24 +833,27 @@ class Tunnel:
         :param config: HostConfig object containing connection details.
         :param ssh_config_file: Optional path to a custom SSH config file (defaults to ~/.ssh/config).
         """
-        if config:
-            self.remote_host = config.hostname
-            self.username = config.user
-            self.password = config.resolved_password()
-            self.port = config.port
-            self.identity_file = config.identity_file or config.key_path
-            self.proxy_command = config.proxy_command
-            self.certificate_file = config.extra_config.get("certificate_file")
-            self.known_hosts_file = config.known_hosts_file
-        else:
-            self.remote_host = remote_host
-            self.username = username
-            self.password = password
-            self.port = port
-            self.identity_file = identity_file
-            self.proxy_command = proxy_command
-            self.certificate_file = certificate_file
-            self.known_hosts_file = known_hosts_file
+        fields = _resolve_tunnel_connection_fields(
+            config,
+            {
+                "remote_host": remote_host,
+                "username": username,
+                "password": password,
+                "port": port,
+                "identity_file": identity_file,
+                "proxy_command": proxy_command,
+                "certificate_file": certificate_file,
+                "known_hosts_file": known_hosts_file,
+            },
+        )
+        self.remote_host = fields["remote_host"]
+        self.username = fields["username"]
+        self.password = fields["password"]
+        self.port = fields["port"]
+        self.identity_file = fields["identity_file"]
+        self.proxy_command = fields["proxy_command"]
+        self.certificate_file = fields["certificate_file"]
+        self.known_hosts_file = fields["known_hosts_file"]
 
         self.known_hosts_file = self.known_hosts_file or setting("TUNNEL_KNOWN_HOSTS")
 
@@ -847,6 +867,27 @@ class Tunnel:
         # Connection hardening tunables (stability fixes for flaky SSH).
         # Bounded timeouts prevent indefinite hangs; a small retry/backoff
         # absorbs transient auth/banner failures on otherwise-reachable hosts.
+        self._init_timeouts_and_retries(
+            connect_timeout,
+            banner_timeout,
+            auth_timeout,
+            keepalive_interval,
+            connect_retries,
+            retry_backoff,
+        )
+
+        self.ssh_config = self._load_ssh_config(ssh_config_file)
+        self._apply_ssh_config_lookup_and_validate()
+
+    def _init_timeouts_and_retries(
+        self,
+        connect_timeout,
+        banner_timeout,
+        auth_timeout,
+        keepalive_interval,
+        connect_retries,
+        retry_backoff,
+    ) -> None:
         self.connect_timeout = validate_timeout(
             connect_timeout, default=10, maximum=300
         )
@@ -862,14 +903,17 @@ class Tunnel:
             raise ConnectionPolicyError("Invalid SSH retry configuration")
         self.retry_backoff = float(retry_backoff)
 
-        self.ssh_config = paramiko.SSHConfig()
+    def _load_ssh_config(self, ssh_config_file: str) -> paramiko.SSHConfig:
+        ssh_config = paramiko.SSHConfig()
         if os.path.exists(ssh_config_file) and os.path.isfile(ssh_config_file):
             with open(ssh_config_file) as f:
-                self.ssh_config.parse(f)
+                ssh_config.parse(f)
             self.logger.info("Loaded configured SSH client settings")
         else:
             self.logger.warning("Configured SSH client settings were not found")
+        return ssh_config
 
+    def _apply_ssh_config_lookup_and_validate(self) -> None:
         host_config_ssh = self.ssh_config.lookup(self.remote_host) or {}
 
         self.username = self.username or host_config_ssh.get("user")
@@ -892,27 +936,23 @@ class Tunnel:
                 "Will attempt authentication using local SSH Agent and default keys."
             )
 
-    def connect(self, timeout=None):
-        if (
+    def _transport_is_active(self) -> bool:
+        return bool(
             self.ssh_client
             and self.ssh_client.get_transport()
             and self.ssh_client.get_transport().is_active()
-        ):
-            return
-
-        connect_timeout = validate_timeout(
-            timeout, default=self.connect_timeout, maximum=300
         )
 
-        self.ssh_client = paramiko.SSHClient()
-        self.ssh_client.load_system_host_keys()
+    def _prepare_ssh_client(self) -> paramiko.SSHClient:
+        ssh_client = paramiko.SSHClient()
+        ssh_client.load_system_host_keys()
         if self.known_hosts_file:
-            self.ssh_client.load_host_keys(
-                validated_known_hosts_path(self.known_hosts_file)
-            )
-        self.ssh_client.set_missing_host_key_policy(paramiko.RejectPolicy())
+            ssh_client.load_host_keys(validated_known_hosts_path(self.known_hosts_file))
+        ssh_client.set_missing_host_key_policy(paramiko.RejectPolicy())
+        return ssh_client
 
-        # 1. Path Expansion & Normalization (Linux & Windows)
+    def _resolve_connect_paths(self):
+        """Return ``(expanded_identity, expanded_cert)`` for this connection."""
         expanded_identity = None
         if self.identity_file:
             expanded_identity = validate_identity_path(self.identity_file)
@@ -922,43 +962,44 @@ class Tunnel:
         if self.certificate_file:
             expanded_cert = os.path.abspath(os.path.expanduser(self.certificate_file))
             self.logger.info("Resolved configured SSH certificate")
+        return expanded_identity, expanded_cert
 
-        # 2. Proxy Command Token Expansion & Platform Resolution (Linux & Windows)
-        proxy = None
-        if self.proxy_command:
-            proxy_argv = proxy_command_argv(
-                self.proxy_command,
-                hostname=self.remote_host,
-                port=self.port,
-                username=self.username or "",
-            )
-            proxy = paramiko.ProxyCommand(proxy_command_string(proxy_argv))
-            self.logger.info("Using an allowlisted SSH proxy executable")
+    def _build_proxy(self):
+        if not self.proxy_command:
+            return None
+        proxy_argv = proxy_command_argv(
+            self.proxy_command,
+            hostname=self.remote_host,
+            port=self.port,
+            username=self.username or "",
+        )
+        proxy = paramiko.ProxyCommand(proxy_command_string(proxy_argv))
+        self.logger.info("Using an allowlisted SSH proxy executable")
+        return proxy
 
-        private_key = None
-        if expanded_identity:
+    def _load_private_key(self, expanded_identity, expanded_cert):
+        if not expanded_identity:
+            return None
+        try:
+            private_key = paramiko.Ed25519Key.from_private_key_file(expanded_identity)
+            self.logger.info("Loaded configured ED25519 identity")
+        except paramiko.ssh_exception.SSHException:
             try:
-                private_key = paramiko.Ed25519Key.from_private_key_file(
-                    expanded_identity
-                )
-                self.logger.info("Loaded configured ED25519 identity")
-            except paramiko.ssh_exception.SSHException:
-                try:
-                    private_key = paramiko.RSAKey.from_private_key_file(
-                        expanded_identity
-                    )
-                    self.logger.info("Loaded configured RSA identity")
-                except (OSError, paramiko.ssh_exception.SSHException) as exc:
-                    raise ConnectionPolicyError(
-                        "Configured SSH identity could not be loaded"
-                    ) from exc
+                private_key = paramiko.RSAKey.from_private_key_file(expanded_identity)
+                self.logger.info("Loaded configured RSA identity")
+            except (OSError, paramiko.ssh_exception.SSHException) as exc:
+                raise ConnectionPolicyError(
+                    "Configured SSH identity could not be loaded"
+                ) from exc
 
-            if expanded_cert:
-                private_key.load_certificate(expanded_cert)
-                self.logger.info("Loaded configured SSH certificate")
+        if expanded_cert:
+            private_key.load_certificate(expanded_cert)
+            self.logger.info("Loaded configured SSH certificate")
+        return private_key
 
-        # 3. Connection with bounded timeouts + retry/backoff. SSH Agent and
-        # default key discovery stay enabled for zero-burden RSA fallback.
+    def _attempt_connect_with_retries(
+        self, connect_timeout, private_key, proxy
+    ) -> None:
         last_exc = None
         for attempt in range(1, self.connect_retries + 1):
             try:
@@ -999,6 +1040,104 @@ class Tunnel:
         )
         raise ConnectionError("SSH connection failed") from None
 
+    def connect(self, timeout=None):
+        if self._transport_is_active():
+            return
+
+        connect_timeout = validate_timeout(
+            timeout, default=self.connect_timeout, maximum=300
+        )
+
+        self.ssh_client = self._prepare_ssh_client()
+
+        # 1. Path Expansion & Normalization (Linux & Windows)
+        expanded_identity, expanded_cert = self._resolve_connect_paths()
+
+        # 2. Proxy Command Token Expansion & Platform Resolution (Linux & Windows)
+        proxy = self._build_proxy()
+
+        private_key = self._load_private_key(expanded_identity, expanded_cert)
+
+        # 3. Connection with bounded timeouts + retry/backoff. SSH Agent and
+        # default key discovery stay enabled for zero-burden RSA fallback.
+        self._attempt_connect_with_retries(connect_timeout, private_key, proxy)
+
+    def _drain_channel_stdout(self, channel, out_buffer, err_buffer, output_limit):
+        while channel.recv_ready():
+            remaining = output_limit - len(out_buffer) - len(err_buffer)
+            chunk = channel.recv(min(65_536, max(1, remaining + 1)))
+            out_buffer.extend(chunk)
+            if len(out_buffer) + len(err_buffer) > output_limit:
+                channel.close()
+                raise ConnectionPolicyError("Managed command output limit exceeded")
+
+    def _drain_channel_stderr(self, channel, out_buffer, err_buffer, output_limit):
+        while channel.recv_stderr_ready():
+            remaining = output_limit - len(out_buffer) - len(err_buffer)
+            chunk = channel.recv_stderr(min(65_536, max(1, remaining + 1)))
+            err_buffer.extend(chunk)
+            if len(out_buffer) + len(err_buffer) > output_limit:
+                channel.close()
+                raise ConnectionPolicyError("Managed command output limit exceeded")
+
+    def _drain_channel_output(self, channel, output_limit, command_timeout):
+        """Concurrently drain stdout/stderr from a real paramiko.Channel with a
+        combined output-size cap and a wall-clock deadline."""
+        out_buffer = bytearray()
+        err_buffer = bytearray()
+        deadline = time.monotonic() + command_timeout
+        while True:
+            self._drain_channel_stdout(channel, out_buffer, err_buffer, output_limit)
+            self._drain_channel_stderr(channel, out_buffer, err_buffer, output_limit)
+            if (
+                channel.exit_status_ready()
+                and not channel.recv_ready()
+                and not channel.recv_stderr_ready()
+            ):
+                break
+            if time.monotonic() >= deadline:
+                channel.close()
+                raise TimeoutError("Managed command timed out")
+            time.sleep(0.01)
+        return out_buffer, err_buffer
+
+    def _read_fake_client_output(self, stdout, stderr, output_limit):
+        # Test/fake-client compatibility path. Real Paramiko transports
+        # always expose ``paramiko.Channel`` and use the concurrent drain
+        # above, which prevents stdout/stderr pipe deadlocks.
+        out_buffer = bytearray(stdout.read(output_limit + 1))
+        remaining = max(1, output_limit - len(out_buffer) + 1)
+        err_buffer = bytearray(stderr.read(remaining))
+        if len(out_buffer) + len(err_buffer) > output_limit:
+            raise ConnectionPolicyError("Managed command output limit exceeded")
+        return out_buffer, err_buffer
+
+    def _run_remote_command(self, command, command_timeout) -> CommandResult:
+        _stdin, stdout, stderr = self.ssh_client.exec_command(
+            command, timeout=command_timeout
+        )  # nosec B601
+        channel = stdout.channel
+        channel.settimeout(command_timeout)
+        output_limit = max_output_bytes()
+        if isinstance(channel, paramiko.Channel):
+            out_buffer, err_buffer = self._drain_channel_output(
+                channel, output_limit, command_timeout
+            )
+        else:
+            out_buffer, err_buffer = self._read_fake_client_output(
+                stdout, stderr, output_limit
+            )
+        out = out_buffer.decode("utf-8", errors="replace").strip()
+        err = err_buffer.decode("utf-8", errors="replace").strip()
+        exit_status = channel.recv_exit_status()
+        self.logger.info(
+            "Managed command completed: success=%s stdout_chars=%d stderr_chars=%d",
+            exit_status == 0,
+            len(out),
+            len(err),
+        )
+        return CommandResult(success=(exit_status == 0), stdout=out, stderr=err)
+
     def run_command(
         self, command, timeout=None, *, propagate_errors: bool = False
     ) -> CommandResult:
@@ -1017,64 +1156,7 @@ class Tunnel:
         )
         self.connect()
         try:
-            _stdin, stdout, stderr = self.ssh_client.exec_command(
-                command, timeout=command_timeout
-            )  # nosec B601
-            channel = stdout.channel
-            channel.settimeout(command_timeout)
-            output_limit = max_output_bytes()
-            if isinstance(channel, paramiko.Channel):
-                out_buffer = bytearray()
-                err_buffer = bytearray()
-                deadline = time.monotonic() + command_timeout
-                while True:
-                    while channel.recv_ready():
-                        remaining = output_limit - len(out_buffer) - len(err_buffer)
-                        chunk = channel.recv(min(65_536, max(1, remaining + 1)))
-                        out_buffer.extend(chunk)
-                        if len(out_buffer) + len(err_buffer) > output_limit:
-                            channel.close()
-                            raise ConnectionPolicyError(
-                                "Managed command output limit exceeded"
-                            )
-                    while channel.recv_stderr_ready():
-                        remaining = output_limit - len(out_buffer) - len(err_buffer)
-                        chunk = channel.recv_stderr(min(65_536, max(1, remaining + 1)))
-                        err_buffer.extend(chunk)
-                        if len(out_buffer) + len(err_buffer) > output_limit:
-                            channel.close()
-                            raise ConnectionPolicyError(
-                                "Managed command output limit exceeded"
-                            )
-                    if (
-                        channel.exit_status_ready()
-                        and not channel.recv_ready()
-                        and not channel.recv_stderr_ready()
-                    ):
-                        break
-                    if time.monotonic() >= deadline:
-                        channel.close()
-                        raise TimeoutError("Managed command timed out")
-                    time.sleep(0.01)
-            else:
-                # Test/fake-client compatibility path. Real Paramiko transports
-                # always expose ``paramiko.Channel`` and use the concurrent drain
-                # above, which prevents stdout/stderr pipe deadlocks.
-                out_buffer = bytearray(stdout.read(output_limit + 1))
-                remaining = max(1, output_limit - len(out_buffer) + 1)
-                err_buffer = bytearray(stderr.read(remaining))
-                if len(out_buffer) + len(err_buffer) > output_limit:
-                    raise ConnectionPolicyError("Managed command output limit exceeded")
-            out = out_buffer.decode("utf-8", errors="replace").strip()
-            err = err_buffer.decode("utf-8", errors="replace").strip()
-            exit_status = channel.recv_exit_status()
-            self.logger.info(
-                "Managed command completed: success=%s stdout_chars=%d stderr_chars=%d",
-                exit_status == 0,
-                len(out),
-                len(err),
-            )
-            return CommandResult(success=(exit_status == 0), stdout=out, stderr=err)
+            return self._run_remote_command(command, command_timeout)
         except Exception as e:
             self.logger.error("Operation failed: error_type=%s", type(e).__name__)
             if propagate_errors and isinstance(
@@ -1086,6 +1168,40 @@ class Tunnel:
                 error_message="ManagedCommandError",
                 stderr="ManagedCommandError",
             )
+
+    def _validate_local_upload_source(self, local_path: str) -> int:
+        """Validate an already-resolved local path for SFTP upload; returns
+        its file size."""
+        if not os.path.exists(local_path):
+            self.logger.error("Configured local file does not exist")
+            raise OSError("Configured local file does not exist")
+        if os.path.islink(local_path) or not os.path.isfile(local_path):
+            self.logger.error("Configured local path is not a regular file")
+            raise OSError("Configured local path is not a regular file")
+        if not os.access(local_path, os.R_OK):
+            self.logger.error("Configured local file is not readable")
+            raise PermissionError("Configured local file is not readable")
+        file_size = os.path.getsize(local_path)
+        if file_size > max_transfer_bytes():
+            raise ConnectionPolicyError("Managed file transfer limit exceeded")
+        return file_size
+
+    def _open_local_upload_descriptor(self, local_path: str) -> int:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            return os.open(local_path, flags)
+        except OSError as open_err:
+            self.logger.error(
+                "Failed to open configured local file: error_type=%s",
+                type(open_err).__name__,
+            )
+            raise OSError("Failed to open configured local file") from open_err
+
+    def _ensure_sftp(self) -> None:
+        self.connect()
+        if not self.sftp:
+            self.sftp = self.ssh_client.open_sftp()
+            self.sftp.get_channel().settimeout(self.connect_timeout)
 
     def send_file(self, local_path, remote_path):
         """
@@ -1099,37 +1215,10 @@ class Tunnel:
 
             self.logger.debug("Preparing managed SFTP upload")
 
-            if not os.path.exists(local_path):
-                err_msg = "Configured local file does not exist"
-                self.logger.error("Configured local file does not exist")
-                raise OSError(err_msg)
-            if os.path.islink(local_path) or not os.path.isfile(local_path):
-                err_msg = "Configured local path is not a regular file"
-                self.logger.error("Configured local path is not a regular file")
-                raise OSError(err_msg)
-            if not os.access(local_path, os.R_OK):
-                err_msg = "Configured local file is not readable"
-                self.logger.error("Configured local file is not readable")
-                raise PermissionError(err_msg)
-            file_size = os.path.getsize(local_path)
-            if file_size > max_transfer_bytes():
-                raise ConnectionPolicyError("Managed file transfer limit exceeded")
+            file_size = self._validate_local_upload_source(local_path)
+            descriptor = self._open_local_upload_descriptor(local_path)
 
-            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-            try:
-                descriptor = os.open(local_path, flags)
-            except OSError as open_err:
-                err_msg = "Failed to open configured local file"
-                self.logger.error(
-                    "Failed to open configured local file: error_type=%s",
-                    type(open_err).__name__,
-                )
-                raise OSError(err_msg) from open_err
-
-            self.connect()
-            if not self.sftp:
-                self.sftp = self.ssh_client.open_sftp()
-                self.sftp.get_channel().settimeout(self.connect_timeout)
+            self._ensure_sftp()
             self.logger.debug("Opening managed SFTP upload")
             with os.fdopen(descriptor, "rb") as stream:
                 descriptor = -1
@@ -1145,6 +1234,15 @@ class Tunnel:
                 self.sftp.close()
                 self.sftp = None
 
+    def _validate_download_destination(self, local_path: str) -> None:
+        if os.path.lexists(local_path) and os.path.islink(local_path):
+            raise ConnectionPolicyError("Managed download destination is unsafe")
+
+    def _check_remote_download_size(self, remote_path: str) -> None:
+        remote_info = self.sftp.stat(remote_path)
+        if remote_info.st_size > max_transfer_bytes():
+            raise ConnectionPolicyError("Managed file transfer limit exceeded")
+
     def receive_file(self, remote_path, local_path):
         """
         Receive (download) a file from the remote host.
@@ -1155,15 +1253,9 @@ class Tunnel:
         try:
             remote_path = validate_remote_path(remote_path)
             local_path = os.path.abspath(os.path.expanduser(local_path))
-            if os.path.lexists(local_path) and os.path.islink(local_path):
-                raise ConnectionPolicyError("Managed download destination is unsafe")
-            self.connect()
-            if not self.sftp:
-                self.sftp = self.ssh_client.open_sftp()
-                self.sftp.get_channel().settimeout(self.connect_timeout)
-            remote_info = self.sftp.stat(remote_path)
-            if remote_info.st_size > max_transfer_bytes():
-                raise ConnectionPolicyError("Managed file transfer limit exceeded")
+            self._validate_download_destination(local_path)
+            self._ensure_sftp()
+            self._check_remote_download_size(remote_path)
             destination_dir = os.path.dirname(local_path) or "."
             descriptor, temp_path = tempfile.mkstemp(
                 prefix=".managed-download.", dir=destination_dir
@@ -1405,69 +1497,33 @@ class Tunnel:
             raise ConnectionError("Managed SSH configuration copy failed")
         self.logger.info("Copied managed SSH configuration")
 
-    def rotate_ssh_key(self, new_key_path, key_type="ed25519"):
-        """
-        Rotate the SSH key by generating a new pair and updating authorized_keys.
-        :param new_key_path: Path for the new private key.
-        :param key_type: Type of key to generate ('rsa' or 'ed25519', default: 'rsa').
-        """
-        new_key_path = os.path.expanduser(new_key_path)
-        new_pub_path = new_key_path + ".pub"
-        if key_type not in ["rsa", "ed25519"]:
-            raise ValueError("key_type must be 'rsa' or 'ed25519'")
+    def _generate_rotated_key_pair(self, new_key_path: str, key_type: str) -> None:
+        import subprocess
 
-        if not os.path.exists(new_key_path):
-            import subprocess
+        type_args = (
+            ["-t", "rsa", "-b", "4096"] if key_type == "rsa" else ["-t", "ed25519"]
+        )
+        subprocess.run(
+            ["/usr/bin/ssh-keygen", *type_args, "-f", new_key_path, "-N", ""],
+            check=True,
+            timeout=30,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self.logger.info("Generated new managed key pair: key_type=%s", key_type)
 
-            if key_type == "rsa":
-                subprocess.run(
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "rsa",
-                        "-b",
-                        "4096",
-                        "-f",
-                        new_key_path,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                subprocess.run(
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "ed25519",
-                        "-f",
-                        new_key_path,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            self.logger.info("Generated new managed key pair: key_type=%s", key_type)
+    def _read_old_authorized_key(self):
+        if not self.identity_file:
+            return None
+        old_key_path = os.path.expanduser(self.identity_file)
+        old_pub_path = old_key_path + ".pub"
+        if not os.path.exists(old_pub_path):
+            return None
+        with open(old_pub_path) as f:
+            return f.read().strip()
 
-        with open(new_pub_path) as f:
-            new_pub = validate_public_key(f.read())
-
-        old_pub = None
-        if self.identity_file:
-            old_key_path = os.path.expanduser(self.identity_file)
-            old_pub_path = old_key_path + ".pub"
-            if os.path.exists(old_pub_path):
-                with open(old_pub_path) as f:
-                    old_pub = f.read().strip()
-
+    def _fetch_rotated_authorized_keys(self, new_pub: str, old_pub) -> str:
         self.connect()
         out, err = self.run_command("cat ~/.ssh/authorized_keys")
         auth_keys = out.splitlines()
@@ -1477,9 +1533,11 @@ class Tunnel:
             if line.strip() and (old_pub is None or line.strip() != old_pub)
         ]
         new_auth.append(new_pub)
+        return "\n".join(new_auth)
 
-        new_auth_joined = "\n".join(new_auth)
-        remote_temp = f"/tmp/.authorized_keys.{secrets.token_hex(16)}"  # nosec B108
+    def _push_authorized_keys_file(
+        self, new_auth_joined: str, remote_temp: str
+    ) -> None:
         descriptor, local_temp = tempfile.mkstemp(prefix=".authorized_keys.")
         try:
             os.fchmod(descriptor, 0o600)
@@ -1493,6 +1551,8 @@ class Tunnel:
                 os.close(descriptor)
             if os.path.exists(local_temp):
                 os.unlink(local_temp)
+
+    def _apply_rotated_authorized_keys(self, remote_temp: str) -> None:
         move_result = self.run_command(
             f"mv -- {quote_remote_path(remote_temp)} ~/.ssh/authorized_keys"
         )
@@ -1502,6 +1562,31 @@ class Tunnel:
         chmod_result = self.run_command("chmod 600 ~/.ssh/authorized_keys")
         if not chmod_result.success:
             raise ConnectionError("Managed SSH key rotation failed")
+
+    def rotate_ssh_key(self, new_key_path, key_type="ed25519"):
+        """
+        Rotate the SSH key by generating a new pair and updating authorized_keys.
+        :param new_key_path: Path for the new private key.
+        :param key_type: Type of key to generate ('rsa' or 'ed25519', default: 'rsa').
+        """
+        new_key_path = os.path.expanduser(new_key_path)
+        new_pub_path = new_key_path + ".pub"
+        if key_type not in ["rsa", "ed25519"]:
+            raise ValueError("key_type must be 'rsa' or 'ed25519'")
+
+        if not os.path.exists(new_key_path):
+            self._generate_rotated_key_pair(new_key_path, key_type)
+
+        with open(new_pub_path) as f:
+            new_pub = validate_public_key(f.read())
+
+        old_pub = self._read_old_authorized_key()
+
+        new_auth_joined = self._fetch_rotated_authorized_keys(new_pub, old_pub)
+
+        remote_temp = f"/tmp/.authorized_keys.{secrets.token_hex(16)}"  # nosec B108
+        self._push_authorized_keys_file(new_auth_joined, remote_temp)
+        self._apply_rotated_authorized_keys(remote_temp)
 
         self.identity_file = new_key_path
         self.password = None
