@@ -287,6 +287,110 @@ class TestReceiveFile:
         assert "Need rpath, lpath_prefix" in result["message"]
 
 
+class TestBulkHostFailureFailClosed:
+    """BUG-CX-034: a bulk ``tm_inventory`` action folded EVERY per-host
+    failure -- an authorization denial (``PermissionError``) exactly like a
+    transient network fault -- into the same generic ``status_code: 500``
+    with only the exception's TYPE NAME recorded, discarding the message
+    that says what was actually denied. And a worker that let an exception
+    escape instead of catching it (the ``_fan_out_parallel`` safety net) lost
+    the offending host's identity entirely, reporting ``hostname: "unknown"``.
+    These tests pin the FIXED, fail-closed behaviour: a denial is
+    distinguishable (403) from an internal fault (500), the specific message
+    survives, and a parallel-mode escape keeps its host."""
+
+    @pytest.mark.asyncio
+    async def test_permission_denied_host_is_403_not_generic_500(self, tmp_path):
+        """A per-host ``PermissionError`` (e.g. the local upload source
+        isn't readable -- ``tunnel_manager.py``'s
+        ``_validate_local_upload_source``) must surface as 403, not the same
+        500 a plain connection failure would produce, and the specific
+        message must survive -- not just ``"PermissionError"``."""
+        fn = _capture_tm_inventory()
+        local = tmp_path / "payload.bin"
+        local.write_bytes(b"hello")
+
+        with (
+            patch(
+                "tunnel_manager.mcp_server.load_inventory",
+                return_value=(MOCK_HOSTS, {}),
+            ),
+            patch("tunnel_manager.mcp_server.Tunnel") as mock_tunnel_cls,
+        ):
+            mock_tunnel = MagicMock()
+            mock_tunnel.send_file.side_effect = PermissionError(
+                "Configured local file is not readable"
+            )
+            mock_tunnel_cls.return_value = mock_tunnel
+
+            result = await _call(
+                fn, action="send_file", lpath=str(local), rpath="/remote/payload.bin"
+            )
+
+        assert result["status_code"] == 403
+        assert result["status_code"] != 500
+        joined_errors = " ".join(result["errors"])
+        assert "Configured local file is not readable" in joined_errors
+        assert "PermissionError" in joined_errors
+
+    @pytest.mark.asyncio
+    async def test_internal_fault_host_still_500(self, tmp_path):
+        """A control: a non-authorization per-host failure keeps its 500 --
+        the fix must not turn EVERY failure into a 403."""
+        fn = _capture_tm_inventory()
+        local = tmp_path / "payload.bin"
+        local.write_bytes(b"hello")
+
+        with (
+            patch(
+                "tunnel_manager.mcp_server.load_inventory",
+                return_value=(MOCK_HOSTS, {}),
+            ),
+            patch("tunnel_manager.mcp_server.Tunnel") as mock_tunnel_cls,
+        ):
+            mock_tunnel = MagicMock()
+            mock_tunnel.send_file.side_effect = ConnectionError("Connection refused")
+            mock_tunnel_cls.return_value = mock_tunnel
+
+            result = await _call(
+                fn, action="send_file", lpath=str(local), rpath="/remote/payload.bin"
+            )
+
+        assert result["status_code"] == 500
+        assert "Connection refused" in " ".join(result["errors"])
+
+    @pytest.mark.asyncio
+    async def test_parallel_worker_escape_preserves_host_and_message(self):
+        """``_fan_out_parallel``'s safety net for a worker that let an
+        exception escape (rather than being caught into its own per-host
+        dict) must keep the offending host's identity and the real message,
+        not collapse to ``hostname: "unknown"`` + a bare exception class
+        name."""
+        from tunnel_manager.mcp_server import _fan_out_parallel, _HostResults
+
+        hosts = [
+            {"hostname": "good-host"},
+            {"hostname": "bad-host"},
+        ]
+
+        async def worker(h: dict) -> dict:
+            if h["hostname"] == "bad-host":
+                raise PermissionError("not entitled to ssh host 'bad-host'")
+            return {"hostname": h["hostname"], "status": "success", "errors": []}
+
+        results = _HostResults()
+        await _fan_out_parallel(hosts, worker, None, 2, results)
+
+        assert results.status_code == 403
+        by_host = {r["hostname"]: r for r in results.results}
+        assert "bad-host" in by_host, (
+            f"offending host lost, only have: {list(by_host)}"
+        )
+        assert "not entitled to ssh host 'bad-host'" in " ".join(
+            by_host["bad-host"]["errors"]
+        )
+
+
 class TestUnknownAction:
     @pytest.mark.asyncio
     async def test_unresolvable_action_raises_before_dispatch(self):

@@ -1553,13 +1553,35 @@ def register_remote_tools(mcp: FastMCP):
         )
 
 
-def _parallel_error_result(exc: Exception, **extra: Any) -> dict:
-    """The per-host result recorded when a pooled future itself raised."""
+def _host_error_status(exc: BaseException) -> str:
+    """Classify a per-host failure so the caller can tell an authorization
+    denial (BUG-CX-034) from an ordinary fault instead of losing that
+    distinction the moment it's folded into ``errors``."""
+    return "denied" if isinstance(exc, PermissionError) else "failed"
+
+
+def _host_error_detail(exc: BaseException) -> str:
+    """The exception type AND its message -- never just the type name, which
+    on its own discards exactly the detail (e.g. *which* alias/path was
+    denied) a caller needs to act on a per-host failure (BUG-CX-034)."""
+    detail = str(exc)
+    return f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+
+
+def _parallel_error_result(
+    exc: Exception, hostname: str = "unknown", **extra: Any
+) -> dict:
+    """The per-host result recorded when a pooled future itself raised
+    (i.e. the worker let an exception escape instead of catching it into its
+    own per-host dict) -- this is the "silently swallowed" path from
+    BUG-CX-034. Preserves the offending host (when known from the submitted
+    job), the real exception message, and whether it was an authorization
+    denial rather than reducing everything to a bare exception class name."""
     return {
-        "hostname": "unknown",
-        "status": "failed",
+        "hostname": hostname,
+        "status": _host_error_status(exc),
         "message": "Parallel error",
-        "errors": [type(exc).__name__],
+        "errors": [_host_error_detail(exc)],
         **extra,
     }
 
@@ -1572,6 +1594,13 @@ class _HostResults:
     regardless of status -- which is what ``run_command``'s original loop did.
     ``error_extra(exc)`` supplies the action-specific keys of the synthetic
     result recorded for a pooled future that raised.
+
+    ``denied`` tracks whether any recorded failure was an authorization
+    denial (a per-host ``PermissionError``, surfaced by a worker as
+    ``status: "denied"``); :attr:`status_code` uses it so a bulk action
+    response is HTTP 403 when every failure was a denial and 500 only for a
+    genuine internal fault, instead of collapsing both into the same generic
+    500 (BUG-CX-034).
     """
 
     def __init__(self, on_success=None, error_extra=None, seed=None) -> None:
@@ -1579,6 +1608,7 @@ class _HostResults:
         self.files: list = []
         self.locations: list = []
         self.errors: list = []
+        self.denied = False
         self._on_success = on_success
         self._error_extra = error_extra
 
@@ -1588,11 +1618,26 @@ class _HostResults:
             self._on_success(self, result)
         else:
             self.errors.extend(result["errors"])
+        if result["status"] == "denied":
+            self.denied = True
 
-    def parallel_error(self, exc: Exception) -> None:
+    def parallel_error(self, exc: Exception, hostname: str = "unknown") -> None:
         extra = self._error_extra(exc) if self._error_extra else {}
-        self.results.append(_parallel_error_result(exc, **extra))
-        self.errors.append(type(exc).__name__)
+        result = _parallel_error_result(exc, hostname=hostname, **extra)
+        self.results.append(result)
+        self.errors.append(_host_error_detail(exc))
+        if result["status"] == "denied":
+            self.denied = True
+
+    @property
+    def status_code(self) -> int:
+        """200 when every host succeeded; 403 when every failure was an
+        authorization denial; 500 when at least one failure was a genuine
+        fault. Replaces the ``200 if not errors else 500`` shape that made a
+        denied host indistinguishable from an internal error (BUG-CX-034)."""
+        if not self.errors:
+            return 200
+        return 403 if self.denied else 500
 
 
 async def _fan_out_serial(hosts: list, worker, ctx, results: _HostResults) -> None:
@@ -1611,17 +1656,25 @@ async def _fan_out_parallel(
 
     A future that itself raised is recorded through ``results.parallel_error``
     and reports no progress -- exactly as the inline loops this replaces did.
+    The submitting host is tracked per future (BUG-CX-034) so that path no
+    longer has to fall back to reporting ``hostname: "unknown"``.
     """
     total = len(hosts)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
-        futures = [ex.submit(lambda h: asyncio.run(worker(h)), h) for h in hosts]
-        for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
+        future_hosts = {
+            ex.submit(lambda h: asyncio.run(worker(h)), h): h for h in hosts
+        }
+        for i, future in enumerate(
+            concurrent.futures.as_completed(future_hosts), 1
+        ):
             try:
                 results.record(future.result())
                 if ctx:
                     await ctx.report_progress(progress=i, total=total)
             except Exception as e:
-                results.parallel_error(e)
+                results.parallel_error(
+                    e, hostname=future_hosts[future].get("hostname", "unknown")
+                )
 
 
 async def _fan_out_over_hosts(
@@ -1660,7 +1713,7 @@ def _run_command_response(
         else f"Cmd '{cmd}' failed for some in {label}"
     )
     return ResponseBuilder.build(
-        200 if not collected.errors else 500,
+        collected.status_code,
         msg,
         {
             **target,
@@ -1777,9 +1830,9 @@ async def _tm_inventory_configure_key_auth(
             except Exception as e:
                 return {
                     "hostname": host,
-                    "status": "failed",
+                    "status": _host_error_status(e),
                     "message": "Setup fail",
-                    "errors": [type(e).__name__],
+                    "errors": [_host_error_detail(e)],
                 }
             finally:
                 if "t" in locals():
@@ -1799,7 +1852,7 @@ async def _tm_inventory_configure_key_auth(
             else f"SSH setup failed for some in {group}"
         )
         return ResponseBuilder.build(
-            200 if not collected.errors else 500,
+            collected.status_code,
             msg,
             {
                 "inventory": inventory,
@@ -1956,11 +2009,11 @@ async def _tm_inventory_run_command(
             except Exception as e:
                 return {
                     "hostname": host,
-                    "status": "failed",
+                    "status": _host_error_status(e),
                     "message": "Cmd fail",
                     "stdout": "",
-                    "stderr": type(e).__name__,
-                    "errors": [type(e).__name__],
+                    "stderr": _host_error_detail(e),
+                    "errors": [_host_error_detail(e)],
                 }
             finally:
                 if "t" in locals():
@@ -2049,9 +2102,9 @@ async def _tm_inventory_copy_ssh_config(
             except Exception as e:
                 return {
                     "hostname": h["hostname"],
-                    "status": "failed",
+                    "status": _host_error_status(e),
                     "message": "Copy fail",
-                    "errors": [type(e).__name__],
+                    "errors": [_host_error_detail(e)],
                 }
             finally:
                 if "t" in locals():
@@ -2071,7 +2124,7 @@ async def _tm_inventory_copy_ssh_config(
             else f"Copy failed for some in {group}"
         )
         return ResponseBuilder.build(
-            200 if not collected.errors else 500,
+            collected.status_code,
             msg,
             {
                 "inventory": inventory,
@@ -2159,9 +2212,9 @@ async def _tm_inventory_rotate_key(
             except Exception as e:
                 return {
                     "hostname": h["hostname"],
-                    "status": "failed",
+                    "status": _host_error_status(e),
                     "message": "Rotate fail",
-                    "errors": [type(e).__name__],
+                    "errors": [_host_error_detail(e)],
                     "new_key_path": _key,
                 }
             finally:
@@ -2184,7 +2237,7 @@ async def _tm_inventory_rotate_key(
             else f"Rotate failed for some in {group}"
         )
         return ResponseBuilder.build(
-            200 if not collected.errors else 500,
+            collected.status_code,
             msg,
             {
                 "inventory": inventory,
@@ -2269,9 +2322,9 @@ async def _tm_inventory_send_file(
             except Exception as e:
                 return {
                     "hostname": host,
-                    "status": "failed",
+                    "status": _host_error_status(e),
                     "message": "Upload fail",
-                    "errors": [type(e).__name__],
+                    "errors": [_host_error_detail(e)],
                 }
             finally:
                 if "t" in locals():
@@ -2290,7 +2343,7 @@ async def _tm_inventory_send_file(
             else f"Upload failed for some in {group}"
         )
         return ResponseBuilder.build(
-            200 if not collected.errors else 500,
+            collected.status_code,
             msg,
             {
                 "inventory": inventory,
@@ -2381,9 +2434,9 @@ async def _tm_inventory_receive_file(
             except Exception as e:
                 return {
                     "hostname": host,
-                    "status": "failed",
+                    "status": _host_error_status(e),
                     "message": "Download fail",
-                    "errors": [type(e).__name__],
+                    "errors": [_host_error_detail(e)],
                     "local_path": _lpath,
                 }
             finally:
@@ -2406,7 +2459,7 @@ async def _tm_inventory_receive_file(
             else f"Download failed for some in {group}"
         )
         return ResponseBuilder.build(
-            200 if not collected.errors else 500,
+            collected.status_code,
             msg,
             {
                 "inventory": inventory,
