@@ -92,6 +92,11 @@ def test_doctor_rejects_empty_legacy_password_environment(monkeypatch, tmp_path)
 
 
 def test_active_mcp_tool_schemas_do_not_accept_literal_passwords():
+    # BUG-CX-027/031/044: this used to also check the tunnel_manager/mcp/
+    # package's mirror registrars. That package was deleted (test-only
+    # import, never wired into the live tunnel-manager-mcp entry point --
+    # see the lane report for the byte-identical before/after live tool-
+    # surface proof); only the live registrars remain to check.
     mcp_server = import_module("tunnel_manager.mcp_server")
 
     registrars = (
@@ -100,11 +105,6 @@ def test_active_mcp_tool_schemas_do_not_accept_literal_passwords():
         mcp_server.register_system_tools,
         mcp_server.register_file_tools,
         mcp_server.register_security_tools,
-        import_module("tunnel_manager.mcp.mcp_host").register_host_tools,
-        import_module("tunnel_manager.mcp.mcp_remote").register_remote_tools,
-        import_module("tunnel_manager.mcp.mcp_system").register_system_tools,
-        import_module("tunnel_manager.mcp.mcp_file").register_file_tools,
-        import_module("tunnel_manager.mcp.mcp_security").register_security_tools,
     )
     for registrar in registrars:
         captured = []
