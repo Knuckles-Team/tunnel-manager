@@ -961,12 +961,21 @@ async def _tm_remote_test_key_auth(
         )
     try:
         conf, final_cfg = _resolve_host(
-            host_alias=host, user=user, port=port, ssh_config_file=cfg
+            host_alias=host,
+            user=user,
+            port=port,
+            identity_file=id_file,
+            certificate_file=certificate,
+            proxy_command=proxy,
+            ssh_config_file=cfg,
         )
         t = Tunnel(
             remote_host=conf["hostname"],
             username=conf["user"],
             port=conf["port"],
+            identity_file=conf["identity_file"],
+            certificate_file=conf.get("certificate_file"),
+            proxy_command=conf.get("proxy_command"),
             known_hosts_file=conf.get("known_hosts_file"),
             ssh_config_file=final_cfg,
         )
@@ -988,6 +997,9 @@ async def _tm_remote_test_key_auth(
         return ResponseBuilder.build(
             500, "Key test fail", {"host": host, "key": _key}, type(e).__name__
         )
+    finally:
+        if "t" in locals():
+            await run_blocking(t.close)
 
 
 def _validate_passwordless_request(
@@ -1067,6 +1079,9 @@ async def _tm_remote_setup_passwordless(
             user=user,
             password=password,
             port=port,
+            identity_file=id_file,
+            certificate_file=certificate,
+            proxy_command=proxy,
             ssh_config_file=cfg,
         )
         t = Tunnel(
@@ -1074,6 +1089,9 @@ async def _tm_remote_setup_passwordless(
             username=conf["user"],
             password=conf["password"],
             port=conf["port"],
+            identity_file=conf["identity_file"],
+            certificate_file=conf.get("certificate_file"),
+            proxy_command=conf.get("proxy_command"),
             known_hosts_file=conf.get("known_hosts_file"),
             ssh_config_file=final_cfg,
         )

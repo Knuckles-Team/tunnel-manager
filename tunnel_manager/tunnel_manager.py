@@ -284,7 +284,9 @@ def _legacy_flat_all_hosts(inventory_data: dict, logger: logging.Logger) -> list
     return hosts
 
 
-def _legacy_grouped_hosts(inventory_data: dict, group: str, logger: logging.Logger) -> list[dict]:
+def _legacy_grouped_hosts(
+    inventory_data: dict, group: str, logger: logging.Logger
+) -> list[dict]:
     """Legacy style with ``group`` as a top-level key containing a ``hosts`` mapping."""
 
     hosts: list[dict] = []
@@ -403,6 +405,217 @@ def default_inventory_path() -> str:
     return yml
 
 
+def _ansible_all_host_entry(alias: str, hvars: dict, all_vars: dict) -> dict:
+    """Build one host entry from the ``all.hosts`` level of an Ansible-style
+    inventory."""
+    if not hvars:
+        hvars = {}
+    return {
+        "hostname": hvars.get("ansible_host", alias),
+        "user": hvars.get("ansible_user") or all_vars.get("ansible_user", ""),
+        "password_ref": _password_ref(hvars, all_vars),
+        "known_hosts_file": _known_hosts_file(hvars, all_vars),
+        "port": int(hvars.get("ansible_port") or all_vars.get("ansible_port") or 22),
+        "identity_file": hvars.get("ansible_ssh_private_key_file")
+        or all_vars.get("ansible_ssh_private_key_file"),
+        "proxy_command": hvars.get("ansible_ssh_common_args")
+        or all_vars.get("ansible_ssh_common_args"),
+        "key_path": hvars.get("key_path")
+        or all_vars.get("key_path")
+        or hvars.get("ansible_ssh_private_key_file")
+        or all_vars.get("ansible_ssh_private_key_file"),
+    }
+
+
+def _flatten_ansible_all_group_hosts(all_hosts: dict, all_vars: dict) -> dict:
+    """Flatten the ``all.hosts`` entries of an Ansible-style inventory."""
+    return {
+        alias: _ansible_all_host_entry(alias, hvars, all_vars)
+        for alias, hvars in all_hosts.items()
+    }
+
+
+def _ansible_child_host_field(
+    hvars: dict, g_vars: dict, all_vars: dict, key: str, default=None
+):
+    """Resolve one field with the standard host > group > all precedence."""
+    return hvars.get(key) or g_vars.get(key) or all_vars.get(key, default)
+
+
+def _ansible_child_host_entry(
+    alias: str, hvars: dict, g_vars: dict, all_vars: dict
+) -> dict:
+    """Build one host entry from an Ansible-style inventory child group."""
+    if not hvars:
+        hvars = {}
+    port = _ansible_child_host_field(hvars, g_vars, all_vars, "ansible_port", 22)
+    key_path = (
+        hvars.get("key_path")
+        or g_vars.get("key_path")
+        or hvars.get("ansible_ssh_private_key_file")
+        or g_vars.get("ansible_ssh_private_key_file")
+    )
+    return {
+        "hostname": hvars.get("ansible_host", alias),
+        "user": _ansible_child_host_field(hvars, g_vars, all_vars, "ansible_user", ""),
+        "password_ref": _password_ref(hvars, g_vars, all_vars),
+        "known_hosts_file": _known_hosts_file(hvars, g_vars, all_vars),
+        "port": int(port) if port else 22,
+        "identity_file": _ansible_child_host_field(
+            hvars, g_vars, all_vars, "ansible_ssh_private_key_file"
+        ),
+        "proxy_command": _ansible_child_host_field(
+            hvars, g_vars, all_vars, "ansible_ssh_common_args"
+        ),
+        "key_path": key_path,
+    }
+
+
+def _flatten_ansible_child_group(group_data, all_vars: dict) -> dict:
+    """Flatten one Ansible-style inventory child group's hosts."""
+    if not isinstance(group_data, dict):
+        return {}
+    g_hosts = group_data.get("hosts", {}) or {}
+    g_vars = group_data.get("vars", {}) or {}
+    return {
+        alias: _ansible_child_host_entry(alias, hvars, g_vars, all_vars)
+        for alias, hvars in g_hosts.items()
+    }
+
+
+def _flatten_ansible_style_hosts(all_group: dict) -> dict:
+    """Flatten an Ansible-style ``all:`` group (top-level hosts + children)
+    into the alias-keyed host dict ``HostManager`` stores internally."""
+    children = all_group.get("children", {})
+    all_hosts = all_group.get("hosts", {}) or {}
+    all_vars = all_group.get("vars", {}) or {}
+
+    flattened = _flatten_ansible_all_group_hosts(all_hosts, all_vars)
+    for group_data in children.values():
+        flattened.update(_flatten_ansible_child_group(group_data, all_vars))
+    return flattened
+
+
+def _normalize_legacy_style_hosts(raw: dict) -> dict:
+    """Strip plaintext password fields from a legacy (non-Ansible) inventory
+    dict, in place, and return it."""
+    for entry in raw.values():
+        if isinstance(entry, dict):
+            password_ref = _password_ref(entry)
+            if password_ref:
+                entry["password_ref"] = password_ref
+            else:
+                entry.pop("password_ref", None)
+            entry.pop("password", None)
+            entry.pop("ansible_ssh_pass", None)
+    return raw
+
+
+def _load_existing_ansible_raw(config_file: str) -> dict:
+    """Load an existing Ansible-style inventory file, or seed a fresh skeleton."""
+    existing_raw = {}
+    if os.path.exists(config_file):
+        try:
+            with open(config_file) as f:
+                existing_raw = yaml.safe_load(f) or {}
+        except Exception as exc:
+            raise RuntimeError("refusing to overwrite an unreadable inventory") from exc
+
+    if "all" not in existing_raw:
+        existing_raw = {"all": {"children": {"managed": {"hosts": {}, "vars": {}}}}}
+    return existing_raw
+
+
+def _reject_plaintext_password(entry: dict) -> None:
+    """Raise if ``entry`` carries a plaintext password field."""
+    if "password" in entry or "ansible_ssh_pass" in entry:
+        raise ValueError(
+            "plaintext inventory passwords are unsupported; configure password_ref"
+        )
+
+
+def _set_host_var_if_diverges(
+    host_vars: dict, key: str, value, g_vars: dict, default=None
+) -> None:
+    """Set ``host_vars[key] = value`` only when it differs from the group's
+    own (possibly defaulted) value for ``key`` -- keeps a per-host override
+    out of the file unless it actually overrides the group."""
+    if value and value != g_vars.get(key, default):
+        host_vars[key] = value
+
+
+def _apply_ansible_password_ref(host_vars: dict, password_ref) -> None:
+    """Overlay a resolved ``password_ref`` onto ``host_vars``, clearing any
+    plaintext password fields regardless."""
+    host_vars.pop("ansible_ssh_pass", None)
+    host_vars.pop("password", None)
+    if password_ref:
+        host_vars["ansible_ssh_pass_ref"] = password_ref
+    else:
+        host_vars.pop("ansible_ssh_pass_ref", None)
+        host_vars.pop("password_ref", None)
+
+
+def _apply_ansible_host_vars(
+    host_vars: dict, alias: str, entry: dict, g_vars: dict
+) -> None:
+    """Overlay one resolved host's fields onto its Ansible-style ``host_vars``."""
+    host_vars["ansible_host"] = entry.get("hostname", alias)
+    _set_host_var_if_diverges(host_vars, "ansible_user", entry.get("user"), g_vars)
+    _apply_ansible_password_ref(host_vars, entry.get("password_ref"))
+    _set_host_var_if_diverges(
+        host_vars, "ansible_port", entry.get("port", 22), g_vars, default=22
+    )
+    identity_file = entry.get("identity_file") or entry.get("key_path")
+    _set_host_var_if_diverges(
+        host_vars, "ansible_ssh_private_key_file", identity_file, g_vars
+    )
+    _set_host_var_if_diverges(
+        host_vars,
+        "ansible_ssh_known_hosts_file",
+        entry.get("known_hosts_file"),
+        g_vars,
+    )
+
+
+def _merge_host_into_ansible_group(
+    alias: str, entry: dict, g_hosts: dict, g_vars: dict
+) -> None:
+    """Merge one host's config into an Ansible-style group's ``hosts``/``vars``."""
+    _reject_plaintext_password(entry)
+
+    host_vars = g_hosts.setdefault(alias, {})
+    if not isinstance(host_vars, dict):
+        host_vars = {}
+        g_hosts[alias] = host_vars
+
+    _apply_ansible_host_vars(host_vars, alias, entry, g_vars)
+
+
+def _prune_removed_ansible_hosts(g_hosts: dict, hosts: dict) -> None:
+    """Delete aliases from ``g_hosts`` that ``HostManager`` no longer tracks.
+
+    ``load_inventory()`` flattens every group into ``self.hosts``, so any
+    alias absent from ``hosts`` was deliberately removed via ``remove_host()``.
+    """
+    for alias in list(g_hosts.keys()):
+        if alias not in hosts:
+            del g_hosts[alias]
+
+
+def _clean_flat_hosts(hosts: dict) -> dict:
+    """Copy a flat (non-Ansible) host dict, rejecting plaintext passwords."""
+    clean_hosts = {}
+    for alias, entry in hosts.items():
+        clean = dict(entry)
+        if "password" in clean or "ansible_ssh_pass" in clean:
+            raise ValueError(
+                "plaintext inventory passwords are unsupported; configure password_ref"
+            )
+        clean_hosts[alias] = clean
+    return clean_hosts
+
+
 class HostManager:
     def __init__(self, config_file: str = None):
         if config_file:
@@ -416,119 +629,27 @@ class HostManager:
         self.load_inventory()
 
     def load_inventory(self):
-        if os.path.exists(self.config_file):
-            try:
-                with open(self.config_file) as f:
-                    raw = yaml.safe_load(f) or {}
-
-                # Check if it's an Ansible-style inventory
-                if "all" in raw and isinstance(raw["all"], dict):
-                    flattened = {}
-                    all_group = raw["all"]
-                    children = all_group.get("children", {})
-                    all_hosts = all_group.get("hosts", {}) or {}
-                    all_vars = all_group.get("vars", {}) or {}
-
-                    # Parse hosts at 'all' level
-                    for alias, hvars in all_hosts.items():
-                        if not hvars:
-                            hvars = {}
-                        entry = {
-                            "hostname": hvars.get("ansible_host", alias),
-                            "user": hvars.get("ansible_user")
-                            or all_vars.get("ansible_user", ""),
-                            "password_ref": _password_ref(hvars, all_vars),
-                            "known_hosts_file": _known_hosts_file(hvars, all_vars),
-                            "port": int(
-                                hvars.get("ansible_port")
-                                or all_vars.get("ansible_port")
-                                or 22
-                            ),
-                            "identity_file": hvars.get("ansible_ssh_private_key_file")
-                            or all_vars.get("ansible_ssh_private_key_file"),
-                            "proxy_command": hvars.get("ansible_ssh_common_args")
-                            or all_vars.get("ansible_ssh_common_args"),
-                            "key_path": hvars.get("key_path")
-                            or all_vars.get("key_path")
-                            or hvars.get("ansible_ssh_private_key_file")
-                            or all_vars.get("ansible_ssh_private_key_file"),
-                        }
-                        flattened[alias] = entry
-
-                    # Parse children groups
-                    for group_data in children.values():
-                        if not isinstance(group_data, dict):
-                            continue
-                        g_hosts = group_data.get("hosts", {}) or {}
-                        g_vars = group_data.get("vars", {}) or {}
-
-                        for alias, hvars in g_hosts.items():
-                            if not hvars:
-                                hvars = {}
-
-                            user = (
-                                hvars.get("ansible_user")
-                                or g_vars.get("ansible_user")
-                                or all_vars.get("ansible_user", "")
-                            )
-                            password_ref = _password_ref(hvars, g_vars, all_vars)
-                            port = (
-                                hvars.get("ansible_port")
-                                or g_vars.get("ansible_port")
-                                or all_vars.get("ansible_port", 22)
-                            )
-                            identity_file = (
-                                hvars.get("ansible_ssh_private_key_file")
-                                or g_vars.get("ansible_ssh_private_key_file")
-                                or all_vars.get("ansible_ssh_private_key_file")
-                            )
-                            proxy_command = (
-                                hvars.get("ansible_ssh_common_args")
-                                or g_vars.get("ansible_ssh_common_args")
-                                or all_vars.get("ansible_ssh_common_args")
-                            )
-                            key_path = (
-                                hvars.get("key_path")
-                                or g_vars.get("key_path")
-                                or hvars.get("ansible_ssh_private_key_file")
-                                or g_vars.get("ansible_ssh_private_key_file")
-                            )
-
-                            entry = {
-                                "hostname": hvars.get("ansible_host", alias),
-                                "user": user,
-                                "password_ref": password_ref,
-                                "known_hosts_file": _known_hosts_file(
-                                    hvars, g_vars, all_vars
-                                ),
-                                "port": int(port) if port else 22,
-                                "identity_file": identity_file,
-                                "proxy_command": proxy_command,
-                                "key_path": key_path,
-                            }
-                            flattened[alias] = entry
-                    self.hosts = flattened
-                else:
-                    for entry in raw.values():
-                        if isinstance(entry, dict):
-                            password_ref = _password_ref(entry)
-                            if password_ref:
-                                entry["password_ref"] = password_ref
-                            else:
-                                entry.pop("password_ref", None)
-                            entry.pop("password", None)
-                            entry.pop("ansible_ssh_pass", None)
-                    self.hosts = raw
-                self._inventory_load_failed = False
-                self.logger.info("Loaded configured inventory")
-            except Exception:
-                self.logger.error("Failed to load inventory")
-                self.hosts = {}
-                self._inventory_load_failed = True
-        else:
+        if not os.path.exists(self.config_file):
             self.logger.info("No configured inventory found; starting empty")
             self.hosts = {}
             self._inventory_load_failed = False
+            return
+
+        try:
+            with open(self.config_file) as f:
+                raw = yaml.safe_load(f) or {}
+
+            # Check if it's an Ansible-style inventory
+            if "all" in raw and isinstance(raw["all"], dict):
+                self.hosts = _flatten_ansible_style_hosts(raw["all"])
+            else:
+                self.hosts = _normalize_legacy_style_hosts(raw)
+            self._inventory_load_failed = False
+            self.logger.info("Loaded configured inventory")
+        except Exception:
+            self.logger.error("Failed to load inventory")
+            self.hosts = {}
+            self._inventory_load_failed = True
 
     def save_inventory(self):
         try:
@@ -540,91 +661,34 @@ class HostManager:
             if self.config_file.endswith("inventory.yaml") or self.config_file.endswith(
                 "inventory.yml"
             ):
-                existing_raw = {}
-                if os.path.exists(self.config_file):
-                    try:
-                        with open(self.config_file) as f:
-                            existing_raw = yaml.safe_load(f) or {}
-                    except Exception as exc:
-                        raise RuntimeError(
-                            "refusing to overwrite an unreadable inventory"
-                        ) from exc
-
-                if "all" not in existing_raw:
-                    existing_raw = {
-                        "all": {"children": {"managed": {"hosts": {}, "vars": {}}}}
-                    }
-
-                group_name = "managed"
-                children = existing_raw["all"].setdefault("children", {})
-                group_data = children.setdefault(group_name, {"hosts": {}, "vars": {}})
-                g_hosts = group_data.setdefault("hosts", {})
-                g_vars = group_data.setdefault("vars", {})
-
-                for alias, entry in self.hosts.items():
-                    if isinstance(entry, dict):
-                        hostname = entry.get("hostname", alias)
-                        user = entry.get("user")
-                        password_ref = entry.get("password_ref")
-                        if "password" in entry or "ansible_ssh_pass" in entry:
-                            raise ValueError(
-                                "plaintext inventory passwords are unsupported; configure password_ref"
-                            )
-                        port = entry.get("port", 22)
-                        identity_file = entry.get("identity_file") or entry.get(
-                            "key_path"
-                        )
-                        known_hosts_file = entry.get("known_hosts_file")
-
-                        host_vars = g_hosts.setdefault(alias, {})
-                        if not isinstance(host_vars, dict):
-                            host_vars = {}
-                            g_hosts[alias] = host_vars
-
-                        host_vars["ansible_host"] = hostname
-                        if user and user != g_vars.get("ansible_user"):
-                            host_vars["ansible_user"] = user
-                        host_vars.pop("ansible_ssh_pass", None)
-                        host_vars.pop("password", None)
-                        if password_ref:
-                            host_vars["ansible_ssh_pass_ref"] = password_ref
-                        else:
-                            host_vars.pop("ansible_ssh_pass_ref", None)
-                            host_vars.pop("password_ref", None)
-                        if port and port != g_vars.get("ansible_port", 22):
-                            host_vars["ansible_port"] = port
-                        if identity_file and identity_file != g_vars.get(
-                            "ansible_ssh_private_key_file"
-                        ):
-                            host_vars["ansible_ssh_private_key_file"] = identity_file
-                        if known_hosts_file and known_hosts_file != g_vars.get(
-                            "ansible_ssh_known_hosts_file"
-                        ):
-                            host_vars["ansible_ssh_known_hosts_file"] = known_hosts_file
-
-                # Prune hosts the manager no longer knows about so remove_host()
-                # actually deletes them from the file (the merge above only adds /
-                # updates). load_inventory() flattens every group into self.hosts,
-                # so any alias absent from self.hosts was deliberately removed.
-                for alias in list(g_hosts.keys()):
-                    if alias not in self.hosts:
-                        del g_hosts[alias]
-
-                _atomic_private_yaml(self.config_file, existing_raw)
+                self._save_ansible_style_inventory()
             else:
-                clean_hosts = {}
-                for alias, entry in self.hosts.items():
-                    clean = dict(entry)
-                    if "password" in clean or "ansible_ssh_pass" in clean:
-                        raise ValueError(
-                            "plaintext inventory passwords are unsupported; configure password_ref"
-                        )
-                    clean_hosts[alias] = clean
-                _atomic_private_yaml(self.config_file, clean_hosts)
+                _atomic_private_yaml(self.config_file, _clean_flat_hosts(self.hosts))
             self.logger.info("Saved configured inventory")
         except Exception:
             self.logger.error("Failed to save inventory")
             raise RuntimeError("failed to save configured inventory") from None
+
+    def _save_ansible_style_inventory(self):
+        existing_raw = _load_existing_ansible_raw(self.config_file)
+
+        group_name = "managed"
+        children = existing_raw["all"].setdefault("children", {})
+        group_data = children.setdefault(group_name, {"hosts": {}, "vars": {}})
+        g_hosts = group_data.setdefault("hosts", {})
+        g_vars = group_data.setdefault("vars", {})
+
+        for alias, entry in self.hosts.items():
+            if isinstance(entry, dict):
+                _merge_host_into_ansible_group(alias, entry, g_hosts, g_vars)
+
+        # Prune hosts the manager no longer knows about so remove_host()
+        # actually deletes them from the file (the merge above only adds /
+        # updates). load_inventory() flattens every group into self.hosts,
+        # so any alias absent from self.hosts was deliberately removed.
+        _prune_removed_ansible_hosts(g_hosts, self.hosts)
+
+        _atomic_private_yaml(self.config_file, existing_raw)
 
     def add_host(
         self,
@@ -726,6 +790,23 @@ class HostManager:
         return HostConfig(**data)
 
 
+def _resolve_tunnel_connection_fields(config: HostConfig | None, legacy: dict) -> dict:
+    """Resolve Tunnel.__init__'s raw connection fields from either a
+    ``HostConfig`` or the legacy individual kwargs (as ``legacy``)."""
+    if config:
+        return {
+            "remote_host": config.hostname,
+            "username": config.user,
+            "password": config.resolved_password(),
+            "port": config.port,
+            "identity_file": config.identity_file or config.key_path,
+            "proxy_command": config.proxy_command,
+            "certificate_file": config.extra_config.get("certificate_file"),
+            "known_hosts_file": config.known_hosts_file,
+        }
+    return legacy
+
+
 class Tunnel:
     def __init__(
         self,
@@ -752,24 +833,27 @@ class Tunnel:
         :param config: HostConfig object containing connection details.
         :param ssh_config_file: Optional path to a custom SSH config file (defaults to ~/.ssh/config).
         """
-        if config:
-            self.remote_host = config.hostname
-            self.username = config.user
-            self.password = config.resolved_password()
-            self.port = config.port
-            self.identity_file = config.identity_file or config.key_path
-            self.proxy_command = config.proxy_command
-            self.certificate_file = config.extra_config.get("certificate_file")
-            self.known_hosts_file = config.known_hosts_file
-        else:
-            self.remote_host = remote_host
-            self.username = username
-            self.password = password
-            self.port = port
-            self.identity_file = identity_file
-            self.proxy_command = proxy_command
-            self.certificate_file = certificate_file
-            self.known_hosts_file = known_hosts_file
+        fields = _resolve_tunnel_connection_fields(
+            config,
+            {
+                "remote_host": remote_host,
+                "username": username,
+                "password": password,
+                "port": port,
+                "identity_file": identity_file,
+                "proxy_command": proxy_command,
+                "certificate_file": certificate_file,
+                "known_hosts_file": known_hosts_file,
+            },
+        )
+        self.remote_host = fields["remote_host"]
+        self.username = fields["username"]
+        self.password = fields["password"]
+        self.port = fields["port"]
+        self.identity_file = fields["identity_file"]
+        self.proxy_command = fields["proxy_command"]
+        self.certificate_file = fields["certificate_file"]
+        self.known_hosts_file = fields["known_hosts_file"]
 
         self.known_hosts_file = self.known_hosts_file or setting("TUNNEL_KNOWN_HOSTS")
 
@@ -783,6 +867,27 @@ class Tunnel:
         # Connection hardening tunables (stability fixes for flaky SSH).
         # Bounded timeouts prevent indefinite hangs; a small retry/backoff
         # absorbs transient auth/banner failures on otherwise-reachable hosts.
+        self._init_timeouts_and_retries(
+            connect_timeout,
+            banner_timeout,
+            auth_timeout,
+            keepalive_interval,
+            connect_retries,
+            retry_backoff,
+        )
+
+        self.ssh_config = self._load_ssh_config(ssh_config_file)
+        self._apply_ssh_config_lookup_and_validate()
+
+    def _init_timeouts_and_retries(
+        self,
+        connect_timeout,
+        banner_timeout,
+        auth_timeout,
+        keepalive_interval,
+        connect_retries,
+        retry_backoff,
+    ) -> None:
         self.connect_timeout = validate_timeout(
             connect_timeout, default=10, maximum=300
         )
@@ -798,14 +903,17 @@ class Tunnel:
             raise ConnectionPolicyError("Invalid SSH retry configuration")
         self.retry_backoff = float(retry_backoff)
 
-        self.ssh_config = paramiko.SSHConfig()
+    def _load_ssh_config(self, ssh_config_file: str) -> paramiko.SSHConfig:
+        ssh_config = paramiko.SSHConfig()
         if os.path.exists(ssh_config_file) and os.path.isfile(ssh_config_file):
             with open(ssh_config_file) as f:
-                self.ssh_config.parse(f)
+                ssh_config.parse(f)
             self.logger.info("Loaded configured SSH client settings")
         else:
             self.logger.warning("Configured SSH client settings were not found")
+        return ssh_config
 
+    def _apply_ssh_config_lookup_and_validate(self) -> None:
         host_config_ssh = self.ssh_config.lookup(self.remote_host) or {}
 
         self.username = self.username or host_config_ssh.get("user")
@@ -828,27 +936,23 @@ class Tunnel:
                 "Will attempt authentication using local SSH Agent and default keys."
             )
 
-    def connect(self, timeout=None):
-        if (
+    def _transport_is_active(self) -> bool:
+        return bool(
             self.ssh_client
             and self.ssh_client.get_transport()
             and self.ssh_client.get_transport().is_active()
-        ):
-            return
-
-        connect_timeout = validate_timeout(
-            timeout, default=self.connect_timeout, maximum=300
         )
 
-        self.ssh_client = paramiko.SSHClient()
-        self.ssh_client.load_system_host_keys()
+    def _prepare_ssh_client(self) -> paramiko.SSHClient:
+        ssh_client = paramiko.SSHClient()
+        ssh_client.load_system_host_keys()
         if self.known_hosts_file:
-            self.ssh_client.load_host_keys(
-                validated_known_hosts_path(self.known_hosts_file)
-            )
-        self.ssh_client.set_missing_host_key_policy(paramiko.RejectPolicy())
+            ssh_client.load_host_keys(validated_known_hosts_path(self.known_hosts_file))
+        ssh_client.set_missing_host_key_policy(paramiko.RejectPolicy())
+        return ssh_client
 
-        # 1. Path Expansion & Normalization (Linux & Windows)
+    def _resolve_connect_paths(self):
+        """Return ``(expanded_identity, expanded_cert)`` for this connection."""
         expanded_identity = None
         if self.identity_file:
             expanded_identity = validate_identity_path(self.identity_file)
@@ -858,43 +962,44 @@ class Tunnel:
         if self.certificate_file:
             expanded_cert = os.path.abspath(os.path.expanduser(self.certificate_file))
             self.logger.info("Resolved configured SSH certificate")
+        return expanded_identity, expanded_cert
 
-        # 2. Proxy Command Token Expansion & Platform Resolution (Linux & Windows)
-        proxy = None
-        if self.proxy_command:
-            proxy_argv = proxy_command_argv(
-                self.proxy_command,
-                hostname=self.remote_host,
-                port=self.port,
-                username=self.username or "",
-            )
-            proxy = paramiko.ProxyCommand(proxy_command_string(proxy_argv))
-            self.logger.info("Using an allowlisted SSH proxy executable")
+    def _build_proxy(self):
+        if not self.proxy_command:
+            return None
+        proxy_argv = proxy_command_argv(
+            self.proxy_command,
+            hostname=self.remote_host,
+            port=self.port,
+            username=self.username or "",
+        )
+        proxy = paramiko.ProxyCommand(proxy_command_string(proxy_argv))
+        self.logger.info("Using an allowlisted SSH proxy executable")
+        return proxy
 
-        private_key = None
-        if expanded_identity:
+    def _load_private_key(self, expanded_identity, expanded_cert):
+        if not expanded_identity:
+            return None
+        try:
+            private_key = paramiko.Ed25519Key.from_private_key_file(expanded_identity)
+            self.logger.info("Loaded configured ED25519 identity")
+        except paramiko.ssh_exception.SSHException:
             try:
-                private_key = paramiko.Ed25519Key.from_private_key_file(
-                    expanded_identity
-                )
-                self.logger.info("Loaded configured ED25519 identity")
-            except paramiko.ssh_exception.SSHException:
-                try:
-                    private_key = paramiko.RSAKey.from_private_key_file(
-                        expanded_identity
-                    )
-                    self.logger.info("Loaded configured RSA identity")
-                except (OSError, paramiko.ssh_exception.SSHException) as exc:
-                    raise ConnectionPolicyError(
-                        "Configured SSH identity could not be loaded"
-                    ) from exc
+                private_key = paramiko.RSAKey.from_private_key_file(expanded_identity)
+                self.logger.info("Loaded configured RSA identity")
+            except (OSError, paramiko.ssh_exception.SSHException) as exc:
+                raise ConnectionPolicyError(
+                    "Configured SSH identity could not be loaded"
+                ) from exc
 
-            if expanded_cert:
-                private_key.load_certificate(expanded_cert)
-                self.logger.info("Loaded configured SSH certificate")
+        if expanded_cert:
+            private_key.load_certificate(expanded_cert)
+            self.logger.info("Loaded configured SSH certificate")
+        return private_key
 
-        # 3. Connection with bounded timeouts + retry/backoff. SSH Agent and
-        # default key discovery stay enabled for zero-burden RSA fallback.
+    def _attempt_connect_with_retries(
+        self, connect_timeout, private_key, proxy
+    ) -> None:
         last_exc = None
         for attempt in range(1, self.connect_retries + 1):
             try:
@@ -935,6 +1040,104 @@ class Tunnel:
         )
         raise ConnectionError("SSH connection failed") from None
 
+    def connect(self, timeout=None):
+        if self._transport_is_active():
+            return
+
+        connect_timeout = validate_timeout(
+            timeout, default=self.connect_timeout, maximum=300
+        )
+
+        self.ssh_client = self._prepare_ssh_client()
+
+        # 1. Path Expansion & Normalization (Linux & Windows)
+        expanded_identity, expanded_cert = self._resolve_connect_paths()
+
+        # 2. Proxy Command Token Expansion & Platform Resolution (Linux & Windows)
+        proxy = self._build_proxy()
+
+        private_key = self._load_private_key(expanded_identity, expanded_cert)
+
+        # 3. Connection with bounded timeouts + retry/backoff. SSH Agent and
+        # default key discovery stay enabled for zero-burden RSA fallback.
+        self._attempt_connect_with_retries(connect_timeout, private_key, proxy)
+
+    def _drain_channel_stdout(self, channel, out_buffer, err_buffer, output_limit):
+        while channel.recv_ready():
+            remaining = output_limit - len(out_buffer) - len(err_buffer)
+            chunk = channel.recv(min(65_536, max(1, remaining + 1)))
+            out_buffer.extend(chunk)
+            if len(out_buffer) + len(err_buffer) > output_limit:
+                channel.close()
+                raise ConnectionPolicyError("Managed command output limit exceeded")
+
+    def _drain_channel_stderr(self, channel, out_buffer, err_buffer, output_limit):
+        while channel.recv_stderr_ready():
+            remaining = output_limit - len(out_buffer) - len(err_buffer)
+            chunk = channel.recv_stderr(min(65_536, max(1, remaining + 1)))
+            err_buffer.extend(chunk)
+            if len(out_buffer) + len(err_buffer) > output_limit:
+                channel.close()
+                raise ConnectionPolicyError("Managed command output limit exceeded")
+
+    def _drain_channel_output(self, channel, output_limit, command_timeout):
+        """Concurrently drain stdout/stderr from a real paramiko.Channel with a
+        combined output-size cap and a wall-clock deadline."""
+        out_buffer = bytearray()
+        err_buffer = bytearray()
+        deadline = time.monotonic() + command_timeout
+        while True:
+            self._drain_channel_stdout(channel, out_buffer, err_buffer, output_limit)
+            self._drain_channel_stderr(channel, out_buffer, err_buffer, output_limit)
+            if (
+                channel.exit_status_ready()
+                and not channel.recv_ready()
+                and not channel.recv_stderr_ready()
+            ):
+                break
+            if time.monotonic() >= deadline:
+                channel.close()
+                raise TimeoutError("Managed command timed out")
+            time.sleep(0.01)
+        return out_buffer, err_buffer
+
+    def _read_fake_client_output(self, stdout, stderr, output_limit):
+        # Test/fake-client compatibility path. Real Paramiko transports
+        # always expose ``paramiko.Channel`` and use the concurrent drain
+        # above, which prevents stdout/stderr pipe deadlocks.
+        out_buffer = bytearray(stdout.read(output_limit + 1))
+        remaining = max(1, output_limit - len(out_buffer) + 1)
+        err_buffer = bytearray(stderr.read(remaining))
+        if len(out_buffer) + len(err_buffer) > output_limit:
+            raise ConnectionPolicyError("Managed command output limit exceeded")
+        return out_buffer, err_buffer
+
+    def _run_remote_command(self, command, command_timeout) -> CommandResult:
+        _stdin, stdout, stderr = self.ssh_client.exec_command(
+            command, timeout=command_timeout
+        )  # nosec B601
+        channel = stdout.channel
+        channel.settimeout(command_timeout)
+        output_limit = max_output_bytes()
+        if isinstance(channel, paramiko.Channel):
+            out_buffer, err_buffer = self._drain_channel_output(
+                channel, output_limit, command_timeout
+            )
+        else:
+            out_buffer, err_buffer = self._read_fake_client_output(
+                stdout, stderr, output_limit
+            )
+        out = out_buffer.decode("utf-8", errors="replace").strip()
+        err = err_buffer.decode("utf-8", errors="replace").strip()
+        exit_status = channel.recv_exit_status()
+        self.logger.info(
+            "Managed command completed: success=%s stdout_chars=%d stderr_chars=%d",
+            exit_status == 0,
+            len(out),
+            len(err),
+        )
+        return CommandResult(success=(exit_status == 0), stdout=out, stderr=err)
+
     def run_command(
         self, command, timeout=None, *, propagate_errors: bool = False
     ) -> CommandResult:
@@ -953,64 +1156,7 @@ class Tunnel:
         )
         self.connect()
         try:
-            _stdin, stdout, stderr = self.ssh_client.exec_command(
-                command, timeout=command_timeout
-            )  # nosec B601
-            channel = stdout.channel
-            channel.settimeout(command_timeout)
-            output_limit = max_output_bytes()
-            if isinstance(channel, paramiko.Channel):
-                out_buffer = bytearray()
-                err_buffer = bytearray()
-                deadline = time.monotonic() + command_timeout
-                while True:
-                    while channel.recv_ready():
-                        remaining = output_limit - len(out_buffer) - len(err_buffer)
-                        chunk = channel.recv(min(65_536, max(1, remaining + 1)))
-                        out_buffer.extend(chunk)
-                        if len(out_buffer) + len(err_buffer) > output_limit:
-                            channel.close()
-                            raise ConnectionPolicyError(
-                                "Managed command output limit exceeded"
-                            )
-                    while channel.recv_stderr_ready():
-                        remaining = output_limit - len(out_buffer) - len(err_buffer)
-                        chunk = channel.recv_stderr(min(65_536, max(1, remaining + 1)))
-                        err_buffer.extend(chunk)
-                        if len(out_buffer) + len(err_buffer) > output_limit:
-                            channel.close()
-                            raise ConnectionPolicyError(
-                                "Managed command output limit exceeded"
-                            )
-                    if (
-                        channel.exit_status_ready()
-                        and not channel.recv_ready()
-                        and not channel.recv_stderr_ready()
-                    ):
-                        break
-                    if time.monotonic() >= deadline:
-                        channel.close()
-                        raise TimeoutError("Managed command timed out")
-                    time.sleep(0.01)
-            else:
-                # Test/fake-client compatibility path. Real Paramiko transports
-                # always expose ``paramiko.Channel`` and use the concurrent drain
-                # above, which prevents stdout/stderr pipe deadlocks.
-                out_buffer = bytearray(stdout.read(output_limit + 1))
-                remaining = max(1, output_limit - len(out_buffer) + 1)
-                err_buffer = bytearray(stderr.read(remaining))
-                if len(out_buffer) + len(err_buffer) > output_limit:
-                    raise ConnectionPolicyError("Managed command output limit exceeded")
-            out = out_buffer.decode("utf-8", errors="replace").strip()
-            err = err_buffer.decode("utf-8", errors="replace").strip()
-            exit_status = channel.recv_exit_status()
-            self.logger.info(
-                "Managed command completed: success=%s stdout_chars=%d stderr_chars=%d",
-                exit_status == 0,
-                len(out),
-                len(err),
-            )
-            return CommandResult(success=(exit_status == 0), stdout=out, stderr=err)
+            return self._run_remote_command(command, command_timeout)
         except Exception as e:
             self.logger.error("Operation failed: error_type=%s", type(e).__name__)
             if propagate_errors and isinstance(
@@ -1022,6 +1168,40 @@ class Tunnel:
                 error_message="ManagedCommandError",
                 stderr="ManagedCommandError",
             )
+
+    def _validate_local_upload_source(self, local_path: str) -> int:
+        """Validate an already-resolved local path for SFTP upload; returns
+        its file size."""
+        if not os.path.exists(local_path):
+            self.logger.error("Configured local file does not exist")
+            raise OSError("Configured local file does not exist")
+        if os.path.islink(local_path) or not os.path.isfile(local_path):
+            self.logger.error("Configured local path is not a regular file")
+            raise OSError("Configured local path is not a regular file")
+        if not os.access(local_path, os.R_OK):
+            self.logger.error("Configured local file is not readable")
+            raise PermissionError("Configured local file is not readable")
+        file_size = os.path.getsize(local_path)
+        if file_size > max_transfer_bytes():
+            raise ConnectionPolicyError("Managed file transfer limit exceeded")
+        return file_size
+
+    def _open_local_upload_descriptor(self, local_path: str) -> int:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            return os.open(local_path, flags)
+        except OSError as open_err:
+            self.logger.error(
+                "Failed to open configured local file: error_type=%s",
+                type(open_err).__name__,
+            )
+            raise OSError("Failed to open configured local file") from open_err
+
+    def _ensure_sftp(self) -> None:
+        self.connect()
+        if not self.sftp:
+            self.sftp = self.ssh_client.open_sftp()
+            self.sftp.get_channel().settimeout(self.connect_timeout)
 
     def send_file(self, local_path, remote_path):
         """
@@ -1035,37 +1215,10 @@ class Tunnel:
 
             self.logger.debug("Preparing managed SFTP upload")
 
-            if not os.path.exists(local_path):
-                err_msg = "Configured local file does not exist"
-                self.logger.error("Configured local file does not exist")
-                raise OSError(err_msg)
-            if os.path.islink(local_path) or not os.path.isfile(local_path):
-                err_msg = "Configured local path is not a regular file"
-                self.logger.error("Configured local path is not a regular file")
-                raise OSError(err_msg)
-            if not os.access(local_path, os.R_OK):
-                err_msg = "Configured local file is not readable"
-                self.logger.error("Configured local file is not readable")
-                raise PermissionError(err_msg)
-            file_size = os.path.getsize(local_path)
-            if file_size > max_transfer_bytes():
-                raise ConnectionPolicyError("Managed file transfer limit exceeded")
+            file_size = self._validate_local_upload_source(local_path)
+            descriptor = self._open_local_upload_descriptor(local_path)
 
-            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-            try:
-                descriptor = os.open(local_path, flags)
-            except OSError as open_err:
-                err_msg = "Failed to open configured local file"
-                self.logger.error(
-                    "Failed to open configured local file: error_type=%s",
-                    type(open_err).__name__,
-                )
-                raise OSError(err_msg) from open_err
-
-            self.connect()
-            if not self.sftp:
-                self.sftp = self.ssh_client.open_sftp()
-                self.sftp.get_channel().settimeout(self.connect_timeout)
+            self._ensure_sftp()
             self.logger.debug("Opening managed SFTP upload")
             with os.fdopen(descriptor, "rb") as stream:
                 descriptor = -1
@@ -1081,6 +1234,15 @@ class Tunnel:
                 self.sftp.close()
                 self.sftp = None
 
+    def _validate_download_destination(self, local_path: str) -> None:
+        if os.path.lexists(local_path) and os.path.islink(local_path):
+            raise ConnectionPolicyError("Managed download destination is unsafe")
+
+    def _check_remote_download_size(self, remote_path: str) -> None:
+        remote_info = self.sftp.stat(remote_path)
+        if remote_info.st_size > max_transfer_bytes():
+            raise ConnectionPolicyError("Managed file transfer limit exceeded")
+
     def receive_file(self, remote_path, local_path):
         """
         Receive (download) a file from the remote host.
@@ -1091,15 +1253,9 @@ class Tunnel:
         try:
             remote_path = validate_remote_path(remote_path)
             local_path = os.path.abspath(os.path.expanduser(local_path))
-            if os.path.lexists(local_path) and os.path.islink(local_path):
-                raise ConnectionPolicyError("Managed download destination is unsafe")
-            self.connect()
-            if not self.sftp:
-                self.sftp = self.ssh_client.open_sftp()
-                self.sftp.get_channel().settimeout(self.connect_timeout)
-            remote_info = self.sftp.stat(remote_path)
-            if remote_info.st_size > max_transfer_bytes():
-                raise ConnectionPolicyError("Managed file transfer limit exceeded")
+            self._validate_download_destination(local_path)
+            self._ensure_sftp()
+            self._check_remote_download_size(remote_path)
             destination_dir = os.path.dirname(local_path) or "."
             descriptor, temp_path = tempfile.mkstemp(
                 prefix=".managed-download.", dir=destination_dir
@@ -1341,69 +1497,33 @@ class Tunnel:
             raise ConnectionError("Managed SSH configuration copy failed")
         self.logger.info("Copied managed SSH configuration")
 
-    def rotate_ssh_key(self, new_key_path, key_type="ed25519"):
-        """
-        Rotate the SSH key by generating a new pair and updating authorized_keys.
-        :param new_key_path: Path for the new private key.
-        :param key_type: Type of key to generate ('rsa' or 'ed25519', default: 'rsa').
-        """
-        new_key_path = os.path.expanduser(new_key_path)
-        new_pub_path = new_key_path + ".pub"
-        if key_type not in ["rsa", "ed25519"]:
-            raise ValueError("key_type must be 'rsa' or 'ed25519'")
+    def _generate_rotated_key_pair(self, new_key_path: str, key_type: str) -> None:
+        import subprocess
 
-        if not os.path.exists(new_key_path):
-            import subprocess
+        type_args = (
+            ["-t", "rsa", "-b", "4096"] if key_type == "rsa" else ["-t", "ed25519"]
+        )
+        subprocess.run(
+            ["/usr/bin/ssh-keygen", *type_args, "-f", new_key_path, "-N", ""],
+            check=True,
+            timeout=30,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self.logger.info("Generated new managed key pair: key_type=%s", key_type)
 
-            if key_type == "rsa":
-                subprocess.run(
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "rsa",
-                        "-b",
-                        "4096",
-                        "-f",
-                        new_key_path,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                subprocess.run(
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "ed25519",
-                        "-f",
-                        new_key_path,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            self.logger.info("Generated new managed key pair: key_type=%s", key_type)
+    def _read_old_authorized_key(self):
+        if not self.identity_file:
+            return None
+        old_key_path = os.path.expanduser(self.identity_file)
+        old_pub_path = old_key_path + ".pub"
+        if not os.path.exists(old_pub_path):
+            return None
+        with open(old_pub_path) as f:
+            return f.read().strip()
 
-        with open(new_pub_path) as f:
-            new_pub = validate_public_key(f.read())
-
-        old_pub = None
-        if self.identity_file:
-            old_key_path = os.path.expanduser(self.identity_file)
-            old_pub_path = old_key_path + ".pub"
-            if os.path.exists(old_pub_path):
-                with open(old_pub_path) as f:
-                    old_pub = f.read().strip()
-
+    def _fetch_rotated_authorized_keys(self, new_pub: str, old_pub) -> str:
         self.connect()
         out, err = self.run_command("cat ~/.ssh/authorized_keys")
         auth_keys = out.splitlines()
@@ -1413,9 +1533,11 @@ class Tunnel:
             if line.strip() and (old_pub is None or line.strip() != old_pub)
         ]
         new_auth.append(new_pub)
+        return "\n".join(new_auth)
 
-        new_auth_joined = "\n".join(new_auth)
-        remote_temp = f"/tmp/.authorized_keys.{secrets.token_hex(16)}"  # nosec B108
+    def _push_authorized_keys_file(
+        self, new_auth_joined: str, remote_temp: str
+    ) -> None:
         descriptor, local_temp = tempfile.mkstemp(prefix=".authorized_keys.")
         try:
             os.fchmod(descriptor, 0o600)
@@ -1429,6 +1551,8 @@ class Tunnel:
                 os.close(descriptor)
             if os.path.exists(local_temp):
                 os.unlink(local_temp)
+
+    def _apply_rotated_authorized_keys(self, remote_temp: str) -> None:
         move_result = self.run_command(
             f"mv -- {quote_remote_path(remote_temp)} ~/.ssh/authorized_keys"
         )
@@ -1438,6 +1562,31 @@ class Tunnel:
         chmod_result = self.run_command("chmod 600 ~/.ssh/authorized_keys")
         if not chmod_result.success:
             raise ConnectionError("Managed SSH key rotation failed")
+
+    def rotate_ssh_key(self, new_key_path, key_type="ed25519"):
+        """
+        Rotate the SSH key by generating a new pair and updating authorized_keys.
+        :param new_key_path: Path for the new private key.
+        :param key_type: Type of key to generate ('rsa' or 'ed25519', default: 'rsa').
+        """
+        new_key_path = os.path.expanduser(new_key_path)
+        new_pub_path = new_key_path + ".pub"
+        if key_type not in ["rsa", "ed25519"]:
+            raise ValueError("key_type must be 'rsa' or 'ed25519'")
+
+        if not os.path.exists(new_key_path):
+            self._generate_rotated_key_pair(new_key_path, key_type)
+
+        with open(new_pub_path) as f:
+            new_pub = validate_public_key(f.read())
+
+        old_pub = self._read_old_authorized_key()
+
+        new_auth_joined = self._fetch_rotated_authorized_keys(new_pub, old_pub)
+
+        remote_temp = f"/tmp/.authorized_keys.{secrets.token_hex(16)}"  # nosec B108
+        self._push_authorized_keys_file(new_auth_joined, remote_temp)
+        self._apply_rotated_authorized_keys(remote_temp)
 
         self.identity_file = new_key_path
         self.password = None
@@ -1565,8 +1714,6 @@ class Tunnel:
         Ensures every host can SSH to every other host, including the local machine,
         without password prompts. Supports POSIX and Windows remotes.
         """
-        import subprocess
-
         logger = logging.getLogger("Tunnel")
         logger.info("Starting native full-mesh SSH bootstrap")
 
@@ -1577,68 +1724,13 @@ class Tunnel:
             raise ValueError("key_type must be 'rsa' or 'ed25519'")
 
         if not os.path.exists(key_path):
-            os.makedirs(os.path.dirname(key_path), exist_ok=True)
-            if key_type == "rsa":
-                subprocess.run(
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "rsa",
-                        "-b",
-                        "4096",
-                        "-f",
-                        key_path,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                subprocess.run(
-                    ["/usr/bin/ssh-keygen", "-t", "ed25519", "-f", key_path, "-N", ""],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            logger.info("Generated local managed key pair: key_type=%s", key_type)
+            _generate_mesh_key_pair(key_path, key_type, logger)
 
         with open(pub_key_path) as f:
             local_pub_key = validate_public_key(f.read())
 
         # 2. Parse inventory hosts
-        try:
-            with open(inventory) as f:
-                inventory_data = yaml.safe_load(f)
-        except Exception:
-            logger.error("Failed to read inventory file")
-            raise
-
-        hosts = []
-        if (
-            group in inventory_data
-            and isinstance(inventory_data[group], dict)
-            and "hosts" in inventory_data[group]
-            and isinstance(inventory_data[group]["hosts"], dict)
-        ):
-            for host_name, vars in inventory_data[group]["hosts"].items():
-                host_entry = {
-                    "name": host_name,
-                    "hostname": vars.get("ansible_host", host_name),
-                    "username": vars.get("ansible_user"),
-                    "password_ref": _password_ref(vars),
-                    "known_hosts_file": _known_hosts_file(vars),
-                    "key_path": vars.get("ansible_ssh_private_key_file") or key_path,
-                }
-                if host_entry["username"]:
-                    hosts.append(host_entry)
-        else:
-            raise ValueError("configured inventory group is invalid")
+        hosts = _parse_mesh_inventory_hosts(inventory, group, key_path, logger)
 
         if not hosts:
             logger.warning("No valid hosts found in configured inventory group")
@@ -1647,246 +1739,31 @@ class Tunnel:
         # First pass - setup passwordless access, detect remote OS, ensure keygen and read pubkey
         host_results = {}
 
-        def process_first_pass(host):
-            hostname = host["hostname"]
-            username = host["username"]
-            password_ref = host.get("password_ref")
-            kpath = host["key_path"]
-
-            tunnel = Tunnel(
-                config=HostConfig(
-                    hostname=hostname,
-                    user=username,
-                    password_ref=password_ref,
-                    identity_file=kpath,
-                    known_hosts_file=host.get("known_hosts_file"),
-                )
+        def first_pass(host):
+            _mesh_process_first_pass(
+                host, host_results, key_type, local_pub_key, logger
             )
 
-            # Test key auth
-            res, _ = tunnel.test_key_auth(kpath)
-            if not res:
-                if not password_ref:
-                    raise ValueError(
-                        "Key authentication failed without a credential reference"
-                    )
-                logger.info("Key authentication failed; attempting governed key setup")
-                tunnel.setup_passwordless_ssh(local_key_path=kpath, key_type=key_type)
-
-            # Re-connect to perform remote generation and detection
-            tunnel.connect()
-            try:
-                # Detect OS
-                is_windows = False
-                res_os = tunnel.run_command("uname -s")
-                if (
-                    not res_os.success
-                    or "uname" in res_os.stderr.lower()
-                    or not res_os.stdout
-                ):
-                    is_windows = True
-
-                # Check / generate key on remote
-                if is_windows:
-                    tunnel.run_command(
-                        'if not exist "%USERPROFILE%\\.ssh" mkdir "%USERPROFILE%\\.ssh"'
-                    )
-                    gen_cmd = f'if not exist "%USERPROFILE%\\.ssh\\id_{key_type}" (ssh-keygen -t {key_type} -N "" -f "%USERPROFILE%\\.ssh\\id_{key_type}")'
-                else:
-                    tunnel.run_command("mkdir -p ~/.ssh && chmod 700 ~/.ssh")
-                    gen_cmd = f"if [ ! -f ~/.ssh/id_{key_type} ]; then ssh-keygen -t {key_type} -N '' -f ~/.ssh/id_{key_type}; fi"
-
-                res_gen = tunnel.run_command(gen_cmd)
-                if not res_gen.success:
-                    raise RuntimeError(
-                        f"Failed to generate key on remote host: {res_gen.stderr or res_gen.error_message}"
-                    )
-
-                # Read remote public key
-                if is_windows:
-                    read_cmd = f'type "%USERPROFILE%\\.ssh\\id_{key_type}.pub"'
-                else:
-                    read_cmd = f"cat ~/.ssh/id_{key_type}.pub"
-
-                res_pub = tunnel.run_command(read_cmd)
-                if not res_pub.success or not res_pub.stdout:
-                    raise RuntimeError(
-                        f"Failed to read public key from remote: {res_pub.stderr or res_pub.error_message}"
-                    )
-                remote_pub_key = validate_public_key(res_pub.stdout)
-
-                # Extract local-perceived IP via SSH_CONNECTION
-                if is_windows:
-                    ip_cmd = "echo %SSH_CONNECTION%"
-                else:
-                    ip_cmd = "echo $SSH_CONNECTION"
-
-                res_ip = tunnel.run_command(ip_cmd)
-                client_ip = None
-                if res_ip.success and res_ip.stdout:
-                    parts = res_ip.stdout.strip().split()
-                    if parts:
-                        client_ip = parts[0]
-
-                # Ensure local pub key is explicitly inside remote authorized_keys
-                if is_windows:
-                    tunnel.run_command(
-                        f'echo {local_pub_key} >> "%USERPROFILE%\\.ssh\\authorized_keys"'
-                    )
-                else:
-                    tunnel.run_command(
-                        f"printf '%s\\n' {shlex.quote(local_pub_key)} >> "
-                        "~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
-                    )
-
-                host_results[hostname] = {
-                    "name": host["name"],
-                    "hostname": hostname,
-                    "username": username,
-                    "key_path": kpath,
-                    "is_windows": is_windows,
-                    "remote_pub_key": remote_pub_key,
-                    "client_ip": client_ip,
-                    "status": "success",
-                    "errors": [],
-                }
-            except Exception as e:
-                host_results[hostname] = {
-                    "name": host["name"],
-                    "hostname": hostname,
-                    "username": username,
-                    "status": "failed",
-                    "errors": [type(e).__name__],
-                }
-            finally:
-                tunnel.close()
-
-        # Run first pass (parallel or sequential)
-        if parallel:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as executor:
-                futures = [executor.submit(process_first_pass, h) for h in hosts]
-                for future in concurrent.futures.as_completed(futures):
-                    try:
-                        future.result()
-                    except Exception:
-                        logger.error("Error in first pass")
-        else:
-            for h in hosts:
-                try:
-                    process_first_pass(h)
-                except Exception:
-                    logger.error("Error in first pass")
+        _run_mesh_pass(hosts, first_pass, parallel, max_threads, logger, "first pass")
 
         # Filter out failed hosts from second pass
         successful_hosts = [
             r for r in host_results.values() if r["status"] == "success"
         ]
 
-        # Second pass distributes only authenticated public keys. Host-key trust
-        # must be pre-provisioned through a governed known_hosts file; keyscan is
-        # intentionally unsupported because it does not authenticate the key.
-        def process_second_pass(host):
-            hostname = host["hostname"]
-            username = host["username"]
-            kpath = host["key_path"]
-            is_windows = host["is_windows"]
-
-            tunnel = Tunnel(
-                remote_host=hostname, username=username, identity_file=kpath
+        # Second pass distributes only authenticated public keys.
+        def second_pass(host):
+            _mesh_process_second_pass(
+                host, host_results, local_pub_key, successful_hosts
             )
-            tunnel.connect()
-            try:
-                # Read existing authorized_keys
-                if is_windows:
-                    cat_cmd = 'type "%USERPROFILE%\\.ssh\\authorized_keys"'
-                else:
-                    cat_cmd = "cat ~/.ssh/authorized_keys"
 
-                res_auth = tunnel.run_command(cat_cmd)
-                existing_keys = res_auth.stdout if res_auth.success else ""
+        _run_mesh_pass(
+            successful_hosts, second_pass, parallel, max_threads, logger, "second pass"
+        )
 
-                # Collect and append keys
-                keys_to_add = []
-                if local_pub_key not in existing_keys:
-                    keys_to_add.append(local_pub_key)
+        _update_local_mesh_authorized_keys(successful_hosts, logger)
 
-                for other_host in successful_hosts:
-                    if other_host["hostname"] != hostname:
-                        other_pub = other_host["remote_pub_key"]
-                        if other_pub not in existing_keys:
-                            keys_to_add.append(other_pub)
-
-                if keys_to_add:
-                    for key_to_add in keys_to_add:
-                        if is_windows:
-                            tunnel.run_command(
-                                f'echo {key_to_add} >> "%USERPROFILE%\\.ssh\\authorized_keys"'
-                            )
-                        else:
-                            tunnel.run_command(
-                                f"printf '%s\\n' {shlex.quote(key_to_add)} >> "
-                                "~/.ssh/authorized_keys"
-                            )
-                    if not is_windows:
-                        tunnel.run_command("chmod 600 ~/.ssh/authorized_keys")
-
-            except Exception as e:
-                host_results[hostname]["status"] = "failed"
-                host_results[hostname]["errors"].append(type(e).__name__)
-            finally:
-                tunnel.close()
-
-        # Run second pass (parallel or sequential)
-        if parallel:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as executor:
-                futures = [
-                    executor.submit(process_second_pass, h) for h in successful_hosts
-                ]
-                for future in concurrent.futures.as_completed(futures):
-                    try:
-                        future.result()
-                    except Exception:
-                        logger.error("Error in second pass")
-        else:
-            for h in successful_hosts:
-                try:
-                    process_second_pass(h)
-                except Exception:
-                    logger.error("Error in second pass")
-
-        # Local authorized_keys updates. known_hosts remains an independently
-        # governed trust input and is never populated via unauthenticated scans.
-        try:
-            local_auth_path = os.path.expanduser("~/.ssh/authorized_keys")
-            local_existing_keys = ""
-            if os.path.exists(local_auth_path):
-                with open(local_auth_path) as f:
-                    local_existing_keys = f.read()
-
-            with open(local_auth_path, "a") as f:
-                for h in successful_hosts:
-                    if h["remote_pub_key"] not in local_existing_keys:
-                        f.write("\n" + h["remote_pub_key"] + "\n")
-
-        except Exception:
-            logger.error("Failed to update local authorized keys")
-
-        # Assemble final result
-        final_results = list(host_results.values())
-        errors = []
-        for r in final_results:
-            errors.extend(r["errors"])
-
-        return {
-            "status": "success" if not errors else "failed",
-            "host_results": final_results,
-            "errors": errors,
-            "known_hosts_preprovisioning_required": True,
-        }
+        return _assemble_mesh_results(host_results)
 
     @staticmethod
     def run_command_on_inventory(
@@ -2151,6 +2028,323 @@ all:
 _REQUIRED_HOST_FIELDS = ("hostname", "user")
 
 
+def _generate_mesh_key_pair(
+    key_path: str, key_type: str, logger: logging.Logger
+) -> None:
+    """Generate the local full-mesh key pair (``setup_full_mesh_ssh``)."""
+    import subprocess
+
+    os.makedirs(os.path.dirname(key_path), exist_ok=True)
+    type_args = ["-t", "rsa", "-b", "4096"] if key_type == "rsa" else ["-t", "ed25519"]
+    subprocess.run(
+        ["/usr/bin/ssh-keygen", *type_args, "-f", key_path, "-N", ""],
+        check=True,
+        timeout=30,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    logger.info("Generated local managed key pair: key_type=%s", key_type)
+
+
+def _parse_mesh_inventory_hosts(
+    inventory: str, group: str, key_path: str, logger: logging.Logger
+) -> list[dict]:
+    """Resolve ``group``'s hosts from a full-mesh Ansible-style inventory."""
+    try:
+        with open(inventory) as f:
+            inventory_data = yaml.safe_load(f)
+    except Exception:
+        logger.error("Failed to read inventory file")
+        raise
+
+    hosts = []
+    if (
+        group in inventory_data
+        and isinstance(inventory_data[group], dict)
+        and "hosts" in inventory_data[group]
+        and isinstance(inventory_data[group]["hosts"], dict)
+    ):
+        for host_name, host_vars in inventory_data[group]["hosts"].items():
+            host_entry = {
+                "name": host_name,
+                "hostname": host_vars.get("ansible_host", host_name),
+                "username": host_vars.get("ansible_user"),
+                "password_ref": _password_ref(host_vars),
+                "known_hosts_file": _known_hosts_file(host_vars),
+                "key_path": host_vars.get("ansible_ssh_private_key_file") or key_path,
+            }
+            if host_entry["username"]:
+                hosts.append(host_entry)
+    else:
+        raise ValueError("configured inventory group is invalid")
+    return hosts
+
+
+def _mesh_first_pass_detect_os(tunnel) -> bool:
+    res_os = tunnel.run_command("uname -s")
+    return not res_os.success or "uname" in res_os.stderr.lower() or not res_os.stdout
+
+
+def _mesh_first_pass_ensure_remote_key(tunnel, key_type: str, is_windows: bool) -> None:
+    if is_windows:
+        tunnel.run_command(
+            'if not exist "%USERPROFILE%\\.ssh" mkdir "%USERPROFILE%\\.ssh"'
+        )
+        gen_cmd = f'if not exist "%USERPROFILE%\\.ssh\\id_{key_type}" (ssh-keygen -t {key_type} -N "" -f "%USERPROFILE%\\.ssh\\id_{key_type}")'
+    else:
+        tunnel.run_command("mkdir -p ~/.ssh && chmod 700 ~/.ssh")
+        gen_cmd = f"if [ ! -f ~/.ssh/id_{key_type} ]; then ssh-keygen -t {key_type} -N '' -f ~/.ssh/id_{key_type}; fi"
+
+    res_gen = tunnel.run_command(gen_cmd)
+    if not res_gen.success:
+        raise RuntimeError(
+            f"Failed to generate key on remote host: {res_gen.stderr or res_gen.error_message}"
+        )
+
+
+def _mesh_first_pass_read_remote_pubkey(tunnel, key_type: str, is_windows: bool) -> str:
+    if is_windows:
+        read_cmd = f'type "%USERPROFILE%\\.ssh\\id_{key_type}.pub"'
+    else:
+        read_cmd = f"cat ~/.ssh/id_{key_type}.pub"
+
+    res_pub = tunnel.run_command(read_cmd)
+    if not res_pub.success or not res_pub.stdout:
+        raise RuntimeError(
+            f"Failed to read public key from remote: {res_pub.stderr or res_pub.error_message}"
+        )
+    return validate_public_key(res_pub.stdout)
+
+
+def _mesh_first_pass_client_ip(tunnel, is_windows: bool):
+    ip_cmd = "echo %SSH_CONNECTION%" if is_windows else "echo $SSH_CONNECTION"
+    res_ip = tunnel.run_command(ip_cmd)
+    if res_ip.success and res_ip.stdout:
+        parts = res_ip.stdout.strip().split()
+        if parts:
+            return parts[0]
+    return None
+
+
+def _mesh_first_pass_authorize_local_key(
+    tunnel, is_windows: bool, local_pub_key: str
+) -> None:
+    if is_windows:
+        tunnel.run_command(
+            f'echo {local_pub_key} >> "%USERPROFILE%\\.ssh\\authorized_keys"'
+        )
+    else:
+        tunnel.run_command(
+            f"printf '%s\\n' {shlex.quote(local_pub_key)} >> "
+            "~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+        )
+
+
+def _mesh_first_pass_remote_bootstrap(
+    tunnel, host: dict, key_type: str, local_pub_key: str
+) -> dict:
+    """Detect OS, ensure a remote keypair, read its pubkey, resolve the
+    client-perceived IP, and authorize the local pubkey against this host.
+    Returns the successful ``host_results`` entry."""
+    hostname = host["hostname"]
+    is_windows = _mesh_first_pass_detect_os(tunnel)
+    _mesh_first_pass_ensure_remote_key(tunnel, key_type, is_windows)
+    remote_pub_key = _mesh_first_pass_read_remote_pubkey(tunnel, key_type, is_windows)
+    client_ip = _mesh_first_pass_client_ip(tunnel, is_windows)
+    _mesh_first_pass_authorize_local_key(tunnel, is_windows, local_pub_key)
+    return {
+        "name": host["name"],
+        "hostname": hostname,
+        "username": host["username"],
+        "key_path": host["key_path"],
+        "is_windows": is_windows,
+        "remote_pub_key": remote_pub_key,
+        "client_ip": client_ip,
+        "status": "success",
+        "errors": [],
+    }
+
+
+def _mesh_process_first_pass(
+    host: dict,
+    host_results: dict,
+    key_type: str,
+    local_pub_key: str,
+    logger: logging.Logger,
+) -> None:
+    """First pass: ensure passwordless access, then detect remote OS, ensure
+    a remote keypair, and authorize the local pubkey. Records the outcome in
+    ``host_results[host["hostname"]]``."""
+    hostname = host["hostname"]
+    username = host["username"]
+    password_ref = host.get("password_ref")
+    kpath = host["key_path"]
+
+    tunnel = Tunnel(
+        config=HostConfig(
+            hostname=hostname,
+            user=username,
+            password_ref=password_ref,
+            identity_file=kpath,
+            known_hosts_file=host.get("known_hosts_file"),
+        )
+    )
+
+    res, _ = tunnel.test_key_auth(kpath)
+    if not res:
+        if not password_ref:
+            raise ValueError("Key authentication failed without a credential reference")
+        logger.info("Key authentication failed; attempting governed key setup")
+        tunnel.setup_passwordless_ssh(local_key_path=kpath, key_type=key_type)
+
+    # Re-connect to perform remote generation and detection
+    tunnel.connect()
+    try:
+        host_results[hostname] = _mesh_first_pass_remote_bootstrap(
+            tunnel, host, key_type, local_pub_key
+        )
+    except Exception as e:
+        host_results[hostname] = {
+            "name": host["name"],
+            "hostname": hostname,
+            "username": username,
+            "status": "failed",
+            "errors": [type(e).__name__],
+        }
+    finally:
+        tunnel.close()
+
+
+def _mesh_second_pass_collect_new_keys(
+    existing_keys: str, local_pub_key: str, hostname: str, successful_hosts: list
+) -> list:
+    keys_to_add = []
+    if local_pub_key not in existing_keys:
+        keys_to_add.append(local_pub_key)
+
+    for other_host in successful_hosts:
+        if other_host["hostname"] != hostname:
+            other_pub = other_host["remote_pub_key"]
+            if other_pub not in existing_keys:
+                keys_to_add.append(other_pub)
+    return keys_to_add
+
+
+def _mesh_second_pass_apply_keys(tunnel, keys_to_add: list, is_windows: bool) -> None:
+    for key_to_add in keys_to_add:
+        if is_windows:
+            tunnel.run_command(
+                f'echo {key_to_add} >> "%USERPROFILE%\\.ssh\\authorized_keys"'
+            )
+        else:
+            tunnel.run_command(
+                f"printf '%s\\n' {shlex.quote(key_to_add)} >> ~/.ssh/authorized_keys"
+            )
+    if not is_windows:
+        tunnel.run_command("chmod 600 ~/.ssh/authorized_keys")
+
+
+def _mesh_process_second_pass(
+    host: dict, host_results: dict, local_pub_key: str, successful_hosts: list
+) -> None:
+    """Second pass: distribute the mesh's authenticated public keys to
+    ``host``. Host-key trust must be pre-provisioned through a governed
+    known_hosts file; keyscan is intentionally unsupported because it does
+    not authenticate the key."""
+    hostname = host["hostname"]
+    username = host["username"]
+    kpath = host["key_path"]
+    is_windows = host["is_windows"]
+
+    tunnel = Tunnel(remote_host=hostname, username=username, identity_file=kpath)
+    tunnel.connect()
+    try:
+        cat_cmd = (
+            'type "%USERPROFILE%\\.ssh\\authorized_keys"'
+            if is_windows
+            else "cat ~/.ssh/authorized_keys"
+        )
+        res_auth = tunnel.run_command(cat_cmd)
+        existing_keys = res_auth.stdout if res_auth.success else ""
+
+        keys_to_add = _mesh_second_pass_collect_new_keys(
+            existing_keys, local_pub_key, hostname, successful_hosts
+        )
+        if keys_to_add:
+            _mesh_second_pass_apply_keys(tunnel, keys_to_add, is_windows)
+
+    except Exception as e:
+        host_results[hostname]["status"] = "failed"
+        host_results[hostname]["errors"].append(type(e).__name__)
+    finally:
+        tunnel.close()
+
+
+def _run_mesh_pass(
+    hosts: list,
+    func,
+    parallel: bool,
+    max_threads: int,
+    logger: logging.Logger,
+    pass_label: str,
+) -> None:
+    """Run ``func(host)`` over ``hosts``, parallel or sequential, matching
+    ``setup_full_mesh_ssh``'s own dispatch shape: every failure -- parallel or
+    sequential -- is caught and logged per-host rather than propagating (this
+    is deliberately distinct from ``_run_func_on_inventory_hosts``, whose
+    sequential path does not catch per-host errors)."""
+    if parallel:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+            futures = [executor.submit(func, h) for h in hosts]
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    future.result()
+                except Exception:
+                    logger.error("Error in %s", pass_label)
+    else:
+        for h in hosts:
+            try:
+                func(h)
+            except Exception:
+                logger.error("Error in %s", pass_label)
+
+
+def _update_local_mesh_authorized_keys(
+    successful_hosts: list, logger: logging.Logger
+) -> None:
+    # Local authorized_keys updates. known_hosts remains an independently
+    # governed trust input and is never populated via unauthenticated scans.
+    try:
+        local_auth_path = os.path.expanduser("~/.ssh/authorized_keys")
+        local_existing_keys = ""
+        if os.path.exists(local_auth_path):
+            with open(local_auth_path) as f:
+                local_existing_keys = f.read()
+
+        with open(local_auth_path, "a") as f:
+            for h in successful_hosts:
+                if h["remote_pub_key"] not in local_existing_keys:
+                    f.write("\n" + h["remote_pub_key"] + "\n")
+
+    except Exception:
+        logger.error("Failed to update local authorized keys")
+
+
+def _assemble_mesh_results(host_results: dict) -> dict:
+    final_results = list(host_results.values())
+    errors = []
+    for r in final_results:
+        errors.extend(r["errors"])
+
+    return {
+        "status": "success" if not errors else "failed",
+        "host_results": final_results,
+        "errors": errors,
+        "known_hosts_preprovisioning_required": True,
+    }
+
+
 def _inventory_init(dest: str, force: bool) -> int:
     """Write the commented template to ``dest`` unless it already exists."""
     if os.path.exists(dest) and not force:
@@ -2168,34 +2362,36 @@ def _inventory_init(dest: str, force: bool) -> int:
     return 0
 
 
-def _inventory_doctor(inventory: str, fix: bool) -> int:
-    """Validate the inventory; return a non-zero exit code on hard errors."""
-    xdg_config = setting("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-    config_dir = os.path.join(xdg_config, "agent-utilities")
-    yml_path = os.path.join(config_dir, "inventory.yml")
-    yaml_path = os.path.join(config_dir, "inventory.yaml")
+def _migrate_legacy_inventory_path(
+    inventory: str, yaml_path: str, yml_path: str, fix: bool
+) -> str:
+    """Migrate a legacy ``inventory.yaml`` to ``inventory.yml`` when ``fix`` is
+    set; otherwise just note it. Returns the inventory path doctor should use."""
+    if not (os.path.exists(yaml_path) and not os.path.exists(yml_path)):
+        return inventory
+    if fix:
+        os.rename(yaml_path, yml_path)
+        print("Migrated legacy inventory configuration")
+        return yml_path
+    print(
+        f"NOTE: legacy {yaml_path} found but no {yml_path}.\n"
+        f"  Fix: re-run `tunnel-manager inventory doctor --fix` to migrate to .yml.",
+    )
+    return inventory
 
-    problems: list[str] = []
 
-    # Legacy-migration check: a .yaml exists but no .yml at the shared location.
-    if os.path.exists(yaml_path) and not os.path.exists(yml_path):
-        if fix:
-            os.rename(yaml_path, yml_path)
-            print("Migrated legacy inventory configuration")
-            inventory = yml_path
-        else:
-            print(
-                f"NOTE: legacy {yaml_path} found but no {yml_path}.\n"
-                f"  Fix: re-run `tunnel-manager inventory doctor --fix` to migrate to .yml.",
-            )
+def _read_inventory_yaml_for_doctor(inventory: str):
+    """Read and shape-check ``inventory`` for doctor.
 
+    Returns ``(raw, None)`` on success or ``(None, exit_code)`` on a hard error.
+    """
     if not os.path.exists(inventory):
         print(
             f"ERROR: inventory file not found: {inventory}\n"
             f"  Fix: run `tunnel-manager inventory init` to create a template.",
             file=sys.stderr,
         )
-        return 1
+        return None, 1
 
     try:
         with open(inventory) as f:
@@ -2206,7 +2402,7 @@ def _inventory_doctor(inventory: str, fix: bool) -> int:
             f"  Fix: correct the YAML syntax (check indentation and colons).",
             file=sys.stderr,
         )
-        return 1
+        return None, 1
 
     if not isinstance(raw, dict):
         print(
@@ -2214,12 +2410,13 @@ def _inventory_doctor(inventory: str, fix: bool) -> int:
             f"{type(raw).__name__}.",
             file=sys.stderr,
         )
-        return 1
+        return None, 1
 
-    # Reuse the existing parsing so doctor sees exactly what the runtime sees.
-    hm = HostManager(config_file=inventory)
-    hosts = hm.hosts
+    return raw, None
 
+
+def _check_host_field_problems(hosts: dict) -> list[str]:
+    problems: list[str] = []
     if not hosts:
         problems.append(
             "no hosts defined — add at least one host under `all.hosts` or a child group."
@@ -2240,20 +2437,48 @@ def _inventory_doctor(inventory: str, fix: bool) -> int:
                 problems.append(
                     f"host '{alias}': missing required field '{field}' — {hint}."
                 )
+    return problems
 
-    # Groups must reference hosts that actually parse into the inventory.
-    if isinstance(raw.get("all"), dict):
-        children = raw["all"].get("children", {}) or {}
-        for group_name, group_data in children.items():
-            if not isinstance(group_data, dict):
-                problems.append(f"group '{group_name}': entry is not a mapping.")
-                continue
-            for ghost in group_data.get("hosts", {}) or {}:
-                if ghost not in hosts:
-                    problems.append(
-                        f"group '{group_name}': references host '{ghost}' which did "
-                        f"not parse into the inventory — check its definition."
-                    )
+
+def _check_group_reference_problems(raw: dict, hosts: dict) -> list[str]:
+    """Groups must reference hosts that actually parse into the inventory."""
+    problems: list[str] = []
+    if not isinstance(raw.get("all"), dict):
+        return problems
+    children = raw["all"].get("children", {}) or {}
+    for group_name, group_data in children.items():
+        if not isinstance(group_data, dict):
+            problems.append(f"group '{group_name}': entry is not a mapping.")
+            continue
+        for ghost in group_data.get("hosts", {}) or {}:
+            if ghost not in hosts:
+                problems.append(
+                    f"group '{group_name}': references host '{ghost}' which did "
+                    f"not parse into the inventory — check its definition."
+                )
+    return problems
+
+
+def _inventory_doctor(inventory: str, fix: bool) -> int:
+    """Validate the inventory; return a non-zero exit code on hard errors."""
+    xdg_config = setting("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+    config_dir = os.path.join(xdg_config, "agent-utilities")
+    yml_path = os.path.join(config_dir, "inventory.yml")
+    yaml_path = os.path.join(config_dir, "inventory.yaml")
+
+    # Legacy-migration check: a .yaml exists but no .yml at the shared location.
+    inventory = _migrate_legacy_inventory_path(inventory, yaml_path, yml_path, fix)
+
+    raw, exit_code = _read_inventory_yaml_for_doctor(inventory)
+    if exit_code is not None:
+        return exit_code
+
+    # Reuse the existing parsing so doctor sees exactly what the runtime sees.
+    hm = HostManager(config_file=inventory)
+    hosts = hm.hosts
+
+    problems = _check_host_field_problems(hosts)
+    problems.extend(_check_group_reference_problems(raw, hosts))
 
     if problems:
         print(f"Inventory validation found {len(problems)} problem(s):")
@@ -2288,12 +2513,9 @@ def _inventory_show(inventory: str) -> int:
     return 0
 
 
-def tunnel_manager():
-    print(f"tunnel_manager v{__version__}", file=sys.stderr)
+def _build_tunnel_manager_parser(default_inventory: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Tunnel Manager CLI")
     parser.add_argument("--log-file", help="Log to this file (default: console output)")
-
-    default_inventory = setting("TUNNEL_INVENTORY") or default_inventory_path()
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -2464,22 +2686,20 @@ def tunnel_manager():
         help="Inventory path to show (default: resolved shared inventory path)",
     )
 
-    args = parser.parse_args()
+    return parser
 
-    if not args.command:
-        parser.print_help()
-        sys.exit(0)
 
-    if args.log_file:
+def _configure_tunnel_manager_logging(log_file: str | None) -> None:
+    if log_file:
         log_dir = (
-            os.path.dirname(os.path.abspath(args.log_file))
-            if os.path.dirname(args.log_file)
+            os.path.dirname(os.path.abspath(log_file))
+            if os.path.dirname(log_file)
             else os.getcwd()
         )
         os.makedirs(log_dir, exist_ok=True)
         try:
             logging.basicConfig(
-                filename=args.log_file,
+                filename=log_file,
                 level=logging.DEBUG,
                 format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             )
@@ -2495,74 +2715,123 @@ def tunnel_manager():
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         )
 
+
+def _dispatch_inventory_command(args) -> None:
+    """Handle the ``inventory init|doctor|show`` subcommands. Exits the
+    process via ``sys.exit()`` when it recognizes ``args.inventory_action``."""
+    target = getattr(args, "inventory", None) or default_inventory_path()
+    if args.inventory_action == "init":
+        sys.exit(_inventory_init(target, args.force))
+    elif args.inventory_action == "doctor":
+        sys.exit(_inventory_doctor(target, args.fix))
+    elif args.inventory_action == "show":
+        sys.exit(_inventory_show(target))
+
+
+def _run_setup_all(args) -> None:
+    Tunnel.setup_all_passwordless_ssh(
+        args.inventory,
+        args.shared_key_path,
+        args.key_type,
+        args.group,
+        args.parallel,
+        args.max_threads,
+    )
+
+
+def _run_run_command(args) -> None:
+    Tunnel.run_command_on_inventory(
+        args.inventory,
+        args.remote_command,
+        args.group,
+        args.parallel,
+        args.max_threads,
+        timeout=args.timeout,
+    )
+
+
+def _run_copy_config(args) -> None:
+    Tunnel.copy_ssh_config_on_inventory(
+        args.inventory,
+        args.local_config_path,
+        args.remote_config_path,
+        args.group,
+        args.parallel,
+        args.max_threads,
+    )
+
+
+def _run_rotate_key(args) -> None:
+    Tunnel.rotate_ssh_key_on_inventory(
+        args.inventory,
+        args.key_prefix,
+        args.key_type,
+        args.group,
+        args.parallel,
+        args.max_threads,
+    )
+
+
+def _run_send_file(args) -> None:
+    Tunnel.send_file_on_inventory(
+        args.inventory,
+        args.local_path,
+        args.remote_path,
+        args.group,
+        args.parallel,
+        args.max_threads,
+    )
+
+
+def _run_receive_file(args) -> None:
+    Tunnel.receive_file_on_inventory(
+        args.inventory,
+        args.remote_path,
+        args.local_path_prefix,
+        args.group,
+        args.parallel,
+        args.max_threads,
+    )
+
+
+# Dispatch table for tunnel_manager()'s non-"inventory" subcommands. cccc
+# counts each case of a flat if/elif dispatch toward cyclomatic; a table has
+# the same fan-out with cyclomatic 1 and is the documented preferred shape
+# (plans/complex program method table: dict dispatch = cyc 2 / cog 1).
+_TUNNEL_MANAGER_COMMANDS = {
+    "setup-all": _run_setup_all,
+    "run-command": _run_run_command,
+    "copy-config": _run_copy_config,
+    "rotate-key": _run_rotate_key,
+    "send-file": _run_send_file,
+    "receive-file": _run_receive_file,
+}
+
+
+def tunnel_manager():
+    print(f"tunnel_manager v{__version__}", file=sys.stderr)
+    default_inventory = setting("TUNNEL_INVENTORY") or default_inventory_path()
+    parser = _build_tunnel_manager_parser(default_inventory)
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        sys.exit(0)
+
+    _configure_tunnel_manager_logging(args.log_file)
+
     logger = logging.getLogger("Tunnel")
     logger.debug("Starting tunnel automation: command_type=%s", args.command)
     print("Starting tunnel automation", file=sys.stderr)
 
     if args.command == "inventory":
-        target = getattr(args, "inventory", None) or default_inventory_path()
-        if args.inventory_action == "init":
-            sys.exit(_inventory_init(target, args.force))
-        elif args.inventory_action == "doctor":
-            sys.exit(_inventory_doctor(target, args.fix))
-        elif args.inventory_action == "show":
-            sys.exit(_inventory_show(target))
+        _dispatch_inventory_command(args)
 
     try:
-        if args.command == "setup-all":
-            Tunnel.setup_all_passwordless_ssh(
-                args.inventory,
-                args.shared_key_path,
-                args.key_type,
-                args.group,
-                args.parallel,
-                args.max_threads,
-            )
-        elif args.command == "run-command":
-            Tunnel.run_command_on_inventory(
-                args.inventory,
-                args.remote_command,
-                args.group,
-                args.parallel,
-                args.max_threads,
-                timeout=args.timeout,
-            )
-        elif args.command == "copy-config":
-            Tunnel.copy_ssh_config_on_inventory(
-                args.inventory,
-                args.local_config_path,
-                args.remote_config_path,
-                args.group,
-                args.parallel,
-                args.max_threads,
-            )
-        elif args.command == "rotate-key":
-            Tunnel.rotate_ssh_key_on_inventory(
-                args.inventory,
-                args.key_prefix,
-                args.key_type,
-                args.group,
-                args.parallel,
-                args.max_threads,
-            )
-        elif args.command == "send-file":
-            Tunnel.send_file_on_inventory(
-                args.inventory,
-                args.local_path,
-                args.remote_path,
-                args.group,
-                args.parallel,
-                args.max_threads,
-            )
-        elif args.command == "receive-file":
-            Tunnel.receive_file_on_inventory(
-                args.inventory,
-                args.remote_path,
-                args.local_path_prefix,
-                args.group,
-                args.parallel,
-                args.max_threads,
-            )
+        handler = _TUNNEL_MANAGER_COMMANDS.get(args.command)
+        if handler:
+            handler(args)
         logger.debug("Automation Complete")
         print("Automation Complete", file=sys.stderr)
     except Exception as e:
