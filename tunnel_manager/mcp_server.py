@@ -150,14 +150,19 @@ def _first_value(sources: tuple[dict, ...], *keys: str) -> Any:
     """First truthy ``source[key]`` scanning sources in order, keys within each.
 
     Preserves the source-major/key-minor precedence of the ``or``-chains this
-    replaces (host vars beat group vars beat ``all`` vars).
+    replaces (host vars beat group vars beat ``all`` vars) AND their fallback:
+    ``a or b or c`` yields ``c`` when nothing is truthy, so with no truthy hit
+    this returns the LAST lookup -- ``""`` for a present-but-empty final key,
+    not ``None``. Returning ``None`` there changed ``key_path: ""`` into
+    ``key_path: None``, which an OLD-vs-NEW inventory sweep caught.
     """
+    value = None
     for source in sources:
         for key in keys:
             value = source.get(key)
             if value:
                 return value
-    return None
+    return value
 
 
 def _group_host_pairs(data: Any) -> dict:
@@ -1006,9 +1011,16 @@ def _validate_passwordless_request(
     return None
 
 
-async def _ensure_ssh_keypair(key_path: str, key_type: str) -> None:
-    """Generate ``key_path`` with ssh-keygen when its ``.pub`` is missing."""
-    if os.path.exists(key_path + ".pub"):
+async def _ensure_ssh_keypair(
+    key_path: str, key_type: str, probe: str | None = None
+) -> None:
+    """Generate ``key_path`` with ssh-keygen when ``probe`` is missing.
+
+    ``probe`` defaults to ``key_path + ".pub"`` (what ``tm_remote
+    setup_passwordless`` checked); the bulk ``configure_key_auth`` path checks
+    the private key itself and passes ``probe=key_path``.
+    """
+    if os.path.exists(probe or key_path + ".pub"):
         return
     type_args = ["-t", "rsa", "-b", "4096"] if key_type == "rsa" else ["-t", "ed25519"]
     await run_blocking(
@@ -1523,6 +1535,156 @@ def register_remote_tools(mcp: FastMCP):
         )
 
 
+def _parallel_error_result(exc: Exception, **extra: Any) -> dict:
+    """The per-host result recorded when a pooled future itself raised."""
+    return {
+        "hostname": "unknown",
+        "status": "failed",
+        "message": "Parallel error",
+        "errors": [type(exc).__name__],
+        **extra,
+    }
+
+
+class _HostResults:
+    """Accumulate one bulk ``tm_inventory`` action's per-host worker results.
+
+    ``on_success(acc, result)`` records the artefacts a successful host
+    produced. When it is ``None`` every result's ``errors`` are collected
+    regardless of status -- which is what ``run_command``'s original loop did.
+    ``error_extra(exc)`` supplies the action-specific keys of the synthetic
+    result recorded for a pooled future that raised.
+    """
+
+    def __init__(self, on_success=None, error_extra=None, seed=None) -> None:
+        self.results: list = list(seed) if seed else []
+        self.files: list = []
+        self.locations: list = []
+        self.errors: list = []
+        self._on_success = on_success
+        self._error_extra = error_extra
+
+    def record(self, result: dict) -> None:
+        self.results.append(result)
+        if self._on_success is not None and result["status"] == "success":
+            self._on_success(self, result)
+        else:
+            self.errors.extend(result["errors"])
+
+    def parallel_error(self, exc: Exception) -> None:
+        extra = self._error_extra(exc) if self._error_extra else {}
+        self.results.append(_parallel_error_result(exc, **extra))
+        self.errors.append(type(exc).__name__)
+
+
+async def _fan_out_serial(hosts: list, worker, ctx, results: _HostResults) -> None:
+    """Await ``worker`` once per host, in order, reporting progress as it goes."""
+    total = len(hosts)
+    for i, h in enumerate(hosts, 1):
+        results.record(await worker(h))
+        if ctx:
+            await ctx.report_progress(progress=i, total=total)
+
+
+async def _fan_out_parallel(
+    hosts: list, worker, ctx, max_threads: int, results: _HostResults
+) -> None:
+    """Run ``worker`` for every host in a thread pool, each in its own loop.
+
+    A future that itself raised is recorded through ``results.parallel_error``
+    and reports no progress -- exactly as the inline loops this replaces did.
+    """
+    total = len(hosts)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
+        futures = [ex.submit(lambda h: asyncio.run(worker(h)), h) for h in hosts]
+        for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
+            try:
+                results.record(future.result())
+                if ctx:
+                    await ctx.report_progress(progress=i, total=total)
+            except Exception as e:
+                results.parallel_error(e)
+
+
+async def _fan_out_over_hosts(
+    hosts: list, worker, ctx, parallel: bool, max_threads: int, results: _HostResults
+) -> None:
+    """Fan ``worker`` out over ``hosts`` -- pooled or serial -- into ``results``."""
+    if parallel:
+        await _fan_out_parallel(hosts, worker, ctx, max_threads, results)
+    else:
+        await _fan_out_serial(hosts, worker, ctx, results)
+
+
+def _run_command_preview(target: dict, resolved_hosts: list) -> dict:
+    """The ``preview=True`` response for ``tm_inventory run_command``."""
+    scope = (
+        f" (host={target['host']})" if target["host"] else f" (group={target['group']})"
+    )
+    return ResponseBuilder.build(
+        200,
+        f"Preview: '{target['cmd']}' would run on {len(resolved_hosts)} host(s)"
+        + scope,
+        {**target, "resolved_hosts": resolved_hosts, "preview": True},
+        errors=[],
+    )
+
+
+def _run_command_response(
+    target: dict, resolved_hosts: list, collected: _HostResults
+) -> dict:
+    """The completed-run response for ``tm_inventory run_command``."""
+    label = f"host={target['host']}" if target["host"] else f"group={target['group']}"
+    cmd = target["cmd"]
+    msg = (
+        f"Cmd '{cmd}' done on {label}"
+        if not collected.errors
+        else f"Cmd '{cmd}' failed for some in {label}"
+    )
+    return ResponseBuilder.build(
+        200 if not collected.errors else 500,
+        msg,
+        {
+            **target,
+            "resolved_hosts": resolved_hosts,
+            "host_results": collected.results,
+        },
+        error="; ".join(collected.errors),
+        files=[],
+        locations=[],
+        errors=collected.errors,
+    )
+
+
+def _validate_inventory_upload(action: str, lpath: str, rpath: str) -> dict | None:
+    """Reject an unusable bulk ``send_file`` request; ``None`` means proceed.
+
+    Same order as the inline block it replaces: presence, file-ness, size limit.
+    """
+    if not lpath or not rpath:
+        return ResponseBuilder.build(
+            400,
+            "Need lpath, rpath",
+            {"action": action},
+            errors=["Need lpath, rpath"],
+        )
+    if not os.path.exists(lpath) or not os.path.isfile(lpath):
+        return ResponseBuilder.build(
+            400,
+            f"Invalid file: {lpath}",
+            {"action": action},
+            errors=[f"Invalid file: {lpath}"],
+        )
+    if os.path.getsize(lpath) > max_transfer_bytes():
+        return ResponseBuilder.build(
+            400,
+            "Managed file transfer limit exceeded",
+            {},
+            errors=["Managed file transfer limit exceeded"],
+        )
+    return None
+
+
 async def _tm_inventory_configure_key_auth(
     action,
     inventory,
@@ -1553,45 +1715,7 @@ async def _tm_inventory_configure_key_auth(
     try:
         _key = os.path.expanduser(key)
         pub_key = _key + ".pub"
-        if not os.path.exists(_key):
-            if key_type == "rsa":
-                await run_blocking(
-                    subprocess.run,
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "rsa",
-                        "-b",
-                        "4096",
-                        "-f",
-                        _key,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                await run_blocking(
-                    subprocess.run,
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "ed25519",
-                        "-f",
-                        _key,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+        await _ensure_ssh_keypair(_key, key_type, probe=_key)
         with open(pub_key) as f:
             pub = validate_public_key(f.read())
         hosts, error = load_inventory(inventory, group, logger)
@@ -1601,7 +1725,7 @@ async def _tm_inventory_configure_key_auth(
         if ctx:
             await ctx.report_progress(progress=0, total=total)
 
-        async def setup_host(h: dict, ctx: Context) -> dict:
+        async def setup_host(h: dict) -> dict:
             host, _user = h["hostname"], h["username"]
             kpath = h.get("key_path", _key)
             try:
@@ -1643,65 +1767,32 @@ async def _tm_inventory_configure_key_auth(
                 if "t" in locals():
                     await run_blocking(t.close)
 
-        results, files, locations, errors = [], [], [], []
-        if parallel:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
-                futures = [
-                    ex.submit(lambda h: asyncio.run(setup_host(h, ctx)), h)
-                    for h in hosts
-                ]
-                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
-                    try:
-                        r = future.result()
-                        results.append(r)
-                        if r["status"] == "success":
-                            files.append(pub_key)
-                            locations.append(
-                                f"~/.ssh/authorized_keys on {r['hostname']}"
-                            )
-                        else:
-                            errors.extend(r["errors"])
-                        if ctx:
-                            await ctx.report_progress(progress=i, total=total)
-                    except Exception as e:
-                        results.append(
-                            {
-                                "hostname": "unknown",
-                                "status": "failed",
-                                "message": "Parallel error",
-                                "errors": [type(e).__name__],
-                            }
-                        )
-                        errors.append(type(e).__name__)
-        else:
-            for i, h in enumerate(hosts, 1):
-                r = await setup_host(h, ctx)
-                results.append(r)
-                if r["status"] == "success":
-                    files.append(pub_key)
-                    locations.append(f"~/.ssh/authorized_keys on {r['hostname']}")
-                else:
-                    errors.extend(r["errors"])
-                if ctx:
-                    await ctx.report_progress(progress=i, total=total)
+        def on_success(acc: _HostResults, r: dict) -> None:
+            acc.files.append(pub_key)
+            acc.locations.append(f"~/.ssh/authorized_keys on {r['hostname']}")
+
+        collected = _HostResults(on_success)
+        await _fan_out_over_hosts(
+            hosts, setup_host, ctx, parallel, max_threads, collected
+        )
         msg = (
             f"SSH setup done for {group}"
-            if not errors
+            if not collected.errors
             else f"SSH setup failed for some in {group}"
         )
         return ResponseBuilder.build(
-            200 if not errors else 500,
+            200 if not collected.errors else 500,
             msg,
             {
                 "inventory": inventory,
                 "group": group,
                 "key_type": key_type,
-                "host_results": results,
+                "host_results": collected.results,
             },
-            stdout="; ".join(errors),
-            files=files,
-            locations=locations,
-            errors=errors,
+            stdout="; ".join(collected.errors),
+            files=collected.files,
+            locations=collected.locations,
+            errors=collected.errors,
         )
     except Exception as e:
         ctx_log(ctx, logger, "error", "Setup all fail")
@@ -1814,24 +1905,14 @@ async def _tm_inventory_run_command(
         resolved_hosts = [h["hostname"] for h in hosts]
         total = len(hosts)
         if preview:
-            return ResponseBuilder.build(
-                200,
-                f"Preview: '{cmd}' would run on {len(hosts)} host(s)"
-                + (f" (host={host})" if host else f" (group={group})"),
-                {
-                    "inventory": inventory,
-                    "group": group,
-                    "host": host,
-                    "cmd": cmd,
-                    "resolved_hosts": resolved_hosts,
-                    "preview": True,
-                },
-                errors=[],
+            return _run_command_preview(
+                {"inventory": inventory, "group": group, "host": host, "cmd": cmd},
+                resolved_hosts,
             )
         if ctx:
             await ctx.report_progress(progress=0, total=total)
 
-        async def run_host(h: dict, ctx: Context) -> dict:
+        async def run_host(h: dict) -> dict:
             await ctx_progress(ctx, 0, 100)
             host = h["hostname"]
             try:
@@ -1867,59 +1948,16 @@ async def _tm_inventory_run_command(
                 if "t" in locals():
                     await run_blocking(t.close)
 
-        results, errors = [], []
-        if parallel:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
-                futures = [
-                    ex.submit(lambda h: asyncio.run(run_host(h, ctx)), h) for h in hosts
-                ]
-                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
-                    try:
-                        r = future.result()
-                        results.append(r)
-                        errors.extend(r["errors"])
-                        if ctx:
-                            await ctx.report_progress(progress=i, total=total)
-                    except Exception as e:
-                        results.append(
-                            {
-                                "hostname": "unknown",
-                                "status": "failed",
-                                "message": "Parallel error",
-                                "stdout": "",
-                                "stderr": type(e).__name__,
-                                "errors": [type(e).__name__],
-                            }
-                        )
-                        errors.append(type(e).__name__)
-        else:
-            for i, h in enumerate(hosts, 1):
-                r = await run_host(h, ctx)
-                results.append(r)
-                errors.extend(r["errors"])
-                if ctx:
-                    await ctx.report_progress(progress=i, total=total)
-        target_label = f"host={host}" if host else f"group={group}"
-        msg = (
-            f"Cmd '{cmd}' done on {target_label}"
-            if not errors
-            else f"Cmd '{cmd}' failed for some in {target_label}"
+        collected = _HostResults(
+            error_extra=lambda e: {"stdout": "", "stderr": type(e).__name__}
         )
-        return ResponseBuilder.build(
-            200 if not errors else 500,
-            msg,
-            {
-                "inventory": inventory,
-                "group": group,
-                "host": host,
-                "cmd": cmd,
-                "resolved_hosts": resolved_hosts,
-                "host_results": results,
-            },
-            error="; ".join(errors),
-            files=[],
-            locations=[],
-            errors=errors,
+        await _fan_out_over_hosts(
+            hosts, run_host, ctx, parallel, max_threads, collected
+        )
+        return _run_command_response(
+            {"inventory": inventory, "group": group, "host": host, "cmd": cmd},
+            resolved_hosts,
+            collected,
         )
     except Exception as e:
         ctx_log(ctx, logger, "error", "Cmd all fail")
@@ -1970,7 +2008,6 @@ async def _tm_inventory_copy_ssh_config(
         total = len(hosts)
         if ctx:
             await ctx.report_progress(progress=0, total=total)
-        results, files, locations, errors = [], [], [], []
 
         async def copy_host(h: dict) -> dict:
             try:
@@ -2002,62 +2039,33 @@ async def _tm_inventory_copy_ssh_config(
                 if "t" in locals():
                     await run_blocking(t.close)
 
-        if parallel:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
-                futures = [
-                    ex.submit(lambda h: asyncio.run(copy_host(h)), h) for h in hosts
-                ]
-                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
-                    try:
-                        r = future.result()
-                        results.append(r)
-                        if r["status"] == "success":
-                            files.append(cfg)
-                            locations.append(f"{rmt_cfg} on {r['hostname']}")
-                        else:
-                            errors.extend(r["errors"])
-                        if ctx:
-                            await ctx.report_progress(progress=i, total=total)
-                    except Exception as e:
-                        results.append(
-                            {
-                                "hostname": "unknown",
-                                "status": "failed",
-                                "message": "Parallel error",
-                                "errors": [type(e).__name__],
-                            }
-                        )
-                        errors.append(type(e).__name__)
-        else:
-            for i, h in enumerate(hosts, 1):
-                r = await copy_host(h)
-                results.append(r)
-                if r["status"] == "success":
-                    files.append(cfg)
-                    locations.append(f"{rmt_cfg} on {r['hostname']}")
-                else:
-                    errors.extend(r["errors"])
-                if ctx:
-                    await ctx.report_progress(progress=i, total=total)
+        def on_success(acc: _HostResults, r: dict) -> None:
+            acc.files.append(cfg)
+            acc.locations.append(f"{rmt_cfg} on {r['hostname']}")
+
+        collected = _HostResults(on_success)
+        await _fan_out_over_hosts(
+            hosts, copy_host, ctx, parallel, max_threads, collected
+        )
         msg = (
             f"Copied cfg to {group}"
-            if not errors
+            if not collected.errors
             else f"Copy failed for some in {group}"
         )
         return ResponseBuilder.build(
-            200 if not errors else 500,
+            200 if not collected.errors else 500,
             msg,
             {
                 "inventory": inventory,
                 "group": group,
                 "cfg": cfg,
                 "rmt_cfg": rmt_cfg,
-                "host_results": results,
+                "host_results": collected.results,
             },
-            error="; ".join(errors),
-            files=files,
-            locations=locations,
-            errors=errors,
+            error="; ".join(collected.errors),
+            files=collected.files,
+            locations=collected.locations,
+            errors=collected.errors,
         )
     except Exception as e:
         ctx_log(ctx, logger, "error", "Copy all fail")
@@ -2108,7 +2116,6 @@ async def _tm_inventory_rotate_key(
         total = len(hosts)
         if ctx:
             await ctx.report_progress(progress=0, total=total)
-        results, files, locations, errors = [], [], [], []
 
         async def rotate_host(h: dict) -> dict:
             _key = os.path.expanduser(key_pfx + h["hostname"])
@@ -2143,65 +2150,35 @@ async def _tm_inventory_rotate_key(
                 if "t" in locals():
                     await run_blocking(t.close)
 
-        if parallel:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
-                futures = [
-                    ex.submit(lambda h: asyncio.run(rotate_host(h)), h) for h in hosts
-                ]
-                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
-                    try:
-                        r = future.result()
-                        results.append(r)
-                        if r["status"] == "success":
-                            files.append(r["new_key_path"] + ".pub")
-                            locations.append(
-                                f"~/.ssh/authorized_keys on {r['hostname']}"
-                            )
-                        else:
-                            errors.extend(r["errors"])
-                        if ctx:
-                            await ctx.report_progress(progress=i, total=total)
-                    except Exception as e:
-                        results.append(
-                            {
-                                "hostname": "unknown",
-                                "status": "failed",
-                                "message": "Parallel error",
-                                "errors": [type(e).__name__],
-                                "new_key_path": None,
-                            }
-                        )
-                        errors.append(type(e).__name__)
-        else:
-            for i, h in enumerate(hosts, 1):
-                r = await rotate_host(h)
-                results.append(r)
-                if r["status"] == "success":
-                    files.append(r["new_key_path"] + ".pub")
-                    locations.append(f"~/.ssh/authorized_keys on {r['hostname']}")
-                else:
-                    errors.extend(r["errors"])
-                if ctx:
-                    await ctx.report_progress(progress=i, total=total)
+        def on_success(acc: _HostResults, r: dict) -> None:
+            acc.files.append(r["new_key_path"] + ".pub")
+            acc.locations.append(f"~/.ssh/authorized_keys on {r['hostname']}")
+
+        collected = _HostResults(
+            on_success, error_extra=lambda _e: {"new_key_path": None}
+        )
+        await _fan_out_over_hosts(
+            hosts, rotate_host, ctx, parallel, max_threads, collected
+        )
         msg = (
             f"Rotated {key_type} keys for {group}"
-            if not errors
+            if not collected.errors
             else f"Rotate failed for some in {group}"
         )
         return ResponseBuilder.build(
-            200 if not errors else 500,
+            200 if not collected.errors else 500,
             msg,
             {
                 "inventory": inventory,
                 "group": group,
                 "key_prefix": key_pfx,
                 "key_type": key_type,
-                "host_results": results,
+                "host_results": collected.results,
             },
-            error="; ".join(errors),
-            files=files,
-            locations=locations,
-            errors=errors,
+            error="; ".join(collected.errors),
+            files=collected.files,
+            locations=collected.locations,
+            errors=collected.errors,
         )
     except Exception as e:
         ctx_log(ctx, logger, "error", "Rotate all fail")
@@ -2240,27 +2217,9 @@ async def _tm_inventory_send_file(
 ) -> dict:
     _lpath = os.path.abspath(os.path.expanduser(lpath))
     _rpath = os.path.expanduser(rpath)
-    if not _lpath or not _rpath:
-        return ResponseBuilder.build(
-            400,
-            "Need lpath, rpath",
-            {"action": action},
-            errors=["Need lpath, rpath"],
-        )
-    if not os.path.exists(_lpath) or not os.path.isfile(_lpath):
-        return ResponseBuilder.build(
-            400,
-            f"Invalid file: {_lpath}",
-            {"action": action},
-            errors=[f"Invalid file: {_lpath}"],
-        )
-    if os.path.getsize(_lpath) > max_transfer_bytes():
-        return ResponseBuilder.build(
-            400,
-            "Managed file transfer limit exceeded",
-            {},
-            errors=["Managed file transfer limit exceeded"],
-        )
+    invalid = _validate_inventory_upload(action, _lpath, _rpath)
+    if invalid is not None:
+        return invalid
     try:
         hosts, error = load_inventory(inventory, group, logger)
         if error:
@@ -2300,61 +2259,32 @@ async def _tm_inventory_send_file(
                 if "t" in locals():
                     await run_blocking(t.close)
 
-        results, files, locations, errors = [_lpath], [], [], []
-        if parallel:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
-                futures = [
-                    ex.submit(lambda h: asyncio.run(send_host(h)), h) for h in hosts
-                ]
-                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
-                    try:
-                        r = future.result()
-                        results.append(r)
-                        if r["status"] == "success":
-                            locations.append(f"{_rpath} on {r['hostname']}")
-                        else:
-                            errors.extend(r["errors"])
-                        if ctx:
-                            await ctx.report_progress(progress=i, total=total)
-                    except Exception as e:
-                        results.append(
-                            {
-                                "hostname": "unknown",
-                                "status": "failed",
-                                "message": "Parallel error",
-                                "errors": [type(e).__name__],
-                            }
-                        )
-                        errors.append(type(e).__name__)
-        else:
-            for i, h in enumerate(hosts, 1):
-                r = await send_host(h)
-                results.append(r)
-                if r["status"] == "success":
-                    locations.append(f"{_rpath} on {r['hostname']}")
-                else:
-                    errors.extend(r["errors"])
-                if ctx:
-                    await ctx.report_progress(progress=i, total=total)
+        def on_success(acc: _HostResults, r: dict) -> None:
+            acc.locations.append(f"{_rpath} on {r['hostname']}")
+
+        collected = _HostResults(on_success, seed=[_lpath])
+        await _fan_out_over_hosts(
+            hosts, send_host, ctx, parallel, max_threads, collected
+        )
         msg = (
             f"Uploaded {_lpath} to {group}"
-            if not errors
+            if not collected.errors
             else f"Upload failed for some in {group}"
         )
         return ResponseBuilder.build(
-            200 if not errors else 500,
+            200 if not collected.errors else 500,
             msg,
             {
                 "inventory": inventory,
                 "group": group,
                 "local_path": _lpath,
                 "remote_path": _rpath,
-                "host_results": results,
+                "host_results": collected.results,
             },
-            error="; ".join(errors),
-            files=files,
-            locations=locations,
-            errors=errors,
+            error="; ".join(collected.errors),
+            files=collected.files,
+            locations=collected.locations,
+            errors=collected.errors,
         )
     except Exception as e:
         ctx_log(ctx, logger, "error", "Upload all fail")
@@ -2442,64 +2372,35 @@ async def _tm_inventory_receive_file(
                 if "t" in locals():
                     await run_blocking(t.close)
 
-        results, files, locations, errors = [], [], [], []
-        if parallel:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
-                futures = [
-                    ex.submit(lambda h: asyncio.run(receive_host(h)), h) for h in hosts
-                ]
-                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
-                    try:
-                        r = future.result()
-                        results.append(r)
-                        if r["status"] == "success":
-                            files.append(rpath)
-                            locations.append(r["local_path"])
-                        else:
-                            errors.extend(r["errors"])
-                        if ctx:
-                            await ctx.report_progress(progress=i, total=total)
-                    except Exception as e:
-                        results.append(
-                            {
-                                "hostname": "unknown",
-                                "status": "failed",
-                                "message": "Parallel error",
-                                "errors": [type(e).__name__],
-                                "local_path": None,
-                            }
-                        )
-                        errors.append(type(e).__name__)
-        else:
-            for i, h in enumerate(hosts, 1):
-                r = await receive_host(h)
-                results.append(r)
-                if r["status"] == "success":
-                    files.append(rpath)
-                    locations.append(r["local_path"])
-                else:
-                    errors.extend(r["errors"])
-                if ctx:
-                    await ctx.report_progress(progress=i, total=total)
+        def on_success(acc: _HostResults, r: dict) -> None:
+            acc.files.append(rpath)
+            acc.locations.append(r["local_path"])
+
+        collected = _HostResults(
+            on_success, error_extra=lambda _e: {"local_path": None}
+        )
+        await _fan_out_over_hosts(
+            hosts, receive_host, ctx, parallel, max_threads, collected
+        )
         msg = (
             f"Downloaded {rpath} from {group}"
-            if not errors
+            if not collected.errors
             else f"Download failed for some in {group}"
         )
         return ResponseBuilder.build(
-            200 if not errors else 500,
+            200 if not collected.errors else 500,
             msg,
             {
                 "inventory": inventory,
                 "group": group,
                 "rpath": rpath,
                 "lpath_prefix": lpath_prefix,
-                "host_results": results,
+                "host_results": collected.results,
             },
-            error="; ".join(errors),
-            files=files,
-            locations=locations,
-            errors=errors,
+            error="; ".join(collected.errors),
+            files=collected.files,
+            locations=collected.locations,
+            errors=collected.errors,
         )
     except Exception as e:
         ctx_log(ctx, logger, "error", "Download all fail")
