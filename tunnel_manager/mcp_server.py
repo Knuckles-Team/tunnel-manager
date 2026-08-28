@@ -146,47 +146,82 @@ def _inventory_password_ref(*sources: dict) -> str | None:
     return validate_secret_ref(str(reference))
 
 
+def _first_value(sources: tuple[dict, ...], *keys: str) -> Any:
+    """First truthy ``source[key]`` scanning sources in order, keys within each.
+
+    Preserves the source-major/key-minor precedence of the ``or``-chains this
+    replaces (host vars beat group vars beat ``all`` vars).
+    """
+    for source in sources:
+        for key in keys:
+            value = source.get(key)
+            if value:
+                return value
+    return None
+
+
+def _group_host_pairs(data: Any) -> dict:
+    """``alias -> (hvars, g_vars)`` for one Ansible group mapping."""
+    if not isinstance(data, dict):
+        return {}
+    g_vars = data.get("vars", {}) or {}
+    g_hosts = data.get("hosts", {}) or {}
+    return {alias: (hvars or {}, g_vars) for alias, hvars in g_hosts.items()}
+
+
+def _ansible_all_group_pairs(all_group: dict) -> dict:
+    """``alias -> (hvars, g_vars)`` for the ``all`` group and every child."""
+    all_hosts = all_group.get("hosts", {}) or {}
+    pairs: dict = {alias: (hvars or {}, {}) for alias, hvars in all_hosts.items()}
+    for child_data in (all_group.get("children", {}) or {}).values():
+        pairs.update(_group_host_pairs(child_data))
+    return pairs
+
+
+def _ansible_toplevel_group_pairs(inv: dict, group: str) -> dict | None:
+    """Pairs for a group defined as a top-level key outside ``all.children``."""
+    entry = inv.get(group)
+    if not isinstance(entry, dict) or "hosts" not in entry:
+        return None
+    return _group_host_pairs(entry)
+
+
 def _ansible_hosts_to_parse(
     inv: dict, all_group: dict, group: str, inventory: str
 ) -> tuple[dict, dict | None]:
     """Collect the (hvars, g_vars) pairs an Ansible-style group resolves to."""
-    all_hosts = all_group.get("hosts", {}) or {}
     children = all_group.get("children", {}) or {}
-    hosts_to_parse: dict = {}  # alias -> (hvars, g_vars)
-
     if group == "all":
-        # Add direct hosts from 'all'
-        for alias, hvars in all_hosts.items():
-            hosts_to_parse[alias] = (hvars or {}, {})
-        # Add hosts from all children
-        for child_data in children.values():
-            if isinstance(child_data, dict):
-                g_hosts = child_data.get("hosts", {}) or {}
-                g_vars = child_data.get("vars", {}) or {}
-                for alias, hvars in g_hosts.items():
-                    hosts_to_parse[alias] = (hvars or {}, g_vars)
-    elif group in children:
-        child_data = children[group]
-        if isinstance(child_data, dict):
-            g_hosts = child_data.get("hosts", {}) or {}
-            g_vars = child_data.get("vars", {}) or {}
-            for alias, hvars in g_hosts.items():
-                hosts_to_parse[alias] = (hvars or {}, g_vars)
-    else:
-        # Group not found in children. Check if defined as a top-level key outside children
-        if group in inv and isinstance(inv[group], dict) and "hosts" in inv[group]:
-            legacy_hosts = inv[group]["hosts"] or {}
-            legacy_vars = inv[group].get("vars", {}) or {}
-            for alias, hvars in legacy_hosts.items():
-                hosts_to_parse[alias] = (hvars or {}, legacy_vars)
-        else:
-            return {}, ResponseBuilder.build(
-                400,
-                "Configured inventory group is invalid",
-                {"inventory": inventory, "group": group},
-                errors=["Configured inventory group is invalid"],
-            )
-    return hosts_to_parse, None
+        return _ansible_all_group_pairs(all_group), None
+    if group in children:
+        return _group_host_pairs(children[group]), None
+    pairs = _ansible_toplevel_group_pairs(inv, group)
+    if pairs is None:
+        return {}, ResponseBuilder.build(
+            400,
+            "Configured inventory group is invalid",
+            {"inventory": inventory, "group": group},
+            errors=["Configured inventory group is invalid"],
+        )
+    return pairs, None
+
+
+_KEY_PATH_KEYS = ("key_path", "identity_file", "ansible_ssh_private_key_file")
+
+
+def _build_ansible_entry(alias: str, hvars: dict, g_vars: dict, all_vars: dict) -> dict:
+    """One host entry from an Ansible-style (host, group, all) var cascade."""
+    sources = (hvars, g_vars, all_vars)
+    username = _first_value(sources, "ansible_user", "user") or ""
+    port = _first_value(sources, "ansible_port", "port") or 22
+    return {
+        "hostname": hvars.get("ansible_host") or hvars.get("hostname") or alias,
+        "username": username,
+        "password_ref": _inventory_password_ref(hvars, g_vars, all_vars),
+        "known_hosts_file": _known_hosts_file(hvars, g_vars, all_vars),
+        "key_path": _first_value(sources, *_KEY_PATH_KEYS),
+        "port": int(port) if port else 22,
+    }
 
 
 def _build_ansible_entries(
@@ -194,45 +229,7 @@ def _build_ansible_entries(
 ) -> list[dict]:
     hosts = []
     for alias, (hvars, g_vars) in hosts_to_parse.items():
-        username = (
-            hvars.get("ansible_user")
-            or hvars.get("user")
-            or g_vars.get("ansible_user")
-            or g_vars.get("user")
-            or all_vars.get("ansible_user")
-            or all_vars.get("user")
-            or ""
-        )
-        password_ref = _inventory_password_ref(hvars, g_vars, all_vars)
-        key_path = (
-            hvars.get("key_path")
-            or hvars.get("identity_file")
-            or hvars.get("ansible_ssh_private_key_file")
-            or g_vars.get("key_path")
-            or g_vars.get("identity_file")
-            or g_vars.get("ansible_ssh_private_key_file")
-            or all_vars.get("key_path")
-            or all_vars.get("identity_file")
-            or all_vars.get("ansible_ssh_private_key_file")
-        )
-        port = (
-            hvars.get("ansible_port")
-            or hvars.get("port")
-            or g_vars.get("ansible_port")
-            or g_vars.get("port")
-            or all_vars.get("ansible_port")
-            or all_vars.get("port")
-            or 22
-        )
-
-        entry = {
-            "hostname": hvars.get("ansible_host") or hvars.get("hostname") or alias,
-            "username": username,
-            "password_ref": password_ref,
-            "known_hosts_file": _known_hosts_file(hvars, g_vars, all_vars),
-            "key_path": key_path,
-            "port": int(port) if port else 22,
-        }
+        entry = _build_ansible_entry(alias, hvars, g_vars, all_vars)
         if not entry["username"]:
             logger.error("Skipping inventory host without a username")
             continue
@@ -251,56 +248,58 @@ def _load_ansible_style_hosts(
     return _build_ansible_entries(hosts_to_parse, all_vars, logger), None
 
 
+def _build_legacy_flat_entry(alias: str, hvars: dict) -> dict:
+    """One host entry from a flat (non-Ansible) inventory mapping."""
+    sources = (hvars,)
+    username = _first_value(sources, "user", "username", "ansible_user") or ""
+    port = _first_value(sources, "port", "ansible_port") or 22
+    return {
+        "hostname": hvars.get("hostname") or hvars.get("ansible_host") or alias,
+        "username": username,
+        "password_ref": _inventory_password_ref(hvars),
+        "known_hosts_file": _known_hosts_file(hvars),
+        "key_path": _first_value(sources, *_KEY_PATH_KEYS),
+        "port": int(port) if port else 22,
+    }
+
+
 def _load_legacy_flat_hosts(inv: dict, logger: logging.Logger) -> list[dict]:
     # Treat the entire inv as flat hosts
     hosts = []
     for alias, hvars in inv.items():
-        if isinstance(hvars, dict):
-            username = (
-                hvars.get("user")
-                or hvars.get("username")
-                or hvars.get("ansible_user")
-                or ""
-            )
-            password_ref = _inventory_password_ref(hvars)
-            key_path = (
-                hvars.get("key_path")
-                or hvars.get("identity_file")
-                or hvars.get("ansible_ssh_private_key_file")
-            )
-            port = hvars.get("port") or hvars.get("ansible_port") or 22
-            entry = {
-                "hostname": hvars.get("hostname") or hvars.get("ansible_host") or alias,
-                "username": username,
-                "password_ref": password_ref,
-                "known_hosts_file": _known_hosts_file(hvars),
-                "key_path": key_path,
-                "port": int(port) if port else 22,
-            }
-            if not entry["username"]:
-                logger.error("Skipping inventory host without a username")
-                continue
-            hosts.append(entry)
+        if not isinstance(hvars, dict):
+            continue
+        entry = _build_legacy_flat_entry(alias, hvars)
+        if not entry["username"]:
+            logger.error("Skipping inventory host without a username")
+            continue
+        hosts.append(entry)
     return hosts
 
 
-def _load_legacy_group_hosts(inv: dict, group: str, logger: logging.Logger) -> list[dict]:
+def _build_legacy_group_entry(host: str, hvars: dict) -> dict:
+    """One host entry from a legacy top-level ``<group>.hosts`` mapping."""
+    sources = (hvars,)
+    username = _first_value(sources, "ansible_user", "user", "username")
+    return {
+        "hostname": hvars.get("ansible_host") or hvars.get("hostname") or host,
+        "username": username,
+        "password_ref": _inventory_password_ref(hvars),
+        "known_hosts_file": _known_hosts_file(hvars),
+        "key_path": _first_value(
+            sources, "ansible_ssh_private_key_file", "key_path", "identity_file"
+        ),
+        "port": int(_first_value(sources, "ansible_port", "port") or 22),
+    }
+
+
+def _load_legacy_group_hosts(
+    inv: dict, group: str, logger: logging.Logger
+) -> list[dict]:
     # Legacy style with group as a top-level key containing 'hosts'
     hosts = []
     for host, vars in inv[group]["hosts"].items():
-        hvars = vars or {}
-        entry = {
-            "hostname": hvars.get("ansible_host") or hvars.get("hostname") or host,
-            "username": hvars.get("ansible_user")
-            or hvars.get("user")
-            or hvars.get("username"),
-            "password_ref": _inventory_password_ref(hvars),
-            "known_hosts_file": _known_hosts_file(hvars),
-            "key_path": hvars.get("ansible_ssh_private_key_file")
-            or hvars.get("key_path")
-            or hvars.get("identity_file"),
-            "port": int(hvars.get("ansible_port") or hvars.get("port") or 22),
-        }
+        entry = _build_legacy_group_entry(host, vars or {})
         if not entry["username"]:
             logger.error("Skipping inventory host without a username")
             continue
@@ -554,7 +553,29 @@ def register_host_tools(mcp: FastMCP):
             )
 
 
-async def _tm_remote_run_command(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+async def _tm_remote_run_command(
+    action,
+    host,
+    user,
+    password_ref,
+    password,
+    port,
+    id_file,
+    certificate,
+    proxy,
+    cfg,
+    cmd,
+    lpath,
+    rpath,
+    key,
+    key_type,
+    new_key,
+    lcfg,
+    rcfg,
+    known_hosts,
+    timeout,
+    ctx,
+) -> dict:
     if not host or not cmd:
         return ResponseBuilder.build(
             400,
@@ -611,8 +632,29 @@ async def _tm_remote_run_command(action, host, user, password_ref, password, por
             await run_blocking(t.close)
 
 
-
-async def _tm_remote_send_file(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+async def _tm_remote_send_file(
+    action,
+    host,
+    user,
+    password_ref,
+    password,
+    port,
+    id_file,
+    certificate,
+    proxy,
+    cfg,
+    cmd,
+    lpath,
+    rpath,
+    key,
+    key_type,
+    new_key,
+    lcfg,
+    rcfg,
+    known_hosts,
+    timeout,
+    ctx,
+) -> dict:
     _logger = logging.getLogger("TunnelServer")
     _lpath = os.path.abspath(os.path.expanduser(lpath))
     _rpath = os.path.expanduser(rpath)
@@ -685,8 +727,29 @@ async def _tm_remote_send_file(action, host, user, password_ref, password, port,
             await run_blocking(t.close)
 
 
-
-async def _tm_remote_receive_file(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+async def _tm_remote_receive_file(
+    action,
+    host,
+    user,
+    password_ref,
+    password,
+    port,
+    id_file,
+    certificate,
+    proxy,
+    cfg,
+    cmd,
+    lpath,
+    rpath,
+    key,
+    key_type,
+    new_key,
+    lcfg,
+    rcfg,
+    known_hosts,
+    timeout,
+    ctx,
+) -> dict:
     _lpath = os.path.abspath(os.path.expanduser(lpath))
     if not host or not rpath or not _lpath:
         return ResponseBuilder.build(
@@ -743,8 +806,29 @@ async def _tm_remote_receive_file(action, host, user, password_ref, password, po
             await run_blocking(t.close)
 
 
-
-async def _tm_remote_check_ssh(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+async def _tm_remote_check_ssh(
+    action,
+    host,
+    user,
+    password_ref,
+    password,
+    port,
+    id_file,
+    certificate,
+    proxy,
+    cfg,
+    cmd,
+    lpath,
+    rpath,
+    key,
+    key_type,
+    new_key,
+    lcfg,
+    rcfg,
+    known_hosts,
+    timeout,
+    ctx,
+) -> dict:
     if not host:
         return ResponseBuilder.build(
             400, "Need host", {"host": host}, errors=["Need host"]
@@ -794,8 +878,29 @@ async def _tm_remote_check_ssh(action, host, user, password_ref, password, port,
             await run_blocking(t.close)
 
 
-
-async def _tm_remote_test_key_auth(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+async def _tm_remote_test_key_auth(
+    action,
+    host,
+    user,
+    password_ref,
+    password,
+    port,
+    id_file,
+    certificate,
+    proxy,
+    cfg,
+    cmd,
+    lpath,
+    rpath,
+    key,
+    key_type,
+    new_key,
+    lcfg,
+    rcfg,
+    known_hosts,
+    timeout,
+    ctx,
+) -> dict:
     _key = key or setting("TUNNEL_IDENTITY_FILE", "")
     if not host or not _key:
         return ResponseBuilder.build(
@@ -835,8 +940,29 @@ async def _tm_remote_test_key_auth(action, host, user, password_ref, password, p
         )
 
 
-
-async def _tm_remote_setup_passwordless(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+async def _tm_remote_setup_passwordless(
+    action,
+    host,
+    user,
+    password_ref,
+    password,
+    port,
+    id_file,
+    certificate,
+    proxy,
+    cfg,
+    cmd,
+    lpath,
+    rpath,
+    key,
+    key_type,
+    new_key,
+    lcfg,
+    rcfg,
+    known_hosts,
+    timeout,
+    ctx,
+) -> dict:
     _key = key or os.path.expanduser("~/.ssh/id_rsa")
     if not host or not password:
         return ResponseBuilder.build(
@@ -937,8 +1063,29 @@ async def _tm_remote_setup_passwordless(action, host, user, password_ref, passwo
             await run_blocking(t.close)
 
 
-
-async def _tm_remote_copy_ssh_config(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+async def _tm_remote_copy_ssh_config(
+    action,
+    host,
+    user,
+    password_ref,
+    password,
+    port,
+    id_file,
+    certificate,
+    proxy,
+    cfg,
+    cmd,
+    lpath,
+    rpath,
+    key,
+    key_type,
+    new_key,
+    lcfg,
+    rcfg,
+    known_hosts,
+    timeout,
+    ctx,
+) -> dict:
     if not host or not lcfg:
         return ResponseBuilder.build(
             400,
@@ -994,8 +1141,29 @@ async def _tm_remote_copy_ssh_config(action, host, user, password_ref, password,
             await run_blocking(t.close)
 
 
-
-async def _tm_remote_rotate_key(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+async def _tm_remote_rotate_key(
+    action,
+    host,
+    user,
+    password_ref,
+    password,
+    port,
+    id_file,
+    certificate,
+    proxy,
+    cfg,
+    cmd,
+    lpath,
+    rpath,
+    key,
+    key_type,
+    new_key,
+    lcfg,
+    rcfg,
+    known_hosts,
+    timeout,
+    ctx,
+) -> dict:
     if not host or not new_key:
         return ResponseBuilder.build(
             400,
@@ -1104,8 +1272,29 @@ async def _tm_remote_rotate_key(action, host, user, password_ref, password, port
             await run_blocking(t.close)
 
 
-
-async def _tm_remote_remove_host_key(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx) -> dict:
+async def _tm_remote_remove_host_key(
+    action,
+    host,
+    user,
+    password_ref,
+    password,
+    port,
+    id_file,
+    certificate,
+    proxy,
+    cfg,
+    cmd,
+    lpath,
+    rpath,
+    key,
+    key_type,
+    new_key,
+    lcfg,
+    rcfg,
+    known_hosts,
+    timeout,
+    ctx,
+) -> dict:
     if not host:
         return ResponseBuilder.build(
             400, "Need host", {"host": host}, errors=["Need host"]
@@ -1118,9 +1307,7 @@ async def _tm_remote_remove_host_key(action, host, user, password_ref, password,
         if ctx:
             await ctx.report_progress(progress=0, total=100)
         _known_hosts = os.path.expanduser(known_hosts)
-        msg = await run_blocking(
-            t.remove_host_key, known_hosts_path=_known_hosts
-        )
+        msg = await run_blocking(t.remove_host_key, known_hosts_path=_known_hosts)
         if ctx:
             await ctx.report_progress(progress=100, total=100)
         return ResponseBuilder.build(
@@ -1141,7 +1328,6 @@ async def _tm_remote_remove_host_key(action, host, user, password_ref, password,
         )
 
 
-
 async def _tm_remote_unknown_action(action) -> dict:
     return ResponseBuilder.build(
         400,
@@ -1151,7 +1337,6 @@ async def _tm_remote_unknown_action(action) -> dict:
             "Valid: run_command, send_file, receive_file, check_ssh, test_key_auth, setup_passwordless, copy_ssh_config, rotate_key, remove_host_key"
         ],
     )
-
 
 
 def register_remote_tools(mcp: FastMCP):
@@ -1265,28 +1450,245 @@ def register_remote_tools(mcp: FastMCP):
                 400, "Invalid SSH timeout", {}, errors=["Invalid SSH timeout"]
             )
         if action == "run_command":
-            return await _tm_remote_run_command(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
+            return await _tm_remote_run_command(
+                action,
+                host,
+                user,
+                password_ref,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                cmd,
+                lpath,
+                rpath,
+                key,
+                key_type,
+                new_key,
+                lcfg,
+                rcfg,
+                known_hosts,
+                timeout,
+                ctx,
+            )
         elif action == "send_file":
-            return await _tm_remote_send_file(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
+            return await _tm_remote_send_file(
+                action,
+                host,
+                user,
+                password_ref,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                cmd,
+                lpath,
+                rpath,
+                key,
+                key_type,
+                new_key,
+                lcfg,
+                rcfg,
+                known_hosts,
+                timeout,
+                ctx,
+            )
         elif action == "receive_file":
-            return await _tm_remote_receive_file(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
+            return await _tm_remote_receive_file(
+                action,
+                host,
+                user,
+                password_ref,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                cmd,
+                lpath,
+                rpath,
+                key,
+                key_type,
+                new_key,
+                lcfg,
+                rcfg,
+                known_hosts,
+                timeout,
+                ctx,
+            )
         elif action == "check_ssh":
-            return await _tm_remote_check_ssh(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
+            return await _tm_remote_check_ssh(
+                action,
+                host,
+                user,
+                password_ref,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                cmd,
+                lpath,
+                rpath,
+                key,
+                key_type,
+                new_key,
+                lcfg,
+                rcfg,
+                known_hosts,
+                timeout,
+                ctx,
+            )
         elif action == "test_key_auth":
-            return await _tm_remote_test_key_auth(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
+            return await _tm_remote_test_key_auth(
+                action,
+                host,
+                user,
+                password_ref,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                cmd,
+                lpath,
+                rpath,
+                key,
+                key_type,
+                new_key,
+                lcfg,
+                rcfg,
+                known_hosts,
+                timeout,
+                ctx,
+            )
         elif action == "setup_passwordless":
-            return await _tm_remote_setup_passwordless(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
+            return await _tm_remote_setup_passwordless(
+                action,
+                host,
+                user,
+                password_ref,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                cmd,
+                lpath,
+                rpath,
+                key,
+                key_type,
+                new_key,
+                lcfg,
+                rcfg,
+                known_hosts,
+                timeout,
+                ctx,
+            )
         elif action == "copy_ssh_config":
-            return await _tm_remote_copy_ssh_config(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
+            return await _tm_remote_copy_ssh_config(
+                action,
+                host,
+                user,
+                password_ref,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                cmd,
+                lpath,
+                rpath,
+                key,
+                key_type,
+                new_key,
+                lcfg,
+                rcfg,
+                known_hosts,
+                timeout,
+                ctx,
+            )
         elif action == "rotate_key":
-            return await _tm_remote_rotate_key(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
+            return await _tm_remote_rotate_key(
+                action,
+                host,
+                user,
+                password_ref,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                cmd,
+                lpath,
+                rpath,
+                key,
+                key_type,
+                new_key,
+                lcfg,
+                rcfg,
+                known_hosts,
+                timeout,
+                ctx,
+            )
         elif action == "remove_host_key":
-            return await _tm_remote_remove_host_key(action, host, user, password_ref, password, port, id_file, certificate, proxy, cfg, cmd, lpath, rpath, key, key_type, new_key, lcfg, rcfg, known_hosts, timeout, ctx)
+            return await _tm_remote_remove_host_key(
+                action,
+                host,
+                user,
+                password_ref,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                cmd,
+                lpath,
+                rpath,
+                key,
+                key_type,
+                new_key,
+                lcfg,
+                rcfg,
+                known_hosts,
+                timeout,
+                ctx,
+            )
         else:
             return await _tm_remote_unknown_action(action)
 
 
-async def _tm_inventory_configure_key_auth(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx) -> dict:
+async def _tm_inventory_configure_key_auth(
+    action,
+    inventory,
+    group,
+    host,
+    preview,
+    parallel,
+    max_threads,
+    cmd,
+    key,
+    key_type,
+    key_pfx,
+    cfg,
+    rmt_cfg,
+    lpath,
+    rpath,
+    lpath_prefix,
+    timeout,
+    ctx,
+) -> dict:
     if key_type not in ["rsa", "ed25519"]:
         return ResponseBuilder.build(
             400,
@@ -1368,9 +1770,7 @@ async def _tm_inventory_configure_key_auth(action, inventory, group, host, previ
                     t.run_command,
                     f"printf '%s\\n' {shlex.quote(pub)} >> ~/.ssh/authorized_keys",
                 )
-                await run_blocking(
-                    t.run_command, "chmod 600 ~/.ssh/authorized_keys"
-                )
+                await run_blocking(t.run_command, "chmod 600 ~/.ssh/authorized_keys")
                 res, msg = await run_blocking(t.test_key_auth, kpath)
                 return {
                     "hostname": host,
@@ -1391,16 +1791,12 @@ async def _tm_inventory_configure_key_auth(action, inventory, group, host, previ
 
         results, files, locations, errors = [], [], [], []
         if parallel:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
                 futures = [
                     ex.submit(lambda h: asyncio.run(setup_host(h, ctx)), h)
                     for h in hosts
                 ]
-                for i, future in enumerate(
-                    concurrent.futures.as_completed(futures), 1
-                ):
+                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
                     try:
                         r = future.result()
                         results.append(r)
@@ -1429,9 +1825,7 @@ async def _tm_inventory_configure_key_auth(action, inventory, group, host, previ
                 results.append(r)
                 if r["status"] == "success":
                     files.append(pub_key)
-                    locations.append(
-                        f"~/.ssh/authorized_keys on {r['hostname']}"
-                    )
+                    locations.append(f"~/.ssh/authorized_keys on {r['hostname']}")
                 else:
                     errors.extend(r["errors"])
                 if ctx:
@@ -1465,8 +1859,26 @@ async def _tm_inventory_configure_key_auth(action, inventory, group, host, previ
         )
 
 
-
-async def _tm_inventory_mesh_bootstrap(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx) -> dict:
+async def _tm_inventory_mesh_bootstrap(
+    action,
+    inventory,
+    group,
+    host,
+    preview,
+    parallel,
+    max_threads,
+    cmd,
+    key,
+    key_type,
+    key_pfx,
+    cfg,
+    rmt_cfg,
+    lpath,
+    rpath,
+    lpath_prefix,
+    timeout,
+    ctx,
+) -> dict:
     if key_type not in ["rsa", "ed25519"]:
         return ResponseBuilder.build(
             400,
@@ -1514,8 +1926,26 @@ async def _tm_inventory_mesh_bootstrap(action, inventory, group, host, preview, 
         )
 
 
-
-async def _tm_inventory_run_command(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx) -> dict:
+async def _tm_inventory_run_command(
+    action,
+    inventory,
+    group,
+    host,
+    preview,
+    parallel,
+    max_threads,
+    cmd,
+    key,
+    key_type,
+    key_pfx,
+    cfg,
+    rmt_cfg,
+    lpath,
+    rpath,
+    lpath_prefix,
+    timeout,
+    ctx,
+) -> dict:
     if not cmd:
         return ResponseBuilder.build(
             400, "Need cmd", {"action": action, "cmd": cmd}, errors=["Need cmd"]
@@ -1561,9 +1991,7 @@ async def _tm_inventory_run_command(action, inventory, group, host, preview, par
                         known_hosts_file=h.get("known_hosts_file"),
                     )
                 )
-                out, error = await run_blocking(
-                    t.run_command, cmd, timeout=timeout
-                )
+                out, error = await run_blocking(t.run_command, cmd, timeout=timeout)
                 return {
                     "hostname": host,
                     "status": "success",
@@ -1587,16 +2015,11 @@ async def _tm_inventory_run_command(action, inventory, group, host, preview, par
 
         results, errors = [], []
         if parallel:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
                 futures = [
-                    ex.submit(lambda h: asyncio.run(run_host(h, ctx)), h)
-                    for h in hosts
+                    ex.submit(lambda h: asyncio.run(run_host(h, ctx)), h) for h in hosts
                 ]
-                for i, future in enumerate(
-                    concurrent.futures.as_completed(futures), 1
-                ):
+                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
                     try:
                         r = future.result()
                         results.append(r)
@@ -1655,8 +2078,26 @@ async def _tm_inventory_run_command(action, inventory, group, host, preview, par
         )
 
 
-
-async def _tm_inventory_copy_ssh_config(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx) -> dict:
+async def _tm_inventory_copy_ssh_config(
+    action,
+    inventory,
+    group,
+    host,
+    preview,
+    parallel,
+    max_threads,
+    cmd,
+    key,
+    key_type,
+    key_pfx,
+    cfg,
+    rmt_cfg,
+    lpath,
+    rpath,
+    lpath_prefix,
+    timeout,
+    ctx,
+) -> dict:
     if not cfg:
         return ResponseBuilder.build(
             400, "Need cfg", {"action": action}, errors=["Need cfg"]
@@ -1708,16 +2149,11 @@ async def _tm_inventory_copy_ssh_config(action, inventory, group, host, preview,
                     await run_blocking(t.close)
 
         if parallel:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
                 futures = [
-                    ex.submit(lambda h: asyncio.run(copy_host(h)), h)
-                    for h in hosts
+                    ex.submit(lambda h: asyncio.run(copy_host(h)), h) for h in hosts
                 ]
-                for i, future in enumerate(
-                    concurrent.futures.as_completed(futures), 1
-                ):
+                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
                     try:
                         r = future.result()
                         results.append(r)
@@ -1784,8 +2220,26 @@ async def _tm_inventory_copy_ssh_config(action, inventory, group, host, preview,
         )
 
 
-
-async def _tm_inventory_rotate_key(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx) -> dict:
+async def _tm_inventory_rotate_key(
+    action,
+    inventory,
+    group,
+    host,
+    preview,
+    parallel,
+    max_threads,
+    cmd,
+    key,
+    key_type,
+    key_pfx,
+    cfg,
+    rmt_cfg,
+    lpath,
+    rpath,
+    lpath_prefix,
+    timeout,
+    ctx,
+) -> dict:
     if key_type not in ["rsa", "ed25519"]:
         return ResponseBuilder.build(
             400,
@@ -1836,16 +2290,11 @@ async def _tm_inventory_rotate_key(action, inventory, group, host, preview, para
                     await run_blocking(t.close)
 
         if parallel:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
                 futures = [
-                    ex.submit(lambda h: asyncio.run(rotate_host(h)), h)
-                    for h in hosts
+                    ex.submit(lambda h: asyncio.run(rotate_host(h)), h) for h in hosts
                 ]
-                for i, future in enumerate(
-                    concurrent.futures.as_completed(futures), 1
-                ):
+                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
                     try:
                         r = future.result()
                         results.append(r)
@@ -1875,9 +2324,7 @@ async def _tm_inventory_rotate_key(action, inventory, group, host, preview, para
                 results.append(r)
                 if r["status"] == "success":
                     files.append(r["new_key_path"] + ".pub")
-                    locations.append(
-                        f"~/.ssh/authorized_keys on {r['hostname']}"
-                    )
+                    locations.append(f"~/.ssh/authorized_keys on {r['hostname']}")
                 else:
                     errors.extend(r["errors"])
                 if ctx:
@@ -1917,8 +2364,26 @@ async def _tm_inventory_rotate_key(action, inventory, group, host, preview, para
         )
 
 
-
-async def _tm_inventory_send_file(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx) -> dict:
+async def _tm_inventory_send_file(
+    action,
+    inventory,
+    group,
+    host,
+    preview,
+    parallel,
+    max_threads,
+    cmd,
+    key,
+    key_type,
+    key_pfx,
+    cfg,
+    rmt_cfg,
+    lpath,
+    rpath,
+    lpath_prefix,
+    timeout,
+    ctx,
+) -> dict:
     _lpath = os.path.abspath(os.path.expanduser(lpath))
     _rpath = os.path.expanduser(rpath)
     if not _lpath or not _rpath:
@@ -1983,16 +2448,11 @@ async def _tm_inventory_send_file(action, inventory, group, host, preview, paral
 
         results, files, locations, errors = [_lpath], [], [], []
         if parallel:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
                 futures = [
-                    ex.submit(lambda h: asyncio.run(send_host(h)), h)
-                    for h in hosts
+                    ex.submit(lambda h: asyncio.run(send_host(h)), h) for h in hosts
                 ]
-                for i, future in enumerate(
-                    concurrent.futures.as_completed(futures), 1
-                ):
+                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
                     try:
                         r = future.result()
                         results.append(r)
@@ -2057,8 +2517,26 @@ async def _tm_inventory_send_file(action, inventory, group, host, preview, paral
         )
 
 
-
-async def _tm_inventory_receive_file(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx) -> dict:
+async def _tm_inventory_receive_file(
+    action,
+    inventory,
+    group,
+    host,
+    preview,
+    parallel,
+    max_threads,
+    cmd,
+    key,
+    key_type,
+    key_pfx,
+    cfg,
+    rmt_cfg,
+    lpath,
+    rpath,
+    lpath_prefix,
+    timeout,
+    ctx,
+) -> dict:
     if not rpath or not lpath_prefix:
         return ResponseBuilder.build(
             400,
@@ -2112,16 +2590,11 @@ async def _tm_inventory_receive_file(action, inventory, group, host, preview, pa
 
         results, files, locations, errors = [], [], [], []
         if parallel:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
                 futures = [
-                    ex.submit(lambda h: asyncio.run(receive_host(h)), h)
-                    for h in hosts
+                    ex.submit(lambda h: asyncio.run(receive_host(h)), h) for h in hosts
                 ]
-                for i, future in enumerate(
-                    concurrent.futures.as_completed(futures), 1
-                ):
+                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
                     try:
                         r = future.result()
                         results.append(r)
@@ -2189,7 +2662,6 @@ async def _tm_inventory_receive_file(action, inventory, group, host, preview, pa
         )
 
 
-
 async def _tm_inventory_unknown_action(action) -> dict:
     return ResponseBuilder.build(
         400,
@@ -2199,7 +2671,6 @@ async def _tm_inventory_unknown_action(action) -> dict:
             "Valid: configure_key_auth, run_command, copy_ssh_config, rotate_key, send_file, receive_file"
         ],
     )
-
 
 
 def register_inventory_tools(mcp: FastMCP):
@@ -2324,19 +2795,152 @@ def register_inventory_tools(mcp: FastMCP):
             )
 
         if action == "configure_key_auth":
-            return await _tm_inventory_configure_key_auth(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx)
+            return await _tm_inventory_configure_key_auth(
+                action,
+                inventory,
+                group,
+                host,
+                preview,
+                parallel,
+                max_threads,
+                cmd,
+                key,
+                key_type,
+                key_pfx,
+                cfg,
+                rmt_cfg,
+                lpath,
+                rpath,
+                lpath_prefix,
+                timeout,
+                ctx,
+            )
         elif action == "mesh_bootstrap":
-            return await _tm_inventory_mesh_bootstrap(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx)
+            return await _tm_inventory_mesh_bootstrap(
+                action,
+                inventory,
+                group,
+                host,
+                preview,
+                parallel,
+                max_threads,
+                cmd,
+                key,
+                key_type,
+                key_pfx,
+                cfg,
+                rmt_cfg,
+                lpath,
+                rpath,
+                lpath_prefix,
+                timeout,
+                ctx,
+            )
         elif action == "run_command":
-            return await _tm_inventory_run_command(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx)
+            return await _tm_inventory_run_command(
+                action,
+                inventory,
+                group,
+                host,
+                preview,
+                parallel,
+                max_threads,
+                cmd,
+                key,
+                key_type,
+                key_pfx,
+                cfg,
+                rmt_cfg,
+                lpath,
+                rpath,
+                lpath_prefix,
+                timeout,
+                ctx,
+            )
         elif action == "copy_ssh_config":
-            return await _tm_inventory_copy_ssh_config(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx)
+            return await _tm_inventory_copy_ssh_config(
+                action,
+                inventory,
+                group,
+                host,
+                preview,
+                parallel,
+                max_threads,
+                cmd,
+                key,
+                key_type,
+                key_pfx,
+                cfg,
+                rmt_cfg,
+                lpath,
+                rpath,
+                lpath_prefix,
+                timeout,
+                ctx,
+            )
         elif action == "rotate_key":
-            return await _tm_inventory_rotate_key(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx)
+            return await _tm_inventory_rotate_key(
+                action,
+                inventory,
+                group,
+                host,
+                preview,
+                parallel,
+                max_threads,
+                cmd,
+                key,
+                key_type,
+                key_pfx,
+                cfg,
+                rmt_cfg,
+                lpath,
+                rpath,
+                lpath_prefix,
+                timeout,
+                ctx,
+            )
         elif action == "send_file":
-            return await _tm_inventory_send_file(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx)
+            return await _tm_inventory_send_file(
+                action,
+                inventory,
+                group,
+                host,
+                preview,
+                parallel,
+                max_threads,
+                cmd,
+                key,
+                key_type,
+                key_pfx,
+                cfg,
+                rmt_cfg,
+                lpath,
+                rpath,
+                lpath_prefix,
+                timeout,
+                ctx,
+            )
         elif action == "receive_file":
-            return await _tm_inventory_receive_file(action, inventory, group, host, preview, parallel, max_threads, cmd, key, key_type, key_pfx, cfg, rmt_cfg, lpath, rpath, lpath_prefix, timeout, ctx)
+            return await _tm_inventory_receive_file(
+                action,
+                inventory,
+                group,
+                host,
+                preview,
+                parallel,
+                max_threads,
+                cmd,
+                key,
+                key_type,
+                key_pfx,
+                cfg,
+                rmt_cfg,
+                lpath,
+                rpath,
+                lpath_prefix,
+                timeout,
+                ctx,
+            )
         else:
             return await _tm_inventory_unknown_action(action)
 
