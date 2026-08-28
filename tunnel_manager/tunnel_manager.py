@@ -284,7 +284,9 @@ def _legacy_flat_all_hosts(inventory_data: dict, logger: logging.Logger) -> list
     return hosts
 
 
-def _legacy_grouped_hosts(inventory_data: dict, group: str, logger: logging.Logger) -> list[dict]:
+def _legacy_grouped_hosts(
+    inventory_data: dict, group: str, logger: logging.Logger
+) -> list[dict]:
     """Legacy style with ``group`` as a top-level key containing a ``hosts`` mapping."""
 
     hosts: list[dict] = []
@@ -403,6 +405,217 @@ def default_inventory_path() -> str:
     return yml
 
 
+def _ansible_all_host_entry(alias: str, hvars: dict, all_vars: dict) -> dict:
+    """Build one host entry from the ``all.hosts`` level of an Ansible-style
+    inventory."""
+    if not hvars:
+        hvars = {}
+    return {
+        "hostname": hvars.get("ansible_host", alias),
+        "user": hvars.get("ansible_user") or all_vars.get("ansible_user", ""),
+        "password_ref": _password_ref(hvars, all_vars),
+        "known_hosts_file": _known_hosts_file(hvars, all_vars),
+        "port": int(hvars.get("ansible_port") or all_vars.get("ansible_port") or 22),
+        "identity_file": hvars.get("ansible_ssh_private_key_file")
+        or all_vars.get("ansible_ssh_private_key_file"),
+        "proxy_command": hvars.get("ansible_ssh_common_args")
+        or all_vars.get("ansible_ssh_common_args"),
+        "key_path": hvars.get("key_path")
+        or all_vars.get("key_path")
+        or hvars.get("ansible_ssh_private_key_file")
+        or all_vars.get("ansible_ssh_private_key_file"),
+    }
+
+
+def _flatten_ansible_all_group_hosts(all_hosts: dict, all_vars: dict) -> dict:
+    """Flatten the ``all.hosts`` entries of an Ansible-style inventory."""
+    return {
+        alias: _ansible_all_host_entry(alias, hvars, all_vars)
+        for alias, hvars in all_hosts.items()
+    }
+
+
+def _ansible_child_host_field(
+    hvars: dict, g_vars: dict, all_vars: dict, key: str, default=None
+):
+    """Resolve one field with the standard host > group > all precedence."""
+    return hvars.get(key) or g_vars.get(key) or all_vars.get(key, default)
+
+
+def _ansible_child_host_entry(
+    alias: str, hvars: dict, g_vars: dict, all_vars: dict
+) -> dict:
+    """Build one host entry from an Ansible-style inventory child group."""
+    if not hvars:
+        hvars = {}
+    port = _ansible_child_host_field(hvars, g_vars, all_vars, "ansible_port", 22)
+    key_path = (
+        hvars.get("key_path")
+        or g_vars.get("key_path")
+        or hvars.get("ansible_ssh_private_key_file")
+        or g_vars.get("ansible_ssh_private_key_file")
+    )
+    return {
+        "hostname": hvars.get("ansible_host", alias),
+        "user": _ansible_child_host_field(hvars, g_vars, all_vars, "ansible_user", ""),
+        "password_ref": _password_ref(hvars, g_vars, all_vars),
+        "known_hosts_file": _known_hosts_file(hvars, g_vars, all_vars),
+        "port": int(port) if port else 22,
+        "identity_file": _ansible_child_host_field(
+            hvars, g_vars, all_vars, "ansible_ssh_private_key_file"
+        ),
+        "proxy_command": _ansible_child_host_field(
+            hvars, g_vars, all_vars, "ansible_ssh_common_args"
+        ),
+        "key_path": key_path,
+    }
+
+
+def _flatten_ansible_child_group(group_data, all_vars: dict) -> dict:
+    """Flatten one Ansible-style inventory child group's hosts."""
+    if not isinstance(group_data, dict):
+        return {}
+    g_hosts = group_data.get("hosts", {}) or {}
+    g_vars = group_data.get("vars", {}) or {}
+    return {
+        alias: _ansible_child_host_entry(alias, hvars, g_vars, all_vars)
+        for alias, hvars in g_hosts.items()
+    }
+
+
+def _flatten_ansible_style_hosts(all_group: dict) -> dict:
+    """Flatten an Ansible-style ``all:`` group (top-level hosts + children)
+    into the alias-keyed host dict ``HostManager`` stores internally."""
+    children = all_group.get("children", {})
+    all_hosts = all_group.get("hosts", {}) or {}
+    all_vars = all_group.get("vars", {}) or {}
+
+    flattened = _flatten_ansible_all_group_hosts(all_hosts, all_vars)
+    for group_data in children.values():
+        flattened.update(_flatten_ansible_child_group(group_data, all_vars))
+    return flattened
+
+
+def _normalize_legacy_style_hosts(raw: dict) -> dict:
+    """Strip plaintext password fields from a legacy (non-Ansible) inventory
+    dict, in place, and return it."""
+    for entry in raw.values():
+        if isinstance(entry, dict):
+            password_ref = _password_ref(entry)
+            if password_ref:
+                entry["password_ref"] = password_ref
+            else:
+                entry.pop("password_ref", None)
+            entry.pop("password", None)
+            entry.pop("ansible_ssh_pass", None)
+    return raw
+
+
+def _load_existing_ansible_raw(config_file: str) -> dict:
+    """Load an existing Ansible-style inventory file, or seed a fresh skeleton."""
+    existing_raw = {}
+    if os.path.exists(config_file):
+        try:
+            with open(config_file) as f:
+                existing_raw = yaml.safe_load(f) or {}
+        except Exception as exc:
+            raise RuntimeError("refusing to overwrite an unreadable inventory") from exc
+
+    if "all" not in existing_raw:
+        existing_raw = {"all": {"children": {"managed": {"hosts": {}, "vars": {}}}}}
+    return existing_raw
+
+
+def _reject_plaintext_password(entry: dict) -> None:
+    """Raise if ``entry`` carries a plaintext password field."""
+    if "password" in entry or "ansible_ssh_pass" in entry:
+        raise ValueError(
+            "plaintext inventory passwords are unsupported; configure password_ref"
+        )
+
+
+def _set_host_var_if_diverges(
+    host_vars: dict, key: str, value, g_vars: dict, default=None
+) -> None:
+    """Set ``host_vars[key] = value`` only when it differs from the group's
+    own (possibly defaulted) value for ``key`` -- keeps a per-host override
+    out of the file unless it actually overrides the group."""
+    if value and value != g_vars.get(key, default):
+        host_vars[key] = value
+
+
+def _apply_ansible_password_ref(host_vars: dict, password_ref) -> None:
+    """Overlay a resolved ``password_ref`` onto ``host_vars``, clearing any
+    plaintext password fields regardless."""
+    host_vars.pop("ansible_ssh_pass", None)
+    host_vars.pop("password", None)
+    if password_ref:
+        host_vars["ansible_ssh_pass_ref"] = password_ref
+    else:
+        host_vars.pop("ansible_ssh_pass_ref", None)
+        host_vars.pop("password_ref", None)
+
+
+def _apply_ansible_host_vars(
+    host_vars: dict, alias: str, entry: dict, g_vars: dict
+) -> None:
+    """Overlay one resolved host's fields onto its Ansible-style ``host_vars``."""
+    host_vars["ansible_host"] = entry.get("hostname", alias)
+    _set_host_var_if_diverges(host_vars, "ansible_user", entry.get("user"), g_vars)
+    _apply_ansible_password_ref(host_vars, entry.get("password_ref"))
+    _set_host_var_if_diverges(
+        host_vars, "ansible_port", entry.get("port", 22), g_vars, default=22
+    )
+    identity_file = entry.get("identity_file") or entry.get("key_path")
+    _set_host_var_if_diverges(
+        host_vars, "ansible_ssh_private_key_file", identity_file, g_vars
+    )
+    _set_host_var_if_diverges(
+        host_vars,
+        "ansible_ssh_known_hosts_file",
+        entry.get("known_hosts_file"),
+        g_vars,
+    )
+
+
+def _merge_host_into_ansible_group(
+    alias: str, entry: dict, g_hosts: dict, g_vars: dict
+) -> None:
+    """Merge one host's config into an Ansible-style group's ``hosts``/``vars``."""
+    _reject_plaintext_password(entry)
+
+    host_vars = g_hosts.setdefault(alias, {})
+    if not isinstance(host_vars, dict):
+        host_vars = {}
+        g_hosts[alias] = host_vars
+
+    _apply_ansible_host_vars(host_vars, alias, entry, g_vars)
+
+
+def _prune_removed_ansible_hosts(g_hosts: dict, hosts: dict) -> None:
+    """Delete aliases from ``g_hosts`` that ``HostManager`` no longer tracks.
+
+    ``load_inventory()`` flattens every group into ``self.hosts``, so any
+    alias absent from ``hosts`` was deliberately removed via ``remove_host()``.
+    """
+    for alias in list(g_hosts.keys()):
+        if alias not in hosts:
+            del g_hosts[alias]
+
+
+def _clean_flat_hosts(hosts: dict) -> dict:
+    """Copy a flat (non-Ansible) host dict, rejecting plaintext passwords."""
+    clean_hosts = {}
+    for alias, entry in hosts.items():
+        clean = dict(entry)
+        if "password" in clean or "ansible_ssh_pass" in clean:
+            raise ValueError(
+                "plaintext inventory passwords are unsupported; configure password_ref"
+            )
+        clean_hosts[alias] = clean
+    return clean_hosts
+
+
 class HostManager:
     def __init__(self, config_file: str = None):
         if config_file:
@@ -416,119 +629,27 @@ class HostManager:
         self.load_inventory()
 
     def load_inventory(self):
-        if os.path.exists(self.config_file):
-            try:
-                with open(self.config_file) as f:
-                    raw = yaml.safe_load(f) or {}
-
-                # Check if it's an Ansible-style inventory
-                if "all" in raw and isinstance(raw["all"], dict):
-                    flattened = {}
-                    all_group = raw["all"]
-                    children = all_group.get("children", {})
-                    all_hosts = all_group.get("hosts", {}) or {}
-                    all_vars = all_group.get("vars", {}) or {}
-
-                    # Parse hosts at 'all' level
-                    for alias, hvars in all_hosts.items():
-                        if not hvars:
-                            hvars = {}
-                        entry = {
-                            "hostname": hvars.get("ansible_host", alias),
-                            "user": hvars.get("ansible_user")
-                            or all_vars.get("ansible_user", ""),
-                            "password_ref": _password_ref(hvars, all_vars),
-                            "known_hosts_file": _known_hosts_file(hvars, all_vars),
-                            "port": int(
-                                hvars.get("ansible_port")
-                                or all_vars.get("ansible_port")
-                                or 22
-                            ),
-                            "identity_file": hvars.get("ansible_ssh_private_key_file")
-                            or all_vars.get("ansible_ssh_private_key_file"),
-                            "proxy_command": hvars.get("ansible_ssh_common_args")
-                            or all_vars.get("ansible_ssh_common_args"),
-                            "key_path": hvars.get("key_path")
-                            or all_vars.get("key_path")
-                            or hvars.get("ansible_ssh_private_key_file")
-                            or all_vars.get("ansible_ssh_private_key_file"),
-                        }
-                        flattened[alias] = entry
-
-                    # Parse children groups
-                    for group_data in children.values():
-                        if not isinstance(group_data, dict):
-                            continue
-                        g_hosts = group_data.get("hosts", {}) or {}
-                        g_vars = group_data.get("vars", {}) or {}
-
-                        for alias, hvars in g_hosts.items():
-                            if not hvars:
-                                hvars = {}
-
-                            user = (
-                                hvars.get("ansible_user")
-                                or g_vars.get("ansible_user")
-                                or all_vars.get("ansible_user", "")
-                            )
-                            password_ref = _password_ref(hvars, g_vars, all_vars)
-                            port = (
-                                hvars.get("ansible_port")
-                                or g_vars.get("ansible_port")
-                                or all_vars.get("ansible_port", 22)
-                            )
-                            identity_file = (
-                                hvars.get("ansible_ssh_private_key_file")
-                                or g_vars.get("ansible_ssh_private_key_file")
-                                or all_vars.get("ansible_ssh_private_key_file")
-                            )
-                            proxy_command = (
-                                hvars.get("ansible_ssh_common_args")
-                                or g_vars.get("ansible_ssh_common_args")
-                                or all_vars.get("ansible_ssh_common_args")
-                            )
-                            key_path = (
-                                hvars.get("key_path")
-                                or g_vars.get("key_path")
-                                or hvars.get("ansible_ssh_private_key_file")
-                                or g_vars.get("ansible_ssh_private_key_file")
-                            )
-
-                            entry = {
-                                "hostname": hvars.get("ansible_host", alias),
-                                "user": user,
-                                "password_ref": password_ref,
-                                "known_hosts_file": _known_hosts_file(
-                                    hvars, g_vars, all_vars
-                                ),
-                                "port": int(port) if port else 22,
-                                "identity_file": identity_file,
-                                "proxy_command": proxy_command,
-                                "key_path": key_path,
-                            }
-                            flattened[alias] = entry
-                    self.hosts = flattened
-                else:
-                    for entry in raw.values():
-                        if isinstance(entry, dict):
-                            password_ref = _password_ref(entry)
-                            if password_ref:
-                                entry["password_ref"] = password_ref
-                            else:
-                                entry.pop("password_ref", None)
-                            entry.pop("password", None)
-                            entry.pop("ansible_ssh_pass", None)
-                    self.hosts = raw
-                self._inventory_load_failed = False
-                self.logger.info("Loaded configured inventory")
-            except Exception:
-                self.logger.error("Failed to load inventory")
-                self.hosts = {}
-                self._inventory_load_failed = True
-        else:
+        if not os.path.exists(self.config_file):
             self.logger.info("No configured inventory found; starting empty")
             self.hosts = {}
             self._inventory_load_failed = False
+            return
+
+        try:
+            with open(self.config_file) as f:
+                raw = yaml.safe_load(f) or {}
+
+            # Check if it's an Ansible-style inventory
+            if "all" in raw and isinstance(raw["all"], dict):
+                self.hosts = _flatten_ansible_style_hosts(raw["all"])
+            else:
+                self.hosts = _normalize_legacy_style_hosts(raw)
+            self._inventory_load_failed = False
+            self.logger.info("Loaded configured inventory")
+        except Exception:
+            self.logger.error("Failed to load inventory")
+            self.hosts = {}
+            self._inventory_load_failed = True
 
     def save_inventory(self):
         try:
@@ -540,91 +661,34 @@ class HostManager:
             if self.config_file.endswith("inventory.yaml") or self.config_file.endswith(
                 "inventory.yml"
             ):
-                existing_raw = {}
-                if os.path.exists(self.config_file):
-                    try:
-                        with open(self.config_file) as f:
-                            existing_raw = yaml.safe_load(f) or {}
-                    except Exception as exc:
-                        raise RuntimeError(
-                            "refusing to overwrite an unreadable inventory"
-                        ) from exc
-
-                if "all" not in existing_raw:
-                    existing_raw = {
-                        "all": {"children": {"managed": {"hosts": {}, "vars": {}}}}
-                    }
-
-                group_name = "managed"
-                children = existing_raw["all"].setdefault("children", {})
-                group_data = children.setdefault(group_name, {"hosts": {}, "vars": {}})
-                g_hosts = group_data.setdefault("hosts", {})
-                g_vars = group_data.setdefault("vars", {})
-
-                for alias, entry in self.hosts.items():
-                    if isinstance(entry, dict):
-                        hostname = entry.get("hostname", alias)
-                        user = entry.get("user")
-                        password_ref = entry.get("password_ref")
-                        if "password" in entry or "ansible_ssh_pass" in entry:
-                            raise ValueError(
-                                "plaintext inventory passwords are unsupported; configure password_ref"
-                            )
-                        port = entry.get("port", 22)
-                        identity_file = entry.get("identity_file") or entry.get(
-                            "key_path"
-                        )
-                        known_hosts_file = entry.get("known_hosts_file")
-
-                        host_vars = g_hosts.setdefault(alias, {})
-                        if not isinstance(host_vars, dict):
-                            host_vars = {}
-                            g_hosts[alias] = host_vars
-
-                        host_vars["ansible_host"] = hostname
-                        if user and user != g_vars.get("ansible_user"):
-                            host_vars["ansible_user"] = user
-                        host_vars.pop("ansible_ssh_pass", None)
-                        host_vars.pop("password", None)
-                        if password_ref:
-                            host_vars["ansible_ssh_pass_ref"] = password_ref
-                        else:
-                            host_vars.pop("ansible_ssh_pass_ref", None)
-                            host_vars.pop("password_ref", None)
-                        if port and port != g_vars.get("ansible_port", 22):
-                            host_vars["ansible_port"] = port
-                        if identity_file and identity_file != g_vars.get(
-                            "ansible_ssh_private_key_file"
-                        ):
-                            host_vars["ansible_ssh_private_key_file"] = identity_file
-                        if known_hosts_file and known_hosts_file != g_vars.get(
-                            "ansible_ssh_known_hosts_file"
-                        ):
-                            host_vars["ansible_ssh_known_hosts_file"] = known_hosts_file
-
-                # Prune hosts the manager no longer knows about so remove_host()
-                # actually deletes them from the file (the merge above only adds /
-                # updates). load_inventory() flattens every group into self.hosts,
-                # so any alias absent from self.hosts was deliberately removed.
-                for alias in list(g_hosts.keys()):
-                    if alias not in self.hosts:
-                        del g_hosts[alias]
-
-                _atomic_private_yaml(self.config_file, existing_raw)
+                self._save_ansible_style_inventory()
             else:
-                clean_hosts = {}
-                for alias, entry in self.hosts.items():
-                    clean = dict(entry)
-                    if "password" in clean or "ansible_ssh_pass" in clean:
-                        raise ValueError(
-                            "plaintext inventory passwords are unsupported; configure password_ref"
-                        )
-                    clean_hosts[alias] = clean
-                _atomic_private_yaml(self.config_file, clean_hosts)
+                _atomic_private_yaml(self.config_file, _clean_flat_hosts(self.hosts))
             self.logger.info("Saved configured inventory")
         except Exception:
             self.logger.error("Failed to save inventory")
             raise RuntimeError("failed to save configured inventory") from None
+
+    def _save_ansible_style_inventory(self):
+        existing_raw = _load_existing_ansible_raw(self.config_file)
+
+        group_name = "managed"
+        children = existing_raw["all"].setdefault("children", {})
+        group_data = children.setdefault(group_name, {"hosts": {}, "vars": {}})
+        g_hosts = group_data.setdefault("hosts", {})
+        g_vars = group_data.setdefault("vars", {})
+
+        for alias, entry in self.hosts.items():
+            if isinstance(entry, dict):
+                _merge_host_into_ansible_group(alias, entry, g_hosts, g_vars)
+
+        # Prune hosts the manager no longer knows about so remove_host()
+        # actually deletes them from the file (the merge above only adds /
+        # updates). load_inventory() flattens every group into self.hosts,
+        # so any alias absent from self.hosts was deliberately removed.
+        _prune_removed_ansible_hosts(g_hosts, self.hosts)
+
+        _atomic_private_yaml(self.config_file, existing_raw)
 
     def add_host(
         self,
