@@ -468,6 +468,63 @@ def _resolve_host(
     return final_config, ssh_config_file
 
 
+async def _tm_hosts_list() -> dict:
+    """``tm_hosts`` ``list``: return the alias inventory, best-effort KG ingest."""
+    hosts = await run_blocking(host_manager.list_hosts)
+    # Native KG ingestion — default-on, best-effort, never fatal.
+    if setting("TUNNEL_KG_INGEST", "true").lower() not in ("false", "0", "no"):
+        try:
+            from tunnel_manager.kg_ingest import ingest_hosts
+
+            await run_blocking(ingest_hosts, hosts, group="all")
+        except Exception as e:  # noqa: BLE001 — ingestion must not break list
+            logger.debug("Operation failed: error_type=%s", type(e).__name__)
+    return {"hosts": hosts}
+
+
+async def _tm_hosts_add(
+    action: str,
+    alias: str,
+    hostname: str,
+    user: str,
+    port: int,
+    optional: dict,
+) -> dict:
+    """``tm_hosts`` ``add``. ``optional`` carries the blank-means-unset fields."""
+    if not alias or not hostname or not user:
+        return ResponseBuilder.build(
+            400,
+            "Need alias, hostname, user",
+            {"action": action},
+            errors=["Need alias, hostname, user"],
+        )
+    await run_blocking(
+        host_manager.add_host,
+        alias=alias,
+        hostname=hostname,
+        user=user,
+        port=port,
+        identity_file=optional.get("identity_file") or None,
+        password_ref=optional.get("password_ref") or None,
+        known_hosts_file=optional.get("known_hosts_file") or None,
+        proxy_command=optional.get("proxy_command") or None,
+    )
+    return {"status": "success", "message": "Host added."}
+
+
+async def _tm_hosts_remove(action: str, alias: str, ctx) -> dict:
+    """``tm_hosts`` ``remove``, with the destructive-operation confirmation."""
+    if not alias:
+        return ResponseBuilder.build(
+            400, "Need alias", {"action": action}, errors=["Need alias"]
+        )
+    if not await ctx_confirm_destructive(ctx, "remove host"):
+        return {"status": "cancelled", "message": "Operation cancelled by user"}
+    await ctx_progress(ctx, 0, 100)
+    await run_blocking(host_manager.remove_host, alias)
+    return {"status": "success", "message": "Host removed."}
+
+
 def register_host_tools(mcp: FastMCP):
     """Register host inventory management tool."""
 
@@ -504,53 +561,29 @@ def register_host_tools(mcp: FastMCP):
             return resolved
         action = resolved
         if action == "list":
-            hosts = await run_blocking(host_manager.list_hosts)
-            # Native KG ingestion — default-on, best-effort, never fatal.
-            if setting("TUNNEL_KG_INGEST", "true").lower() not in ("false", "0", "no"):
-                try:
-                    from tunnel_manager.kg_ingest import ingest_hosts
-
-                    await run_blocking(ingest_hosts, hosts, group="all")
-                except Exception as e:  # noqa: BLE001 — ingestion must not break list
-                    logger.debug("Operation failed: error_type=%s", type(e).__name__)
-            return {"hosts": hosts}
-        elif action == "add":
-            if not alias or not hostname or not user:
-                return ResponseBuilder.build(
-                    400,
-                    "Need alias, hostname, user",
-                    {"action": action},
-                    errors=["Need alias, hostname, user"],
-                )
-            await run_blocking(
-                host_manager.add_host,
-                alias=alias,
-                hostname=hostname,
-                user=user,
-                port=port,
-                identity_file=identity_file or None,
-                password_ref=password_ref or None,
-                known_hosts_file=known_hosts_file or None,
-                proxy_command=proxy_command or None,
+            return await _tm_hosts_list()
+        if action == "add":
+            return await _tm_hosts_add(
+                action,
+                alias,
+                hostname,
+                user,
+                port,
+                {
+                    "identity_file": identity_file,
+                    "password_ref": password_ref,
+                    "known_hosts_file": known_hosts_file,
+                    "proxy_command": proxy_command,
+                },
             )
-            return {"status": "success", "message": "Host added."}
-        elif action == "remove":
-            if not alias:
-                return ResponseBuilder.build(
-                    400, "Need alias", {"action": action}, errors=["Need alias"]
-                )
-            if not await ctx_confirm_destructive(ctx, "remove host"):
-                return {"status": "cancelled", "message": "Operation cancelled by user"}
-            await ctx_progress(ctx, 0, 100)
-            await run_blocking(host_manager.remove_host, alias)
-            return {"status": "success", "message": "Host removed."}
-        else:
-            return ResponseBuilder.build(
-                400,
-                f"Unknown action: {action}",
-                {"action": action},
-                errors=["Valid: list, add, remove"],
-            )
+        if action == "remove":
+            return await _tm_hosts_remove(action, alias, ctx)
+        return ResponseBuilder.build(
+            400,
+            f"Unknown action: {action}",
+            {"action": action},
+            errors=["Valid: list, add, remove"],
+        )
 
 
 async def _tm_remote_run_command(
@@ -1339,6 +1372,19 @@ async def _tm_remote_unknown_action(action) -> dict:
     )
 
 
+_TM_REMOTE_ACTIONS = {
+    "run_command": _tm_remote_run_command,
+    "send_file": _tm_remote_send_file,
+    "receive_file": _tm_remote_receive_file,
+    "check_ssh": _tm_remote_check_ssh,
+    "test_key_auth": _tm_remote_test_key_auth,
+    "setup_passwordless": _tm_remote_setup_passwordless,
+    "copy_ssh_config": _tm_remote_copy_ssh_config,
+    "rotate_key": _tm_remote_rotate_key,
+    "remove_host_key": _tm_remote_remove_host_key,
+}
+
+
 def register_remote_tools(mcp: FastMCP):
     """Register single-host SSH operations tool."""
 
@@ -1449,224 +1495,32 @@ def register_remote_tools(mcp: FastMCP):
             return ResponseBuilder.build(
                 400, "Invalid SSH timeout", {}, errors=["Invalid SSH timeout"]
             )
-        if action == "run_command":
-            return await _tm_remote_run_command(
-                action,
-                host,
-                user,
-                password_ref,
-                password,
-                port,
-                id_file,
-                certificate,
-                proxy,
-                cfg,
-                cmd,
-                lpath,
-                rpath,
-                key,
-                key_type,
-                new_key,
-                lcfg,
-                rcfg,
-                known_hosts,
-                timeout,
-                ctx,
-            )
-        elif action == "send_file":
-            return await _tm_remote_send_file(
-                action,
-                host,
-                user,
-                password_ref,
-                password,
-                port,
-                id_file,
-                certificate,
-                proxy,
-                cfg,
-                cmd,
-                lpath,
-                rpath,
-                key,
-                key_type,
-                new_key,
-                lcfg,
-                rcfg,
-                known_hosts,
-                timeout,
-                ctx,
-            )
-        elif action == "receive_file":
-            return await _tm_remote_receive_file(
-                action,
-                host,
-                user,
-                password_ref,
-                password,
-                port,
-                id_file,
-                certificate,
-                proxy,
-                cfg,
-                cmd,
-                lpath,
-                rpath,
-                key,
-                key_type,
-                new_key,
-                lcfg,
-                rcfg,
-                known_hosts,
-                timeout,
-                ctx,
-            )
-        elif action == "check_ssh":
-            return await _tm_remote_check_ssh(
-                action,
-                host,
-                user,
-                password_ref,
-                password,
-                port,
-                id_file,
-                certificate,
-                proxy,
-                cfg,
-                cmd,
-                lpath,
-                rpath,
-                key,
-                key_type,
-                new_key,
-                lcfg,
-                rcfg,
-                known_hosts,
-                timeout,
-                ctx,
-            )
-        elif action == "test_key_auth":
-            return await _tm_remote_test_key_auth(
-                action,
-                host,
-                user,
-                password_ref,
-                password,
-                port,
-                id_file,
-                certificate,
-                proxy,
-                cfg,
-                cmd,
-                lpath,
-                rpath,
-                key,
-                key_type,
-                new_key,
-                lcfg,
-                rcfg,
-                known_hosts,
-                timeout,
-                ctx,
-            )
-        elif action == "setup_passwordless":
-            return await _tm_remote_setup_passwordless(
-                action,
-                host,
-                user,
-                password_ref,
-                password,
-                port,
-                id_file,
-                certificate,
-                proxy,
-                cfg,
-                cmd,
-                lpath,
-                rpath,
-                key,
-                key_type,
-                new_key,
-                lcfg,
-                rcfg,
-                known_hosts,
-                timeout,
-                ctx,
-            )
-        elif action == "copy_ssh_config":
-            return await _tm_remote_copy_ssh_config(
-                action,
-                host,
-                user,
-                password_ref,
-                password,
-                port,
-                id_file,
-                certificate,
-                proxy,
-                cfg,
-                cmd,
-                lpath,
-                rpath,
-                key,
-                key_type,
-                new_key,
-                lcfg,
-                rcfg,
-                known_hosts,
-                timeout,
-                ctx,
-            )
-        elif action == "rotate_key":
-            return await _tm_remote_rotate_key(
-                action,
-                host,
-                user,
-                password_ref,
-                password,
-                port,
-                id_file,
-                certificate,
-                proxy,
-                cfg,
-                cmd,
-                lpath,
-                rpath,
-                key,
-                key_type,
-                new_key,
-                lcfg,
-                rcfg,
-                known_hosts,
-                timeout,
-                ctx,
-            )
-        elif action == "remove_host_key":
-            return await _tm_remote_remove_host_key(
-                action,
-                host,
-                user,
-                password_ref,
-                password,
-                port,
-                id_file,
-                certificate,
-                proxy,
-                cfg,
-                cmd,
-                lpath,
-                rpath,
-                key,
-                key_type,
-                new_key,
-                lcfg,
-                rcfg,
-                known_hosts,
-                timeout,
-                ctx,
-            )
-        else:
+        handler = _TM_REMOTE_ACTIONS.get(action)
+        if handler is None:
             return await _tm_remote_unknown_action(action)
+        return await handler(
+            action,
+            host,
+            user,
+            password_ref,
+            password,
+            port,
+            id_file,
+            certificate,
+            proxy,
+            cfg,
+            cmd,
+            lpath,
+            rpath,
+            key,
+            key_type,
+            new_key,
+            lcfg,
+            rcfg,
+            known_hosts,
+            timeout,
+            ctx,
+        )
 
 
 async def _tm_inventory_configure_key_auth(
@@ -2673,6 +2527,17 @@ async def _tm_inventory_unknown_action(action) -> dict:
     )
 
 
+_TM_INVENTORY_ACTIONS = {
+    "configure_key_auth": _tm_inventory_configure_key_auth,
+    "mesh_bootstrap": _tm_inventory_mesh_bootstrap,
+    "run_command": _tm_inventory_run_command,
+    "copy_ssh_config": _tm_inventory_copy_ssh_config,
+    "rotate_key": _tm_inventory_rotate_key,
+    "send_file": _tm_inventory_send_file,
+    "receive_file": _tm_inventory_receive_file,
+}
+
+
 def register_inventory_tools(mcp: FastMCP):
     """Register bulk inventory operations tool."""
 
@@ -2794,155 +2659,229 @@ def register_inventory_tools(mcp: FastMCP):
                 400, "Need inventory", {"action": action}, errors=["Need inventory"]
             )
 
-        if action == "configure_key_auth":
-            return await _tm_inventory_configure_key_auth(
-                action,
-                inventory,
-                group,
-                host,
-                preview,
-                parallel,
-                max_threads,
-                cmd,
-                key,
-                key_type,
-                key_pfx,
-                cfg,
-                rmt_cfg,
-                lpath,
-                rpath,
-                lpath_prefix,
-                timeout,
-                ctx,
+        handler = _TM_INVENTORY_ACTIONS.get(action)
+        if handler is None:
+            return await _tm_inventory_unknown_action(action)
+        return await handler(
+            action,
+            inventory,
+            group,
+            host,
+            preview,
+            parallel,
+            max_threads,
+            cmd,
+            key,
+            key_type,
+            key_pfx,
+            cfg,
+            rmt_cfg,
+            lpath,
+            rpath,
+            lpath_prefix,
+            timeout,
+            ctx,
+        )
+
+
+async def _tm_operations_start(
+    action: str,
+    operation_id: str,
+    operation_type: str,
+    total_steps: int,
+    details: dict,
+    ctx,
+) -> dict:
+    """``tm_operations`` ``start``."""
+    if not operation_type:
+        return ResponseBuilder.build(
+            400,
+            "Need operation_type",
+            {"action": action},
+            errors=["Need operation_type"],
+        )
+    try:
+        op_id = await run_blocking(
+            operation_manager.create_operation,
+            operation_type=operation_type,
+            total_steps=total_steps,
+            details=details,
+        )
+        return ResponseBuilder.build(
+            200,
+            "Operation started",
+            {"operation_id": op_id, "operation_type": operation_type},
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Failed to start operation")
+        return ResponseBuilder.build(
+            500,
+            "Failed to start operation",
+            {"operation_type": operation_type},
+            type(e).__name__,
+        )
+
+
+async def _tm_operations_get_progress(
+    action: str,
+    operation_id: str,
+    operation_type: str,
+    total_steps: int,
+    details: dict,
+    ctx,
+) -> dict:
+    """``tm_operations`` ``get_progress``."""
+    if not operation_id:
+        return ResponseBuilder.build(
+            400,
+            "Need operation_id",
+            {"action": action},
+            errors=["Need operation_id"],
+        )
+    try:
+        status = await run_blocking(
+            operation_manager.get_operation_status, operation_id
+        )
+        if status is None:
+            return ResponseBuilder.build(
+                404,
+                "Operation not found",
+                {"operation_id": operation_id},
+                errors=["Operation not found"],
             )
-        elif action == "mesh_bootstrap":
-            return await _tm_inventory_mesh_bootstrap(
-                action,
-                inventory,
-                group,
-                host,
-                preview,
-                parallel,
-                max_threads,
-                cmd,
-                key,
-                key_type,
-                key_pfx,
-                cfg,
-                rmt_cfg,
-                lpath,
-                rpath,
-                lpath_prefix,
-                timeout,
-                ctx,
-            )
-        elif action == "run_command":
-            return await _tm_inventory_run_command(
-                action,
-                inventory,
-                group,
-                host,
-                preview,
-                parallel,
-                max_threads,
-                cmd,
-                key,
-                key_type,
-                key_pfx,
-                cfg,
-                rmt_cfg,
-                lpath,
-                rpath,
-                lpath_prefix,
-                timeout,
-                ctx,
-            )
-        elif action == "copy_ssh_config":
-            return await _tm_inventory_copy_ssh_config(
-                action,
-                inventory,
-                group,
-                host,
-                preview,
-                parallel,
-                max_threads,
-                cmd,
-                key,
-                key_type,
-                key_pfx,
-                cfg,
-                rmt_cfg,
-                lpath,
-                rpath,
-                lpath_prefix,
-                timeout,
-                ctx,
-            )
-        elif action == "rotate_key":
-            return await _tm_inventory_rotate_key(
-                action,
-                inventory,
-                group,
-                host,
-                preview,
-                parallel,
-                max_threads,
-                cmd,
-                key,
-                key_type,
-                key_pfx,
-                cfg,
-                rmt_cfg,
-                lpath,
-                rpath,
-                lpath_prefix,
-                timeout,
-                ctx,
-            )
-        elif action == "send_file":
-            return await _tm_inventory_send_file(
-                action,
-                inventory,
-                group,
-                host,
-                preview,
-                parallel,
-                max_threads,
-                cmd,
-                key,
-                key_type,
-                key_pfx,
-                cfg,
-                rmt_cfg,
-                lpath,
-                rpath,
-                lpath_prefix,
-                timeout,
-                ctx,
-            )
-        elif action == "receive_file":
-            return await _tm_inventory_receive_file(
-                action,
-                inventory,
-                group,
-                host,
-                preview,
-                parallel,
-                max_threads,
-                cmd,
-                key,
-                key_type,
-                key_pfx,
-                cfg,
-                rmt_cfg,
-                lpath,
-                rpath,
-                lpath_prefix,
-                timeout,
-                ctx,
+        return ResponseBuilder.build(
+            200,
+            "Operation progress retrieved",
+            {"operation_id": operation_id, "status": status},
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Failed to get operation progress")
+        return ResponseBuilder.build(
+            500,
+            "Failed to get operation progress",
+            {"operation_id": operation_id},
+            type(e).__name__,
+        )
+
+
+async def _tm_operations_cancel(
+    action: str,
+    operation_id: str,
+    operation_type: str,
+    total_steps: int,
+    details: dict,
+    ctx,
+) -> dict:
+    """``tm_operations`` ``cancel``, with the destructive-operation confirmation."""
+    if not operation_id:
+        return ResponseBuilder.build(
+            400,
+            "Need operation_id",
+            {"action": action},
+            errors=["Need operation_id"],
+        )
+    if not await ctx_confirm_destructive(ctx, "cancel operation"):
+        return {"status": "cancelled", "message": "Operation cancelled by user"}
+    await ctx_progress(ctx, 0, 100)
+    try:
+        success = await run_blocking(
+            operation_manager.request_cancellation, operation_id
+        )
+        if success:
+            return ResponseBuilder.build(
+                200,
+                "Operation cancellation requested",
+                {"operation_id": operation_id},
             )
         else:
-            return await _tm_inventory_unknown_action(action)
+            return ResponseBuilder.build(
+                400,
+                "Failed to cancel",
+                {"operation_id": operation_id},
+                errors=["Operation not found or already completed"],
+            )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Failed to cancel operation")
+        return ResponseBuilder.build(
+            500,
+            "Failed to cancel operation",
+            {"operation_id": operation_id},
+            type(e).__name__,
+        )
+
+
+async def _tm_operations_get_metrics(
+    action: str,
+    operation_id: str,
+    operation_type: str,
+    total_steps: int,
+    details: dict,
+    ctx,
+) -> dict:
+    """``tm_operations`` ``get_metrics``."""
+    if not operation_id:
+        return ResponseBuilder.build(
+            400,
+            "Need operation_id",
+            {"action": action},
+            errors=["Need operation_id"],
+        )
+    try:
+        metrics = await run_blocking(
+            operation_manager.get_resource_metrics, operation_id
+        )
+        return ResponseBuilder.build(
+            200,
+            "Resource metrics retrieved",
+            {
+                "operation_id": operation_id,
+                "metrics": metrics,
+                "metric_count": len(metrics),
+            },
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Failed to get resource metrics")
+        return ResponseBuilder.build(
+            500,
+            "Failed to get resource metrics",
+            {"operation_id": operation_id},
+            type(e).__name__,
+        )
+
+
+async def _tm_operations_list_sessions(
+    action: str,
+    operation_id: str,
+    operation_type: str,
+    total_steps: int,
+    details: dict,
+    ctx,
+) -> dict:
+    """``tm_operations`` ``list_sessions``."""
+    try:
+        sessions = await run_blocking(operation_manager.list_active_sessions)
+        return ResponseBuilder.build(
+            200,
+            "Active sessions listed",
+            {
+                "sessions": sessions["sessions"],
+                "total_sessions": sessions["total_sessions"],
+            },
+        )
+    except Exception as e:
+        ctx_log(ctx, logger, "error", "Failed to list active sessions")
+        return ResponseBuilder.build(
+            500, "Failed to list active sessions", {}, type(e).__name__
+        )
+
+
+_TM_OPERATIONS_ACTIONS = {
+    "start": _tm_operations_start,
+    "get_progress": _tm_operations_get_progress,
+    "cancel": _tm_operations_cancel,
+    "get_metrics": _tm_operations_get_metrics,
+    "list_sessions": _tm_operations_list_sessions,
+}
 
 
 def register_operations_tools(mcp: FastMCP):
@@ -2982,152 +2921,8 @@ def register_operations_tools(mcp: FastMCP):
         if isinstance(resolved, dict):
             return resolved
         action = resolved
-        if action == "start":
-            if not operation_type:
-                return ResponseBuilder.build(
-                    400,
-                    "Need operation_type",
-                    {"action": action},
-                    errors=["Need operation_type"],
-                )
-            try:
-                op_id = await run_blocking(
-                    operation_manager.create_operation,
-                    operation_type=operation_type,
-                    total_steps=total_steps,
-                    details=details,
-                )
-                return ResponseBuilder.build(
-                    200,
-                    "Operation started",
-                    {"operation_id": op_id, "operation_type": operation_type},
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Failed to start operation")
-                return ResponseBuilder.build(
-                    500,
-                    "Failed to start operation",
-                    {"operation_type": operation_type},
-                    type(e).__name__,
-                )
-
-        elif action == "get_progress":
-            if not operation_id:
-                return ResponseBuilder.build(
-                    400,
-                    "Need operation_id",
-                    {"action": action},
-                    errors=["Need operation_id"],
-                )
-            try:
-                status = await run_blocking(
-                    operation_manager.get_operation_status, operation_id
-                )
-                if status is None:
-                    return ResponseBuilder.build(
-                        404,
-                        "Operation not found",
-                        {"operation_id": operation_id},
-                        errors=["Operation not found"],
-                    )
-                return ResponseBuilder.build(
-                    200,
-                    "Operation progress retrieved",
-                    {"operation_id": operation_id, "status": status},
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Failed to get operation progress")
-                return ResponseBuilder.build(
-                    500,
-                    "Failed to get operation progress",
-                    {"operation_id": operation_id},
-                    type(e).__name__,
-                )
-
-        elif action == "cancel":
-            if not operation_id:
-                return ResponseBuilder.build(
-                    400,
-                    "Need operation_id",
-                    {"action": action},
-                    errors=["Need operation_id"],
-                )
-            if not await ctx_confirm_destructive(ctx, "cancel operation"):
-                return {"status": "cancelled", "message": "Operation cancelled by user"}
-            await ctx_progress(ctx, 0, 100)
-            try:
-                success = await run_blocking(
-                    operation_manager.request_cancellation, operation_id
-                )
-                if success:
-                    return ResponseBuilder.build(
-                        200,
-                        "Operation cancellation requested",
-                        {"operation_id": operation_id},
-                    )
-                else:
-                    return ResponseBuilder.build(
-                        400,
-                        "Failed to cancel",
-                        {"operation_id": operation_id},
-                        errors=["Operation not found or already completed"],
-                    )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Failed to cancel operation")
-                return ResponseBuilder.build(
-                    500,
-                    "Failed to cancel operation",
-                    {"operation_id": operation_id},
-                    type(e).__name__,
-                )
-
-        elif action == "get_metrics":
-            if not operation_id:
-                return ResponseBuilder.build(
-                    400,
-                    "Need operation_id",
-                    {"action": action},
-                    errors=["Need operation_id"],
-                )
-            try:
-                metrics = await run_blocking(
-                    operation_manager.get_resource_metrics, operation_id
-                )
-                return ResponseBuilder.build(
-                    200,
-                    "Resource metrics retrieved",
-                    {
-                        "operation_id": operation_id,
-                        "metrics": metrics,
-                        "metric_count": len(metrics),
-                    },
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Failed to get resource metrics")
-                return ResponseBuilder.build(
-                    500,
-                    "Failed to get resource metrics",
-                    {"operation_id": operation_id},
-                    type(e).__name__,
-                )
-
-        elif action == "list_sessions":
-            try:
-                sessions = await run_blocking(operation_manager.list_active_sessions)
-                return ResponseBuilder.build(
-                    200,
-                    "Active sessions listed",
-                    {
-                        "sessions": sessions["sessions"],
-                        "total_sessions": sessions["total_sessions"],
-                    },
-                )
-            except Exception as e:
-                ctx_log(ctx, logger, "error", "Failed to list active sessions")
-                return ResponseBuilder.build(
-                    500, "Failed to list active sessions", {}, type(e).__name__
-                )
-        else:
+        handler = _TM_OPERATIONS_ACTIONS.get(action)
+        if handler is None:
             return ResponseBuilder.build(
                 400,
                 f"Unknown action: {action}",
@@ -3136,6 +2931,89 @@ def register_operations_tools(mcp: FastMCP):
                     "Valid: start, get_progress, cancel, get_metrics, list_sessions"
                 ],
             )
+        return await handler(
+            action, operation_id, operation_type, total_steps, details, ctx
+        )
+
+
+async def _tm_system_get_info(
+    intelligence, remote_host: str, log_paths: list, patterns: list
+) -> dict:
+    """``tm_system`` ``get_info``."""
+    result = await run_blocking(intelligence.get_system_info)
+    return ResponseBuilder.build(
+        200,
+        "System information retrieved",
+        {"host": remote_host, "system_info": result},
+    )
+
+
+async def _tm_system_discover_services(
+    intelligence, remote_host: str, log_paths: list, patterns: list
+) -> dict:
+    """``tm_system`` ``discover_services``."""
+    result = await run_blocking(intelligence.discover_services)
+    return ResponseBuilder.build(
+        200,
+        "Services discovered",
+        {"host": remote_host, "services": result},
+    )
+
+
+async def _tm_system_analyze_logs(
+    intelligence, remote_host: str, log_paths: list, patterns: list
+) -> dict:
+    """``tm_system`` ``analyze_logs``."""
+    if not log_paths or not patterns:
+        return ResponseBuilder.build(
+            400,
+            "Need log_paths and patterns",
+            {"host": remote_host},
+            errors=["Need log_paths and patterns"],
+        )
+    result = await run_blocking(intelligence.analyze_logs, log_paths, patterns)
+    return ResponseBuilder.build(
+        200,
+        "Log analysis completed",
+        {"host": remote_host, "analysis": result},
+    )
+
+
+async def _tm_system_network_topology(
+    intelligence, remote_host: str, log_paths: list, patterns: list
+) -> dict:
+    """``tm_system`` ``network_topology``."""
+    result = await run_blocking(intelligence.network_topology)
+    return ResponseBuilder.build(
+        200,
+        "Network topology mapped",
+        {"host": remote_host, "topology": result},
+    )
+
+
+_TM_SYSTEM_ACTIONS = {
+    "get_info": _tm_system_get_info,
+    "discover_services": _tm_system_discover_services,
+    "analyze_logs": _tm_system_analyze_logs,
+    "network_topology": _tm_system_network_topology,
+}
+
+
+async def _tm_system_dispatch(
+    action: str, intelligence, remote_host: str, log_paths: list, patterns: list
+) -> dict:
+    """Route one ``tm_system`` action onto an already-built SystemIntelligence."""
+    handler = _TM_SYSTEM_ACTIONS.get(action)
+    if handler is None:
+        return ResponseBuilder.build(
+            400,
+            f"Unknown action: {action}",
+            {"action": action},
+            errors=[
+                "Valid: get_info, discover_services, analyze_logs, network_topology"
+            ],
+        )
+    return await handler(intelligence, remote_host, log_paths, patterns)
 
 
 def register_system_tools(mcp: FastMCP):
@@ -3187,55 +3065,9 @@ def register_system_tools(mcp: FastMCP):
             )
             intelligence = SystemIntelligence(tunnel)
 
-            if action == "get_info":
-                result = await run_blocking(intelligence.get_system_info)
-                return ResponseBuilder.build(
-                    200,
-                    "System information retrieved",
-                    {"host": remote_host, "system_info": result},
-                )
-
-            elif action == "discover_services":
-                result = await run_blocking(intelligence.discover_services)
-                return ResponseBuilder.build(
-                    200,
-                    "Services discovered",
-                    {"host": remote_host, "services": result},
-                )
-
-            elif action == "analyze_logs":
-                if not log_paths or not patterns:
-                    return ResponseBuilder.build(
-                        400,
-                        "Need log_paths and patterns",
-                        {"host": remote_host},
-                        errors=["Need log_paths and patterns"],
-                    )
-                result = await run_blocking(
-                    intelligence.analyze_logs, log_paths, patterns
-                )
-                return ResponseBuilder.build(
-                    200,
-                    "Log analysis completed",
-                    {"host": remote_host, "analysis": result},
-                )
-
-            elif action == "network_topology":
-                result = await run_blocking(intelligence.network_topology)
-                return ResponseBuilder.build(
-                    200,
-                    "Network topology mapped",
-                    {"host": remote_host, "topology": result},
-                )
-            else:
-                return ResponseBuilder.build(
-                    400,
-                    f"Unknown action: {action}",
-                    {"action": action},
-                    errors=[
-                        "Valid: get_info, discover_services, analyze_logs, network_topology"
-                    ],
-                )
+            return await _tm_system_dispatch(
+                action, intelligence, remote_host, log_paths, patterns
+            )
         except Exception as e:
             ctx_log(ctx, logger, "error", "System intelligence fail ({action})")
             return ResponseBuilder.build(
@@ -3543,6 +3375,95 @@ def register_file_tools(mcp: FastMCP):
             )
 
 
+async def _tm_security_audit(
+    auditor, remote_host: str, scope: list, standard: str, scan_type: str
+) -> dict:
+    """``tm_security`` ``security_audit``."""
+    result = await run_blocking(auditor.security_audit, scope if scope else None)
+    return ResponseBuilder.build(
+        200 if result["success"] else 500,
+        f"Security audit completed with score: {result['score']}/100",
+        {"host": remote_host, "audit_result": result},
+        error=result.get("error", ""),
+        errors=result.get("audit_errors", []),
+    )
+
+
+async def _tm_security_compliance_check(
+    auditor, remote_host: str, scope: list, standard: str, scan_type: str
+) -> dict:
+    """``tm_security`` ``compliance_check``."""
+    result = await run_blocking(auditor.compliance_check, standard)
+    return ResponseBuilder.build(
+        200 if result["success"] else 500,
+        f"Compliance check completed: {result['compliance_percentage']:.1f}% compliant",
+        {
+            "host": remote_host,
+            "standard": standard,
+            "compliance_result": result,
+        },
+        error=result.get("error", ""),
+        errors=result.get("check_errors", []),
+    )
+
+
+async def _tm_security_vulnerability_scan(
+    auditor, remote_host: str, scope: list, standard: str, scan_type: str
+) -> dict:
+    """``tm_security`` ``vulnerability_scan``."""
+    result = await run_blocking(auditor.vulnerability_scan, scan_type)
+    return ResponseBuilder.build(
+        200 if result["success"] else 500,
+        f"Vulnerability scan completed: {len(result['vulnerabilities'])} vulnerabilities found",
+        {
+            "host": remote_host,
+            "scan_type": scan_type,
+            "scan_result": result,
+        },
+        error=result.get("error", ""),
+        errors=result.get("scan_errors", []),
+    )
+
+
+async def _tm_security_access_control_audit(
+    auditor, remote_host: str, scope: list, standard: str, scan_type: str
+) -> dict:
+    """``tm_security`` ``access_control_audit``."""
+    result = await run_blocking(auditor.access_control_audit)
+    return ResponseBuilder.build(
+        200 if result["success"] else 500,
+        f"Access control audit completed: {result['users_audited']} users audited",
+        {"host": remote_host, "audit_result": result},
+        error=result.get("error", ""),
+        errors=result.get("audit_errors", []),
+    )
+
+
+_TM_SECURITY_ACTIONS = {
+    "security_audit": _tm_security_audit,
+    "compliance_check": _tm_security_compliance_check,
+    "vulnerability_scan": _tm_security_vulnerability_scan,
+    "access_control_audit": _tm_security_access_control_audit,
+}
+
+
+async def _tm_security_dispatch(
+    action: str, auditor, remote_host: str, scope: list, standard: str, scan_type: str
+) -> dict:
+    """Route one ``tm_security`` action onto an already-built SecurityAuditor."""
+    handler = _TM_SECURITY_ACTIONS.get(action)
+    if handler is None:
+        return ResponseBuilder.build(
+            400,
+            f"Unknown action: {action}",
+            {"action": action},
+            errors=[
+                "Valid: security_audit, compliance_check, vulnerability_scan, access_control_audit"
+            ],
+        )
+    return await handler(auditor, remote_host, scope, standard, scan_type)
+
+
 def register_security_tools(mcp: FastMCP):
     """Register security scanning and compliance tool."""
 
@@ -3602,64 +3523,9 @@ def register_security_tools(mcp: FastMCP):
             )
             auditor = SecurityAuditor(tunnel)
 
-            if action == "security_audit":
-                result = await run_blocking(
-                    auditor.security_audit, scope if scope else None
-                )
-                return ResponseBuilder.build(
-                    200 if result["success"] else 500,
-                    f"Security audit completed with score: {result['score']}/100",
-                    {"host": remote_host, "audit_result": result},
-                    error=result.get("error", ""),
-                    errors=result.get("audit_errors", []),
-                )
-
-            elif action == "compliance_check":
-                result = await run_blocking(auditor.compliance_check, standard)
-                return ResponseBuilder.build(
-                    200 if result["success"] else 500,
-                    f"Compliance check completed: {result['compliance_percentage']:.1f}% compliant",
-                    {
-                        "host": remote_host,
-                        "standard": standard,
-                        "compliance_result": result,
-                    },
-                    error=result.get("error", ""),
-                    errors=result.get("check_errors", []),
-                )
-
-            elif action == "vulnerability_scan":
-                result = await run_blocking(auditor.vulnerability_scan, scan_type)
-                return ResponseBuilder.build(
-                    200 if result["success"] else 500,
-                    f"Vulnerability scan completed: {len(result['vulnerabilities'])} vulnerabilities found",
-                    {
-                        "host": remote_host,
-                        "scan_type": scan_type,
-                        "scan_result": result,
-                    },
-                    error=result.get("error", ""),
-                    errors=result.get("scan_errors", []),
-                )
-
-            elif action == "access_control_audit":
-                result = await run_blocking(auditor.access_control_audit)
-                return ResponseBuilder.build(
-                    200 if result["success"] else 500,
-                    f"Access control audit completed: {result['users_audited']} users audited",
-                    {"host": remote_host, "audit_result": result},
-                    error=result.get("error", ""),
-                    errors=result.get("audit_errors", []),
-                )
-            else:
-                return ResponseBuilder.build(
-                    400,
-                    f"Unknown action: {action}",
-                    {"action": action},
-                    errors=[
-                        "Valid: security_audit, compliance_check, vulnerability_scan, access_control_audit"
-                    ],
-                )
+            return await _tm_security_dispatch(
+                action, auditor, remote_host, scope, standard, scan_type
+            )
         except Exception as e:
             ctx_log(ctx, logger, "error", "Security audit fail ({action})")
             return ResponseBuilder.build(
