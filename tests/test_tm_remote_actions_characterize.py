@@ -235,11 +235,11 @@ class TestCheckSsh:
 
 class TestTestKeyAuth:
     @pytest.mark.asyncio
-    async def test_happy_path_pins_missing_close_bug(self):
-        """CXA-FL-TUNNELMANAGER-01 BUG: unlike every sibling action (and
-        unlike check_ssh immediately above it), test_key_auth has no
-        `finally: await run_blocking(t.close)` -- the Tunnel it opens is
-        never closed. This test pins that AS-IS (do not fix here)."""
+    async def test_happy_path_closes_tunnel(self):
+        """BUG-CX-032 fix (WD3-FL-03): unlike its former self, test_key_auth
+        now closes the Tunnel it opens, matching every sibling action and
+        check_ssh immediately above it. Was pinned as a bug by
+        CXA-FL-TUNNELMANAGER-01; fixed here."""
         fn = _capture_tm_remote()
         with (
             patch(
@@ -255,8 +255,8 @@ class TestTestKeyAuth:
             result = await _call(fn, action="test_key_auth", key="/fake/key")
 
         assert result["status_code"] == 200
-        # BUG, pinned as-is: close() is never called for this action.
-        mock_tunnel.close.assert_not_called()
+        # BUG-CX-032 fixed: close() is now called for this action.
+        mock_tunnel.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_missing_key_rejected(self):
