@@ -130,14 +130,14 @@ repos:
     pass_filenames: false
   - id: env-var-drift
     name: check env-var/config drift
-    entry: bash -c 'if [ -f uv.lock ]; then uv run python -m agent_utilities.mcp.check_env_var_drift --check; else python -m agent_utilities.mcp.check_env_var_drift --check; fi'
+    entry: python scripts/check_env_var_drift.py --check
     language: system
     pass_filenames: false
-    files: ^(README\.md|\.env\.example|mcp_config.*\.json|.*/mcp_config.*\.json|docker/.*compose.*\.ya?ml|.*/auth\.py|.*/mcp_server\.py)$
+    files: ^(README\.md|\.env\.example|docs/deployment\.md|mcp_config.*\.json|.*/mcp_config.*\.json|docker/.*compose.*\.ya?ml|.*/auth\.py|.*/mcp_server\.py|tunnel_manager/connection_security\.py|scripts/(check_env_var_drift|deployment_policy)\.py)$
   - id: check-cli-help
     name: check cli help
     entry: |-
-      bash -c 'for f in $(find . -type f \( -name "mcp_server.py" -o -name "agent_server.py" \) -not -path "*/\.venv/*" -not -path "*/__pycache__/*"); do mod=$(echo "$f" | sed -e "s/^\.\///" -e "s/\.py$//" -e "s/\//./g"); uv run python -m "$mod" --help >/dev/null || exit 1; done'
+      bash -c 'set -eu; for f in $(find . -type f \( -name "mcp_server.py" -o -name "agent_server.py" \) -not -path "*/\.venv/*" -not -path "*/__pycache__/*"); do mod=$(echo "$f" | sed -e "s/^\.\///" -e "s/\.py$//" -e "s/\//./g"); python scripts/run_agent_utilities_gate.py --module "$mod" --extra agent-runtime -- --help >/dev/null; done'
     language: system
     pass_filenames: false
     always_run: true
@@ -158,10 +158,14 @@ repos:
     - --ignore=DL3009
     - --ignore=DL4006
     - --ignore=SC2102
-- repo: https://github.com/IamTheFij/docker-pre-commit
-  rev: f626253b23de45412865c07fd076ff95d4cd77a7 # v3.0.1
+- repo: local
   hooks:
   - id: docker-compose-check
+    name: Validate Docker Compose files
+    entry: python scripts/validate_compose.py
+    language: system
+    pass_filenames: false
+    files: ^docker/.*compose.*\.ya?ml$
 - repo: local
   hooks:
   - id: security-sanitizer

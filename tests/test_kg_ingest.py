@@ -12,16 +12,17 @@ from typing import Any
 
 import msgpack
 import pytest
-from agent_utilities.knowledge_graph.memory.native_ingest import NativeIngestError
-from agent_utilities.security.brain_context import ActorContext, use_actor
-from agent_utilities.models.company_brain import ActorType
 from agent_utilities.knowledge_graph.core.session import GraphSession, use_session
+from agent_utilities.knowledge_graph.memory.native_ingest import NativeIngestError
+from agent_utilities.models.company_brain import ActorType
+from agent_utilities.security.brain_context import ActorContext, use_actor
 
 from tunnel_manager.kg_ingest import (
     ingest_documents,
     ingest_entities,
     ingest_hosts,
 )
+from tunnel_manager.models import HostConfig
 
 
 @pytest.fixture(autouse=True)
@@ -184,13 +185,9 @@ def test_ingest_hosts_dedups_shared_key():
     assert "tunnel:sshkey:/k" in c.nodes.values
 
 
-def test_ingest_hosts_accepts_model_dump_objects():
-    class _HC:
-        def model_dump(self, exclude_unset=False):
-            return {"hostname": "h", "user": "u", "port": 2222}
-
+def test_ingest_hosts_accepts_host_config_model_dump():
     c = _FakeClient()
-    res = ingest_hosts({"x": _HC()}, client=c)
+    res = ingest_hosts({"x": HostConfig(hostname="h", user="u", port=2222)}, client=c)
     assert res == {"nodes": 1, "edges": 0}
     assert c.nodes.values["tunnel:host:x"]["sshPort"] == 2222
 

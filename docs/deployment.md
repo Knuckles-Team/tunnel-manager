@@ -62,6 +62,54 @@ Store the real remote URL, outbound identity reference, and TLS-profile referenc
 `AgentConfig`, not in MCP client JSON or documentation.
 <!-- END GENERATED: deployment-options -->
 
+## Canonical deployment authority
+
+The machine-readable block below is the authority for deployment-only inputs that
+are not Python settings. The Compose files consume the two image variables as
+required `:?` substitutions; the examples are immutable digests for structural
+validation only, never images pulled by this repository. The checked-in
+`.env.example` is a developer projection. A projection may lag while another lane
+owns it, but the merge gate reconciles only the exact policy below and keeps all
+other drift fatal.
+
+Raw OTLP public/secret key names are retired. No `tunnel_manager` or Agent
+Utilities runtime reader consumes them; use the corresponding opaque `_REF`
+setting, which the deployment parent resolves. The retired names remain in this
+policy only as an explicit deletion/renaming record, not as accepted configuration.
+
+<!-- BEGIN: deployment-env-policy -->
+```json
+{
+  "schema_version": 1,
+  "retired_environment": {
+    "OTEL_EXPORTER_OTLP_PUBLIC_KEY": {
+      "replacement": "OTEL_EXPORTER_OTLP_PUBLIC_KEY_REF",
+      "reason": "No runtime reader exists in tunnel_manager or Agent Utilities; deployment resolves the opaque reference."
+    },
+    "OTEL_EXPORTER_OTLP_SECRET_KEY": {
+      "replacement": "OTEL_EXPORTER_OTLP_SECRET_KEY_REF",
+      "reason": "No runtime reader exists in tunnel_manager or Agent Utilities; deployment resolves the opaque reference."
+    }
+  },
+  "compose_image_inputs": {
+    "TUNNEL_MANAGER_MCP_IMAGE": {
+      "example": "example.invalid/tunnel-manager-mcp@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "files": [
+        "docker/mcp.compose.yml",
+        "docker/agent.compose.yml"
+      ]
+    },
+    "TUNNEL_MANAGER_AGENT_IMAGE": {
+      "example": "example.invalid/tunnel-manager-agent@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "files": [
+        "docker/agent.compose.yml"
+      ]
+    }
+  }
+}
+```
+<!-- END: deployment-env-policy -->
+
 This page covers running `tunnel-manager` as a long-lived server: the transports, a
 Docker Compose stack, putting it behind a Caddy reverse proxy, and giving it a DNS
 name with Technitium. `tunnel-manager` ships **both** an MCP server (console script
@@ -133,9 +181,10 @@ Each action-routed tool can be toggled independently:
 | `TM_FILES_TOOL` | `True` | Advanced file operations (`tm_files`) |
 | `TM_SECURITY_TOOL` | `True` | Security and compliance auditing (`tm_security`) |
 
-The complete set, including the OTEL and Eunomia connection settings, is documented in
-[`.env.example`](https://github.com/Knuckles-Team/tunnel-manager/blob/main/.env.example).
-Copy it to `.env` and populate only what you use.
+The runtime setting projection, including the OTEL and Eunomia connection settings,
+is documented in [`.env.example`](https://github.com/Knuckles-Team/tunnel-manager/blob/main/.env.example).
+Copy it to `.env` and populate only what you use. Deployment-only inputs and
+retired-name decisions are governed by the canonical authority block above.
 
 ## Docker Compose
 

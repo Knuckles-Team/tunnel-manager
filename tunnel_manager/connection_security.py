@@ -35,8 +35,25 @@ class ConnectionPolicyError(ValueError):
     """Raised when a connection request violates the local security policy."""
 
 
-def _bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int:
-    raw = str(setting(name, "")).strip()
+_RESOURCE_LIMIT_SUFFIXES = (
+    "MAX_COMMAND_CHARS",
+    "MAX_OUTPUT_BYTES",
+    "MAX_TRANSFER_BYTES",
+    "MAX_FLEET_HOSTS",
+    "MAX_CONCURRENCY",
+)
+
+
+def _bounded_env_int(
+    setting_group: str,
+    setting_name: str,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    """Read one bounded setting from the declared ``TUNNEL`` limit family."""
+
+    raw = str(setting(f"{setting_group}_{setting_name}", "")).strip()
     if not raw:
         return default
     try:
@@ -48,26 +65,33 @@ def _bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int
     return value
 
 
+# The setting name is composed at runtime from a stable group and a reviewed suffix
+# family.  Publishing the family keeps the env-drift gate aware of these genuine reads
+# without duplicating the configuration names at each scanner call site.
+_bounded_env_int.dynamic_env_prefix_arg = "setting_group"  # type: ignore[attr-defined]
+_bounded_env_int.dynamic_env_suffixes = _RESOURCE_LIMIT_SUFFIXES  # type: ignore[attr-defined]
+
+
 def max_command_chars() -> int:
-    return _bounded_env_int("TUNNEL_MAX_COMMAND_CHARS", 65_536, 1, 262_144)
+    return _bounded_env_int("TUNNEL", "MAX_COMMAND_CHARS", 65_536, 1, 262_144)
 
 
 def max_output_bytes() -> int:
-    return _bounded_env_int("TUNNEL_MAX_OUTPUT_BYTES", 1_048_576, 1_024, 16_777_216)
+    return _bounded_env_int("TUNNEL", "MAX_OUTPUT_BYTES", 1_048_576, 1_024, 16_777_216)
 
 
 def max_transfer_bytes() -> int:
     return _bounded_env_int(
-        "TUNNEL_MAX_TRANSFER_BYTES", 268_435_456, 1_024, 2_147_483_648
+        "TUNNEL", "MAX_TRANSFER_BYTES", 268_435_456, 1_024, 2_147_483_648
     )
 
 
 def max_fleet_hosts() -> int:
-    return _bounded_env_int("TUNNEL_MAX_FLEET_HOSTS", 1_000, 1, 10_000)
+    return _bounded_env_int("TUNNEL", "MAX_FLEET_HOSTS", 1_000, 1, 10_000)
 
 
 def max_concurrency() -> int:
-    return _bounded_env_int("TUNNEL_MAX_CONCURRENCY", 64, 1, 256)
+    return _bounded_env_int("TUNNEL", "MAX_CONCURRENCY", 64, 1, 256)
 
 
 def validate_host(value: str) -> str:

@@ -65,6 +65,12 @@ def main() -> int:
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--module")
     target.add_argument("--script", type=Path)
+    parser.add_argument(
+        "--extra",
+        action="append",
+        default=[],
+        help="Agent Utilities optional dependency extra required by the gate",
+    )
     parser.add_argument("arguments", nargs=argparse.REMAINDER)
     options = parser.parse_args()
 
@@ -78,7 +84,10 @@ def main() -> int:
     if uv is None:
         parser.error("uv is required to run Agent Utilities pre-commit gates")
 
-    command = [uv, "run", "--project", str(framework_root), "--locked", "python"]
+    command = [uv, "run", "--project", str(framework_root), "--locked"]
+    for extra in options.extra:
+        command.extend(["--extra", extra])
+    command.append("python")
     if options.module:
         command.extend(["-m", options.module])
     else:

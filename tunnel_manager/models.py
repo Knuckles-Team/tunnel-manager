@@ -27,7 +27,7 @@ class HostConfig(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def reject_plaintext_credentials(cls, value: Any) -> Any:
+    def reject_plaintext_credentials(_cls, value: Any) -> Any:
         if isinstance(value, dict):
             if "allow_unknown_host_keys" in value:
                 raise ValueError("unknown SSH host keys cannot be enabled")
@@ -39,22 +39,22 @@ class HostConfig(BaseModel):
 
     @field_validator("hostname")
     @classmethod
-    def validate_hostname(cls, value: str) -> str:
+    def validate_hostname(_cls, value: str) -> str:
         return validate_host(value)
 
     @field_validator("user")
     @classmethod
-    def validate_user(cls, value: str) -> str:
+    def validate_user(_cls, value: str) -> str:
         return validate_username(value)
 
     @field_validator("port")
     @classmethod
-    def validate_ssh_port(cls, value: int) -> int:
+    def validate_ssh_port(_cls, value: int) -> int:
         return validate_port(value)
 
     @field_validator("password_ref")
     @classmethod
-    def validate_password_reference(cls, value: str | None) -> str | None:
+    def validate_password_reference(_cls, value: str | None) -> str | None:
         return validate_secret_ref(value)
 
     def __init__(self, **data):
