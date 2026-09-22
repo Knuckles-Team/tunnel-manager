@@ -26,7 +26,7 @@ import os
 import shlex
 import subprocess
 import sys
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from agent_utilities.core.config import load_config, setting
@@ -543,7 +543,9 @@ def register_host_tools(mcp: FastMCP):
         tags={"host_management"},
     )
     async def tm_hosts(
-        action: str = Field(description="Action: 'list', 'add', 'remove'"),
+        action: Literal["add", "list", "remove"] = Field(
+            description="Action: 'list', 'add', 'remove'"
+        ),
         alias: str = Field(default="", description="Host alias."),
         hostname: str = Field(default="", description="Real hostname or IP."),
         user: str = Field(default="", description="Username."),
@@ -1664,9 +1666,7 @@ async def _fan_out_parallel(
         future_hosts = {
             ex.submit(lambda h: asyncio.run(worker(h)), h): h for h in hosts
         }
-        for i, future in enumerate(
-            concurrent.futures.as_completed(future_hosts), 1
-        ):
+        for i, future in enumerate(concurrent.futures.as_completed(future_hosts), 1):
             try:
                 results.record(future.result())
                 if ctx:

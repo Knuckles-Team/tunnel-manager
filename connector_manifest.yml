@@ -173,7 +173,7 @@ sync:
   updated_field: null
   pagination: null
   doc_type: Host
-  tool_schema_sha256: 9c925f0e490db26e1742dcf426e9da9370b42e959da96341e370e586dcb1d988
+  tool_schema_sha256: b581e3bff53e76b95712ce7bdd50439f6f8d0e0a5607e2857a2df1c36c123dd5
   raw:
     server: tunnel-manager-mcp
     tool: tm_hosts
