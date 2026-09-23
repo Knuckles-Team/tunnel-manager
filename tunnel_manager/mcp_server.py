@@ -541,6 +541,9 @@ def register_host_tools(mcp: FastMCP):
             "idempotentHint": False,
         },
         tags={"host_management"},
+        meta={
+            "eg.annotations": {"modalities_in": ["text"], "modalities_out": ["text"]}
+        },
     )
     async def tm_hosts(
         action: Literal["add", "list", "remove"] = Field(
