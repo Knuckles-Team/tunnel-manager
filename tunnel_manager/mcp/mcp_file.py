@@ -5,8 +5,8 @@ Auto-generated from mcp_server.py during ecosystem standardization.
 
 import logging
 
-from agent_utilities.mcp.concurrency import run_blocking
-from agent_utilities.mcp.context_helpers import ctx_log
+from agent_connector_sdk.mcp.concurrency import run_blocking
+from agent_connector_sdk.mcp.context import ctx_log
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
@@ -138,7 +138,9 @@ def register_file_tools(mcp: FastMCP):
                     errors=result.get("errors", []),
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", "Recursive file ops fail")
+                await ctx_log(
+                    ctx, "Recursive file ops fail", logger=logger, level="error"
+                )
                 return ResponseBuilder.build(
                     500,
                     "Recursive file ops fail",
@@ -177,7 +179,9 @@ def register_file_tools(mcp: FastMCP):
                     error=result.get("error", ""),
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", "File content search fail")
+                await ctx_log(
+                    ctx, "File content search fail", logger=logger, level="error"
+                )
                 return ResponseBuilder.build(
                     500,
                     "File content search fail",
@@ -211,7 +215,7 @@ def register_file_tools(mcp: FastMCP):
                     error=result.get("error", ""),
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", "File watch fail")
+                await ctx_log(ctx, "File watch fail", logger=logger, level="error")
                 return ResponseBuilder.build(
                     500,
                     "File watch fail",
@@ -250,7 +254,7 @@ def register_file_tools(mcp: FastMCP):
                     error=result.get("error", ""),
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", "File diff fail")
+                await ctx_log(ctx, "File diff fail", logger=logger, level="error")
                 return ResponseBuilder.build(
                     500,
                     "File diff fail",
@@ -289,7 +293,7 @@ def register_file_tools(mcp: FastMCP):
                     error=result.get("error", ""),
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", "Backup fail")
+                await ctx_log(ctx, "Backup fail", logger=logger, level="error")
                 return ResponseBuilder.build(
                     500,
                     "Backup fail",

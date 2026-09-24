@@ -43,7 +43,7 @@ import time
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
-from agent_utilities.core.config import setting
+from agent_connector_sdk.config import setting
 
 logger = logging.getLogger("tunnel_manager.net_health")
 

@@ -160,7 +160,7 @@ class TestSendFile:
             )
 
         mock_ctx_log.assert_called_once()
-        logger_arg = mock_ctx_log.call_args.args[1]
+        logger_arg = mock_ctx_log.call_args.kwargs["logger"]
         assert logger_arg.name == "TunnelServer"
 
     @pytest.mark.asyncio

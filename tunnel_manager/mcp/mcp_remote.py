@@ -7,14 +7,11 @@ import logging
 import os
 import subprocess
 
-from agent_utilities.base_utilities import to_integer
-from agent_utilities.core.config import setting
-from agent_utilities.mcp.concurrency import run_blocking
-from agent_utilities.mcp.context_helpers import (
-    ctx_confirm_destructive,
-    ctx_log,
-    ctx_progress,
-)
+from agent_connector_sdk.config import setting
+from agent_connector_sdk.mcp.concurrency import run_blocking
+from agent_connector_sdk.mcp.context import ctx_confirm_destructive, ctx_log
+from agent_connector_sdk.progress import ctx_progress
+from agent_connector_sdk.utilities import to_integer
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
@@ -88,7 +85,7 @@ async def _tm_remote_run_command(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Cmd fail")
+        await ctx_log(ctx, "Cmd fail", logger=logger, level="error")
         await ctx_progress(ctx, 100, 100)
         return ResponseBuilder.build(
             500, "Cmd fail", {"host": host, "cmd": cmd}, type(e).__name__
@@ -96,7 +93,6 @@ async def _tm_remote_run_command(
     finally:
         if "t" in locals():
             await run_blocking(t.close)
-
 
 
 async def _tm_remote_send_file(
@@ -172,7 +168,7 @@ async def _tm_remote_send_file(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, _logger, "error", "Upload fail")
+        await ctx_log(ctx, "Upload fail", logger=_logger, level="error")
         return ResponseBuilder.build(
             500,
             "Upload fail",
@@ -182,7 +178,6 @@ async def _tm_remote_send_file(
     finally:
         if "t" in locals():
             await run_blocking(t.close)
-
 
 
 async def _tm_remote_receive_file(
@@ -242,7 +237,7 @@ async def _tm_remote_receive_file(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Download fail")
+        await ctx_log(ctx, "Download fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Download fail",
@@ -252,7 +247,6 @@ async def _tm_remote_receive_file(
     finally:
         if "t" in locals():
             await run_blocking(t.close)
-
 
 
 async def _tm_remote_check_ssh(
@@ -306,14 +300,13 @@ async def _tm_remote_check_ssh(
             errors=[] if success else [msg],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Check fail")
+        await ctx_log(ctx, "Check fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500, "Check fail", {"host": host}, type(e).__name__
         )
     finally:
         if "t" in locals():
             await run_blocking(t.close)
-
 
 
 async def _tm_remote_test_key_auth(
@@ -357,11 +350,10 @@ async def _tm_remote_test_key_auth(
             errors=[] if success else [msg],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Key test fail")
+        await ctx_log(ctx, "Key test fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500, "Key test fail", {"host": host, "key": _key}, type(e).__name__
         )
-
 
 
 async def _tm_remote_setup_passwordless(
@@ -462,7 +454,7 @@ async def _tm_remote_setup_passwordless(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "SSH setup fail")
+        await ctx_log(ctx, "SSH setup fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "SSH setup fail",
@@ -472,7 +464,6 @@ async def _tm_remote_setup_passwordless(
     finally:
         if "t" in locals():
             await run_blocking(t.close)
-
 
 
 async def _tm_remote_copy_ssh_config(
@@ -531,7 +522,7 @@ async def _tm_remote_copy_ssh_config(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Copy cfg fail")
+        await ctx_log(ctx, "Copy cfg fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Copy cfg fail",
@@ -541,7 +532,6 @@ async def _tm_remote_copy_ssh_config(
     finally:
         if "t" in locals():
             await run_blocking(t.close)
-
 
 
 async def _tm_remote_rotate_key(
@@ -653,7 +643,7 @@ async def _tm_remote_rotate_key(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Rotate fail")
+        await ctx_log(ctx, "Rotate fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Rotate fail",
@@ -663,7 +653,6 @@ async def _tm_remote_rotate_key(
     finally:
         if "t" in locals():
             await run_blocking(t.close)
-
 
 
 async def _tm_remote_remove_host_key(
@@ -683,9 +672,7 @@ async def _tm_remote_remove_host_key(
         if ctx:
             await ctx.report_progress(progress=0, total=100)
         _known_hosts = os.path.expanduser(known_hosts)
-        msg = await run_blocking(
-            t.remove_host_key, known_hosts_path=_known_hosts
-        )
+        msg = await run_blocking(t.remove_host_key, known_hosts_path=_known_hosts)
         if ctx:
             await ctx.report_progress(progress=100, total=100)
         return ResponseBuilder.build(
@@ -697,7 +684,7 @@ async def _tm_remote_remove_host_key(
             errors=[] if "Removed" in msg else [msg],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Remove fail")
+        await ctx_log(ctx, "Remove fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Remove fail",
@@ -800,15 +787,45 @@ def register_remote_tools(mcp: FastMCP):
             )
         if action == "run_command":
             return await _tm_remote_run_command(
-                host, user, password, port, id_file, certificate, proxy, cfg, cmd, timeout, ctx
+                host,
+                user,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                cmd,
+                timeout,
+                ctx,
             )
         elif action == "send_file":
             return await _tm_remote_send_file(
-                host, user, password, port, id_file, certificate, proxy, cfg, lpath, rpath, ctx
+                host,
+                user,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                lpath,
+                rpath,
+                ctx,
             )
         elif action == "receive_file":
             return await _tm_remote_receive_file(
-                host, user, password, port, id_file, certificate, proxy, cfg, lpath, rpath, ctx
+                host,
+                user,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                lpath,
+                rpath,
+                ctx,
             )
         elif action == "check_ssh":
             return await _tm_remote_check_ssh(
@@ -822,11 +839,31 @@ def register_remote_tools(mcp: FastMCP):
             )
         elif action == "copy_ssh_config":
             return await _tm_remote_copy_ssh_config(
-                host, user, password, port, id_file, certificate, proxy, cfg, lcfg, rcfg, ctx
+                host,
+                user,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                lcfg,
+                rcfg,
+                ctx,
             )
         elif action == "rotate_key":
             return await _tm_remote_rotate_key(
-                host, user, password, port, id_file, certificate, proxy, cfg, key_type, new_key, ctx
+                host,
+                user,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                key_type,
+                new_key,
+                ctx,
             )
         elif action == "remove_host_key":
             return await _tm_remote_remove_host_key(host, known_hosts, ctx)

@@ -14,7 +14,7 @@ import shlex
 import stat
 from pathlib import Path
 
-from agent_utilities.core.config import setting
+from agent_connector_sdk.config import setting
 
 _HOST_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]{0,251}[A-Za-z0-9])?\Z")
 _USER_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}\Z")
@@ -185,9 +185,15 @@ def resolve_secret_ref(value: str | None) -> str | None:
             raise ConnectionPolicyError("SSH credential resolution failed")
         resolved = setting(variable)
     else:
-        from agent_utilities.security.secrets_client import create_secrets_client
+        from agent_connector_sdk.credentials.resolution import resolve_secret_reference
 
-        resolved = create_secrets_client().resolve_ref(reference)
+        # resolve_secret_reference raises on failure (unlike AU's resolve_ref,
+        # which returned None); the fail-closed check below needs a plain
+        # falsy value either way, and must never leak the underlying cause.
+        try:
+            resolved = resolve_secret_reference(reference)
+        except Exception:
+            resolved = None
     if resolved is None or not isinstance(resolved, str) or not resolved:
         raise ConnectionPolicyError("SSH credential resolution failed")
     if len(resolved) > 65_536 or "\x00" in resolved:
