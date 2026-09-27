@@ -156,6 +156,7 @@ When query strings or parameters are supplied, an LLM-free **Knowledge Graph res
         "TUNNEL_MANAGER_HOSTS": "r510,r710,r820,rw710",
         "TUNNEL_MAX_THREADS": "6",
         "TUNNEL_PARALLEL": "False",
+        "TUNNEL_PROXY_EXECUTABLES": "ssh,nc,ncat,connect-proxy,corkscrew,tsh",
         "TUNNEL_REMOTE_PORT": "22"
       }
     }
@@ -205,6 +206,7 @@ own runtime secret boundary.
         "TUNNEL_MANAGER_HOSTS": "r510,r710,r820,rw710",
         "TUNNEL_MAX_THREADS": "6",
         "TUNNEL_PARALLEL": "False",
+        "TUNNEL_PROXY_EXECUTABLES": "ssh,nc,ncat,connect-proxy,corkscrew,tsh",
         "TUNNEL_REMOTE_PORT": "22"
       }
     }
@@ -253,6 +255,7 @@ docker run -i --rm \
   -e TUNNEL_MANAGER_HOSTS=r510,r710,r820,rw710 \
   -e TUNNEL_MAX_THREADS=6 \
   -e TUNNEL_PARALLEL=False \
+  -e TUNNEL_PROXY_EXECUTABLES=ssh,nc,ncat,connect-proxy,corkscrew,tsh \
   -e TUNNEL_REMOTE_PORT=22 \
   registry.example.invalid/tunnel-manager@sha256:<digest> tunnel-manager-mcp
 ```
@@ -335,6 +338,8 @@ Full schema, every host field, the copy-paste template, and override options liv
 | `TUNNEL_KNOWN_HOSTS` | `~/.ssh/known_hosts` | independently verified server host keys |
 | `TUNNEL_CERTIFICATE` | — | path to an SSH certificate file |
 | `TUNNEL_PROXY_COMMAND` | — | SSH ProxyCommand for jump-host/bastion connections |
+| `TUNNEL_PROXY_EXECUTABLES` | `ssh,nc,ncat,connect-proxy,corkscrew,tsh` | allowed ProxyCommand executables |
+| `TUNNEL_PROXY_TRUSTED_DIRS` | — | comma-separated trusted executable directories (empty uses system defaults) |
 | `TUNNEL_INVENTORY` | — | path to the inventory file (defaults to XDG config path) |
 | `TUNNEL_INVENTORY_GROUP` | `all` | inventory host group to target |
 | `TUNNEL_PARALLEL` | `False` | run host operations in parallel |
@@ -374,11 +379,11 @@ Full schema, every host field, the copy-paste template, and override options liv
 | `MCP_BASIC_AUTH_USERNAME` | — | HTTP Basic username (`MCP_CLIENT_AUTH=basic`) |
 | `MCP_BASIC_AUTH_PASSWORD_REF` | `secret://identity/mcp-basic-password` | Runtime secret reference for HTTP Basic auth (`MCP_CLIENT_AUTH=basic`) |
 | `MCP_URL` | `http://localhost:8000/mcp` | URL of the MCP server the agent connects to |
-| `PROVIDER` | `openai` | LLM provider for the agent |
-| `MODEL_ID` | `gpt-4o` | Model id for the agent |
+| `PROVIDER` | — | Operator-configured LLM provider for the agent |
+| `MODEL_ID` | — | Operator-configured model id for the agent |
 | `ENABLE_WEB_UI` | `True` | Serve the AG-UI web interface |
 
-_44 package + 14 inherited variable(s). Auto-generated from `.env.example` + the shared agent-utilities set — do not edit._
+_46 package + 14 inherited variable(s). Auto-generated from `.env.example` + the shared agent-utilities set — do not edit._
 <!-- ENV-VARS-TABLE:END -->
 
 
@@ -396,6 +401,8 @@ for a copy-paste starting point.
 | `TUNNEL_REMOTE_HOST` | Default remote host | — |
 | `TUNNEL_REMOTE_PORT` | Default remote SSH port | `22` |
 | `TUNNEL_PROXY_COMMAND` | SSH `ProxyCommand` for jump hosts | — |
+| `TUNNEL_PROXY_EXECUTABLES` | Comma-separated allowlist of SSH proxy executables | `ssh,nc,ncat,connect-proxy,corkscrew,tsh` |
+| `TUNNEL_PROXY_TRUSTED_DIRS` | Comma-separated directories searched for proxy executables | System executable directories |
 
 ### Inventory & parallelism
 | Variable | Description | Default |

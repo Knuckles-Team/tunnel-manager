@@ -25,6 +25,7 @@
         "TUNNEL_MANAGER_HOSTS": "r510,r710,r820,rw710",
         "TUNNEL_MAX_THREADS": "6",
         "TUNNEL_PARALLEL": "False",
+        "TUNNEL_PROXY_EXECUTABLES": "ssh,nc,ncat,connect-proxy,corkscrew,tsh",
         "TUNNEL_REMOTE_PORT": "22"
       }
     }
