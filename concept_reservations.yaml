@@ -1,0 +1,5 @@
+# Concept-ID reservation ledger — GENERATED, do not edit by hand.
+# Truth is docs/concept_reservations.d/<lane>.yaml — one append-only fragment
+# per writing lane. Regenerated on reserve/release/reconcile; rebuild with
+# `agent-utilities concept reconcile`. See docs/concept_coordination.md.
+- {id: TM-OS.governance.entitlement-aware-remote-execution, slug: TM, pillar: OS, domain: governance, session_ref: pref_concept_session_ec5e57d79e0296b1c8649483627bd3c2a15cbf1b50e7d328a3e253386c074bb6, reserved_at: '2026-08-09T05:09:19.211338+00:00', expires_at: '2026-08-10T05:09:19.211338+00:00', status: reserved}
