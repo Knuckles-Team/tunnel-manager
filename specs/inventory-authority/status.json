@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "spec_id": "TM-INVENTORY-001",
+  "owner_repo": "tunnel-manager",
+  "requirement_ids": [
+    "TM-INVENTORY-R001"
+  ],
+  "delivery_state": "SPECIFIED",
+  "acceptance_state": "NOT_AUDITED",
+  "evidence": [],
+  "requirements": [
+    {
+      "id": "TM-INVENTORY-R001",
+      "title": "One canonical host inventory path across surfaces",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    }
+  ]
+}

@@ -1,9 +1,0 @@
-{
-  "schema_version": 1,
-  "spec_id": "RF-018",
-  "owner_repo": "tunnel-manager",
-  "requirement_ids": ["RF-018"],
-  "delivery_state": "SPECIFIED",
-  "acceptance_state": "NOT_AUDITED",
-  "evidence": []
-}
