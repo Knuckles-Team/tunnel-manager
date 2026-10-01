@@ -4,7 +4,7 @@ This tracked `specs/` directory is the public build contract for tunnel-manager.
 
 ## Structure
 
-Create `specs/<stable-id>/` with `spec.md` for user outcomes and requirements, `plan.md` for architecture and existing wiring, `test-spec.md` for positive and negative proof, `tasks.md` for implementation order, and `status.json` for machine-readable delivery and acceptance evidence. Use [`_template/`](_template/) as the starting point. Additional `contracts/`, `data-model.md`, or `quickstart.md` files belong inside the owner spec when needed. The tracked [constitution](../.specify/memory/constitution.md) governs this repository's specs.
+Create `specs/<stable-id>/` with `spec.md` for user outcomes and requirements, `plan.md` for architecture and existing wiring, `test-spec.md` for positive and negative proof, `tasks.md` for implementation order, `requirements.md` for the definition of every requirement ID the spec owns, and `status.json` for machine-readable delivery and acceptance evidence, with one entry per requirement ID in its `requirements` array, each carrying its own `delivery_state` and evidence. Use [`_template/`](_template/) as the starting point. Additional `contracts/`, `data-model.md`, or `quickstart.md` files belong inside the owner spec when needed. The tracked [constitution](../.specify/memory/constitution.md) governs this repository's specs. A requirement counts as delivered only once its evidence includes a merged-head commit on the default branch.
 
 The workflow follows GitHub Spec Kit's specify, plan, and tasks sequence, with an explicit test contract. Each spec must name one owner and stable requirement IDs, inventory existing components, reuse live wiring, and fully describe cross-repository interfaces it owns. Link public counterpart specs where useful; every requirement needed to build this repository's slice remains here. CCCC, `jscpd`, Dupehound, KISS, language-native, security, contract, and release checks must be specified where applicable. Unknown tooling or thresholds are stated as gaps, never invented as passing results.
 
@@ -33,7 +33,7 @@ Use `SPECIFIED/NOT_AUDITED` for a complete build spec with open implementation. 
 
 | Stable ID | Owner spec | Responsibility | State |
 | --- | --- | --- | --- |
-| `RF-018` | [One operator inventory authority](rf-018-inventory-authority/spec.md) | XDG inventory selection, tunnel-manager consumers, and read-only runtime projection contract | `SPECIFIED / NOT_AUDITED` |
+| `TM-INVENTORY-001` | [One operator inventory authority](inventory-authority/spec.md) | XDG inventory selection, tunnel-manager consumers, and read-only runtime projection contract | `SPECIFIED / NOT_AUDITED` |
 
 Related public owner specs: [agent-utilities](https://github.com/Knuckles-Team/agent-utilities/tree/main/specs) owns shared application services; [graph-os](https://github.com/Knuckles-Team/graph-os/tree/main/specs) owns serving composition; [repository-manager](https://github.com/Knuckles-Team/repository-manager/tree/main/specs) owns repository/workspace discovery. [container-manager-mcp](https://github.com/Knuckles-Team/container-manager-mcp) consumes the inventory projection. Tunnel-manager remains the owner of its reader and write behavior.
 
