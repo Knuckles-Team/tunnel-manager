@@ -98,7 +98,6 @@ async def _tm_remote_run_command(
             await run_blocking(t.close)
 
 
-
 async def _tm_remote_send_file(
     host,
     user,
@@ -184,7 +183,6 @@ async def _tm_remote_send_file(
             await run_blocking(t.close)
 
 
-
 async def _tm_remote_receive_file(
     host,
     user,
@@ -254,7 +252,6 @@ async def _tm_remote_receive_file(
             await run_blocking(t.close)
 
 
-
 async def _tm_remote_check_ssh(
     host,
     user,
@@ -315,7 +312,6 @@ async def _tm_remote_check_ssh(
             await run_blocking(t.close)
 
 
-
 async def _tm_remote_test_key_auth(
     host,
     user,
@@ -361,7 +357,6 @@ async def _tm_remote_test_key_auth(
         return ResponseBuilder.build(
             500, "Key test fail", {"host": host, "key": _key}, type(e).__name__
         )
-
 
 
 async def _tm_remote_setup_passwordless(
@@ -474,7 +469,6 @@ async def _tm_remote_setup_passwordless(
             await run_blocking(t.close)
 
 
-
 async def _tm_remote_copy_ssh_config(
     host,
     user,
@@ -541,7 +535,6 @@ async def _tm_remote_copy_ssh_config(
     finally:
         if "t" in locals():
             await run_blocking(t.close)
-
 
 
 async def _tm_remote_rotate_key(
@@ -665,7 +658,6 @@ async def _tm_remote_rotate_key(
             await run_blocking(t.close)
 
 
-
 async def _tm_remote_remove_host_key(
     host,
     known_hosts,
@@ -683,9 +675,7 @@ async def _tm_remote_remove_host_key(
         if ctx:
             await ctx.report_progress(progress=0, total=100)
         _known_hosts = os.path.expanduser(known_hosts)
-        msg = await run_blocking(
-            t.remove_host_key, known_hosts_path=_known_hosts
-        )
+        msg = await run_blocking(t.remove_host_key, known_hosts_path=_known_hosts)
         if ctx:
             await ctx.report_progress(progress=100, total=100)
         return ResponseBuilder.build(
@@ -800,15 +790,45 @@ def register_remote_tools(mcp: FastMCP):
             )
         if action == "run_command":
             return await _tm_remote_run_command(
-                host, user, password, port, id_file, certificate, proxy, cfg, cmd, timeout, ctx
+                host,
+                user,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                cmd,
+                timeout,
+                ctx,
             )
         elif action == "send_file":
             return await _tm_remote_send_file(
-                host, user, password, port, id_file, certificate, proxy, cfg, lpath, rpath, ctx
+                host,
+                user,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                lpath,
+                rpath,
+                ctx,
             )
         elif action == "receive_file":
             return await _tm_remote_receive_file(
-                host, user, password, port, id_file, certificate, proxy, cfg, lpath, rpath, ctx
+                host,
+                user,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                lpath,
+                rpath,
+                ctx,
             )
         elif action == "check_ssh":
             return await _tm_remote_check_ssh(
@@ -822,11 +842,31 @@ def register_remote_tools(mcp: FastMCP):
             )
         elif action == "copy_ssh_config":
             return await _tm_remote_copy_ssh_config(
-                host, user, password, port, id_file, certificate, proxy, cfg, lcfg, rcfg, ctx
+                host,
+                user,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                lcfg,
+                rcfg,
+                ctx,
             )
         elif action == "rotate_key":
             return await _tm_remote_rotate_key(
-                host, user, password, port, id_file, certificate, proxy, cfg, key_type, new_key, ctx
+                host,
+                user,
+                password,
+                port,
+                id_file,
+                certificate,
+                proxy,
+                cfg,
+                key_type,
+                new_key,
+                ctx,
             )
         elif action == "remove_host_key":
             return await _tm_remote_remove_host_key(host, known_hosts, ctx)

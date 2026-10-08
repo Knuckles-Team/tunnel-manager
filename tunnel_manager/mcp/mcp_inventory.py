@@ -129,9 +129,7 @@ async def _tm_inventory_configure_key_auth(
                     t.run_command,
                     f"printf '%s\\n' {shlex.quote(pub)} >> ~/.ssh/authorized_keys",
                 )
-                await run_blocking(
-                    t.run_command, "chmod 600 ~/.ssh/authorized_keys"
-                )
+                await run_blocking(t.run_command, "chmod 600 ~/.ssh/authorized_keys")
                 res, msg = await run_blocking(t.test_key_auth, kpath)
                 return {
                     "hostname": host,
@@ -152,16 +150,12 @@ async def _tm_inventory_configure_key_auth(
 
         results, files, locations, errors = [], [], [], []
         if parallel:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
                 futures = [
                     ex.submit(lambda h: asyncio.run(setup_host(h, ctx)), h)
                     for h in hosts
                 ]
-                for i, future in enumerate(
-                    concurrent.futures.as_completed(futures), 1
-                ):
+                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
                     try:
                         r = future.result()
                         results.append(r)
@@ -190,9 +184,7 @@ async def _tm_inventory_configure_key_auth(
                 results.append(r)
                 if r["status"] == "success":
                     files.append(pub_key)
-                    locations.append(
-                        f"~/.ssh/authorized_keys on {r['hostname']}"
-                    )
+                    locations.append(f"~/.ssh/authorized_keys on {r['hostname']}")
                 else:
                     errors.extend(r["errors"])
                 if ctx:
@@ -224,7 +216,6 @@ async def _tm_inventory_configure_key_auth(
             {"inventory": inventory, "group": group, "key_type": key_type},
             type(e).__name__,
         )
-
 
 
 async def _tm_inventory_mesh_bootstrap(
@@ -284,7 +275,6 @@ async def _tm_inventory_mesh_bootstrap(
         )
 
 
-
 async def _tm_inventory_run_command(
     action: str,
     inventory,
@@ -342,9 +332,7 @@ async def _tm_inventory_run_command(
                         known_hosts_file=h.get("known_hosts_file"),
                     )
                 )
-                out, error = await run_blocking(
-                    t.run_command, cmd, timeout=timeout
-                )
+                out, error = await run_blocking(t.run_command, cmd, timeout=timeout)
                 return {
                     "hostname": host,
                     "status": "success",
@@ -368,16 +356,11 @@ async def _tm_inventory_run_command(
 
         results, errors = [], []
         if parallel:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
                 futures = [
-                    ex.submit(lambda h: asyncio.run(run_host(h, ctx)), h)
-                    for h in hosts
+                    ex.submit(lambda h: asyncio.run(run_host(h, ctx)), h) for h in hosts
                 ]
-                for i, future in enumerate(
-                    concurrent.futures.as_completed(futures), 1
-                ):
+                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
                     try:
                         r = future.result()
                         results.append(r)
@@ -434,7 +417,6 @@ async def _tm_inventory_run_command(
             {"inventory": inventory, "group": group, "host": host, "cmd": cmd},
             type(e).__name__,
         )
-
 
 
 async def _tm_inventory_copy_ssh_config(
@@ -498,16 +480,11 @@ async def _tm_inventory_copy_ssh_config(
                     await run_blocking(t.close)
 
         if parallel:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
                 futures = [
-                    ex.submit(lambda h: asyncio.run(copy_host(h)), h)
-                    for h in hosts
+                    ex.submit(lambda h: asyncio.run(copy_host(h)), h) for h in hosts
                 ]
-                for i, future in enumerate(
-                    concurrent.futures.as_completed(futures), 1
-                ):
+                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
                     try:
                         r = future.result()
                         results.append(r)
@@ -574,7 +551,6 @@ async def _tm_inventory_copy_ssh_config(
         )
 
 
-
 async def _tm_inventory_rotate_key(
     action: str,
     inventory,
@@ -636,16 +612,11 @@ async def _tm_inventory_rotate_key(
                     await run_blocking(t.close)
 
         if parallel:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
                 futures = [
-                    ex.submit(lambda h: asyncio.run(rotate_host(h)), h)
-                    for h in hosts
+                    ex.submit(lambda h: asyncio.run(rotate_host(h)), h) for h in hosts
                 ]
-                for i, future in enumerate(
-                    concurrent.futures.as_completed(futures), 1
-                ):
+                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
                     try:
                         r = future.result()
                         results.append(r)
@@ -675,9 +646,7 @@ async def _tm_inventory_rotate_key(
                 results.append(r)
                 if r["status"] == "success":
                     files.append(r["new_key_path"] + ".pub")
-                    locations.append(
-                        f"~/.ssh/authorized_keys on {r['hostname']}"
-                    )
+                    locations.append(f"~/.ssh/authorized_keys on {r['hostname']}")
                 else:
                     errors.extend(r["errors"])
                 if ctx:
@@ -715,7 +684,6 @@ async def _tm_inventory_rotate_key(
             },
             error=type(e).__name__,
         )
-
 
 
 async def _tm_inventory_send_file(
@@ -792,16 +760,11 @@ async def _tm_inventory_send_file(
 
         results, files, locations, errors = [_lpath], [], [], []
         if parallel:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
                 futures = [
-                    ex.submit(lambda h: asyncio.run(send_host(h)), h)
-                    for h in hosts
+                    ex.submit(lambda h: asyncio.run(send_host(h)), h) for h in hosts
                 ]
-                for i, future in enumerate(
-                    concurrent.futures.as_completed(futures), 1
-                ):
+                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
                     try:
                         r = future.result()
                         results.append(r)
@@ -864,7 +827,6 @@ async def _tm_inventory_send_file(
             },
             type(e).__name__,
         )
-
 
 
 async def _tm_inventory_receive_file(
@@ -930,16 +892,11 @@ async def _tm_inventory_receive_file(
 
         results, files, locations, errors = [], [], [], []
         if parallel:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_threads
-            ) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as ex:
                 futures = [
-                    ex.submit(lambda h: asyncio.run(receive_host(h)), h)
-                    for h in hosts
+                    ex.submit(lambda h: asyncio.run(receive_host(h)), h) for h in hosts
                 ]
-                for i, future in enumerate(
-                    concurrent.futures.as_completed(futures), 1
-                ):
+                for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
                     try:
                         r = future.result()
                         results.append(r)
@@ -1122,7 +1079,16 @@ def register_inventory_tools(mcp: FastMCP):
             )
         elif action == "run_command":
             return await _tm_inventory_run_command(
-                action, inventory, group, host, preview, parallel, max_threads, cmd, timeout, ctx
+                action,
+                inventory,
+                group,
+                host,
+                preview,
+                parallel,
+                max_threads,
+                cmd,
+                timeout,
+                ctx,
             )
         elif action == "copy_ssh_config":
             return await _tm_inventory_copy_ssh_config(
@@ -1130,7 +1096,15 @@ def register_inventory_tools(mcp: FastMCP):
             )
         elif action == "rotate_key":
             return await _tm_inventory_rotate_key(
-                action, inventory, group, parallel, max_threads, key, key_type, key_pfx, ctx
+                action,
+                inventory,
+                group,
+                parallel,
+                max_threads,
+                key,
+                key_type,
+                key_pfx,
+                ctx,
             )
         elif action == "send_file":
             return await _tm_inventory_send_file(
@@ -1138,7 +1112,14 @@ def register_inventory_tools(mcp: FastMCP):
             )
         elif action == "receive_file":
             return await _tm_inventory_receive_file(
-                action, inventory, group, parallel, max_threads, rpath, lpath_prefix, ctx
+                action,
+                inventory,
+                group,
+                parallel,
+                max_threads,
+                rpath,
+                lpath_prefix,
+                ctx,
             )
         else:
             return ResponseBuilder.build(

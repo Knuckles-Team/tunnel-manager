@@ -1664,9 +1664,7 @@ async def _fan_out_parallel(
         future_hosts = {
             ex.submit(lambda h: asyncio.run(worker(h)), h): h for h in hosts
         }
-        for i, future in enumerate(
-            concurrent.futures.as_completed(future_hosts), 1
-        ):
+        for i, future in enumerate(concurrent.futures.as_completed(future_hosts), 1):
             try:
                 results.record(future.result())
                 if ctx:
