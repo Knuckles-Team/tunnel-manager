@@ -6,7 +6,7 @@ This document describes the unified connection architecture of the `tunnel-manag
 
 ## 1. Connection Architectures
 
-The connection layer is designed around standard OpenSSH specifications. It dynamically resolves configuration parameters, allowing seamless transition between custom security environments and standard TCP connections.
+The connection layer is designed around standard OpenSSH specifications. It dynamically resolves configuration parameters, allowing smooth transition between custom security environments and standard TCP connections.
 
 ### Architecture A: Agentic Certificate & Proxy Tunneling (With `tsh` / Teleport Connect)
 
@@ -97,7 +97,7 @@ When spawning proxy sub-processes (such as `tsh`):
 Teleport Connect integration is **opt-in and automated**. If standard SSH config rules match the target, or if a proxy command / certificate path is explicitly specified, the engine activates Architecture A. If not, it gracefully defaults to Architecture B.
 
 ### Example: Standard SSH Config (`~/.ssh/config`)
-No modifications are required in `tunnel-manager` inventory files if your standard SSH configuration is already mapped:
+No modifications are required in `tunnel-manager` inventory files if the operator's standard SSH configuration is already mapped:
 
 ```ssh
 Host *.teleport.example.com

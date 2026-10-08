@@ -125,7 +125,7 @@ The transport is selected with `--transport` (or the `TRANSPORT` env var):
     ```bash
     tunnel-manager-mcp
     ```
-    For IDE / desktop MCP clients that launch the server as a subprocess.
+    For IDE / desktop MCP clients that start the server as a subprocess.
 
 === "streamable-http"
 
@@ -163,7 +163,7 @@ explicit trusted TLS-termination proxy before any non-loopback listener starts.
 | `PORT` | `8000` | Listen port for HTTP transports |
 | `TRANSPORT` | `stdio` | `stdio`, `streamable-http`, or `sse` |
 | `TUNNEL_IDENTITY_FILE` | `~/.ssh/id_ed25519` | SSH private key used to connect to hosts |
-| `TUNNEL_KNOWN_HOSTS` | `~/.ssh/known_hosts` | Independently verified SSH server-key trust store |
+| `TUNNEL_KNOWN_HOSTS` | `~/.ssh/known_hosts` | Independently checked SSH server-key trust store |
 | `TUNNEL_PASSWORD_REF` | — | Opaque runtime password reference; literal passwords are rejected |
 | `ENABLE_OTEL` | `True` | Emit OpenTelemetry traces |
 | `EUNOMIA_TYPE` | `none` | Authorization mode — `none`, `embedded`, or `remote` |
@@ -183,7 +183,7 @@ Each action-routed tool can be toggled independently:
 
 The runtime setting projection, including the OTEL and Eunomia connection settings,
 is documented in [`.env.example`](https://github.com/Knuckles-Team/tunnel-manager/blob/main/.env.example).
-Copy it to `.env` and populate only what you use. Deployment-only inputs and
+Copy it to `.env` and populate only what the operator use. Deployment-only inputs and
 retired-name decisions are governed by the canonical authority block above.
 
 ## Docker Compose
@@ -265,7 +265,7 @@ docker compose -f docker/agent.compose.yml up -d
 
 ## Behind a Caddy reverse proxy
 
-Expose the HTTP server on a hostname with automatic TLS. Add to your `Caddyfile`:
+Expose the HTTP server on a hostname with automatic TLS. Add to the operator's `Caddyfile`:
 
 ```caddy
 # Internal (self-signed) — private .example.invalid zone
@@ -309,7 +309,7 @@ this as a tool.
 
 ## Register with an MCP client
 
-Add to your client's `mcp_config.json` (multiplexer nickname `tun`):
+Add to the operator's client's `mcp_config.json` (multiplexer nickname `tun`):
 
 ```json
 {

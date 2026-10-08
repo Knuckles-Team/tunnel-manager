@@ -33,7 +33,7 @@ SSH and audit hosts at scale without deploying persistent daemons. It provides:
 
 <div class="grid cards" markdown>
 
-- :material-rocket-launch: **[Installation](installation.md)** — pip, source, extras, and the prebuilt Docker image.
+- :material-rocket-start: **[Installation](installation.md)** — pip, source, extras, and the prebuilt Docker image.
 - :material-server-network: **[Deployment](deployment.md)** — run the MCP and agent servers, Docker Compose, Caddy + Technitium.
 - :material-console: **[Usage](usage.md)** — the MCP tools, the `HostManager` / `Tunnel` API, and the CLI.
 - :material-shield-lock: **[Structured remote execution](remote_execution.md)** — the alias-only, entitlement-aware worker boundary.

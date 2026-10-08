@@ -109,9 +109,9 @@ references only.
 1. Validate the capability bundle and skill metadata against the installed tool
    schemas.
 2. Confirm required secrets are present without printing their values.
-3. Run `tunnel-manager-doctor` and provision verified SSH host keys before any
+3. Run `tunnel-manager-doctor` and provision checked SSH host keys before any
    connection or mesh operation.
-4. Verify the complete TLS chain with certificate verification enabled.
+4. Check the complete TLS chain with certificate verification enabled.
 5. Exercise health/readiness and one least-privilege read operation.
 6. Confirm traces arrive under the expected opaque tenant/run identifiers and
    contain no captured content.

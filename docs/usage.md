@@ -1,7 +1,7 @@
 # Usage — API / CLI / MCP
 
 `tunnel-manager` exposes the same capability three ways: as **MCP tools** an agent
-calls, as a **Python API** (`HostManager` and `Tunnel`) you import, and as a **CLI**.
+calls, as a **Python API** (`HostManager` and `Tunnel`) the operator import, and as a **CLI**.
 For the ecosystem role and the distributed-SSH scaling model, see
 [Overview](overview.md).
 
