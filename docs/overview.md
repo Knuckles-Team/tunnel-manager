@@ -5,7 +5,7 @@
 
 ## Description
 
-Create SSH Tunnels to your remote hosts and host as an MCP Server for Agentic AI!
+Create SSH Tunnels to the operator's remote hosts and host as an MCP Server for Agentic AI!
 
 ## Enterprise Readiness
 
@@ -37,14 +37,14 @@ This project implements or inherits the following ecosystem concepts:
 
 ## Architecture
 
-The `tunnel-manager` functions as the "Agentless Execution Arm" for the Agent OS Kernel. When an agent needs to execute commands or send/receive files across multiple remote systems without deploying persistent daemons, `tunnel-manager` bridges the gap.
+The `tunnel-manager` functions as the "Agentless Execution Arm" for the Agent OS Kernel. When an agent needs to run commands or send/receive files across multiple remote systems without deploying persistent daemons, `tunnel-manager` bridges the gap.
 
 ### TUN-1.0: Distributed SSH Swarm Scaling
-To scale remote execution to 10,000+ hosts over SSH without facing catastrophic O(N) latency bottlenecks, `tunnel-manager` utilizes a **Parallel SSH Sub-Agent Dispatch** architecture:
+To scale remote execution to 10,000+ hosts over SSH without facing catastrophic O(N) latency bottlenecks, `tunnel-manager` use a **Parallel SSH Sub-Agent Dispatch** architecture:
 
-1. **Async Connection Pools**: Instead of linear loops, `tunnel-manager` uses `asyncssh` and `asyncio.gather` to execute batches of 1,000 SSH connections concurrently.
-2. **Dynamic Inventory Resolution**: The target hosts can be dynamically queried from Cloud Providers (AWS/GCP tags) or existing CMDBs (ServiceNow), mapping seamlessly into the Agent's Knowledge Graph.
-3. **Payload MapReduce**: Similar to the `systems-manager` daemon architecture, running `cat /etc/os-release` across 10,000 hosts would overflow the LLM's context. The `tunnel-manager` MCP intercepts the 10,000 standard output strings and reduces them into a unified summary payload (e.g., "9,500 hosts are Ubuntu 24.04, 500 hosts are RHEL 9") before returning to the Agent.
+1. **Async Connection Pools**: Instead of linear loops, `tunnel-manager` uses `asyncssh` and `asyncio.gather` to run batches of 1,000 SSH connections concurrently.
+2. **Dynamic Inventory Resolution**: The target hosts can be dynamically queried from Cloud Providers (AWS/GCP tags) or existing CMDBs (ServiceNow), mapping smoothly into the Agent's Knowledge Graph.
+3. **Payload MapReduce**: Similar to the `systems-manager` daemon architecture, running `cat /etc/os-release` across 10,000 hosts will overflow the LLM's context. The `tunnel-manager` MCP intercepts the 10,000 standard output strings and reduces them into a unified summary payload (e.g., "9,500 hosts are Ubuntu 24.04, 500 hosts are RHEL 9") before returning to the Agent.
 
 This design guarantees that `tunnel-manager` remains purely agentless and strictly SSH-based, while achieving enterprise-grade horizontal scaling capabilities.
 

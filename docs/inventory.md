@@ -4,7 +4,7 @@ tunnel-manager works from a single YAML **inventory** that maps short host alias
 (for example, `managed-node`) to connection metadata. Every entry
 point — the `HostManager` Python API, the `tunnel-manager` CLI, the
 `tunnel-manager-mcp` MCP server, **and** `container-manager-mcp` and the
-`ssh-bootstrap` skill — reads the **same file**, so you define your fleet once.
+`ssh-bootstrap` skill — reads the **same file**, so the operator define the operator's fleet once.
 
 ## Default location
 
@@ -22,13 +22,13 @@ which is `~/.config/agent-utilities/inventory.yml` on a typical Linux/macOS host
 
 So existing `.yaml` users keep working untouched, while new installs standardize on
 `.yml`. If neither file exists, tunnel-manager starts with an empty inventory (no error)
-and you can add hosts via the API/CLI.
+and the operator can add hosts via the API/CLI.
 
 > **Note:** this is the `agent-utilities` config directory on purpose — the inventory
 > is shared across the ecosystem. Earlier builds of the MCP server defaulted to
 > `~/.config/tunnel-manager/inventory.yml`; that has been unified to the path above.
 
-## Create your inventory
+## Create the operator's inventory
 
 The fastest start is the `init` command, which writes a fully-commented template to
 the resolved path:
@@ -39,8 +39,8 @@ $EDITOR ~/.config/agent-utilities/inventory.yml
 tunnel-manager inventory doctor      # validate it
 ```
 
-`init` refuses to clobber an existing file unless you pass `--force`, and creates the
-parent directory for you. The template documents every supported host field with
+`init` refuses to clobber an existing file unless the operator pass `--force`, and creates the
+parent directory for the operator. The template documents every supported host field with
 example hosts and group structure (reproduced under [Template](#template) below).
 
 ### Inventory CLI commands

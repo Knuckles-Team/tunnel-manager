@@ -2,7 +2,7 @@
 
 RMDD-14 provides the reusable remote-worker boundary for Repository Manager. It
 is intentionally narrower than the existing `tm_remote` MCP action: a caller
-selects an authorized inventory alias and supplies a structured argv request.
+selects an authorized inventory alias and provides a structured argv request.
 Tunnel Manager remains the authority for inventory, SSH identity, known-host
 trust, proxy policy, and secret references.
 
@@ -43,7 +43,7 @@ WorkItem CAS and discard stale-fence output.
 never contains a hostname, username, identity path, proxy, known-host file,
 password, or secret value. `RemoteCommandRequest` accepts `argv`, an absolute
 remote `workdir`, opaque environment-reference names, and bounded timeout/output
-limits. A raw shell string and caller-supplied connection fields are invalid.
+limits. A raw shell string and caller-provided connection fields are invalid.
 
 The adapter renders one controller-owned command frame:
 
@@ -53,7 +53,7 @@ cd -- <quoted-workdir> && exec <quoted-argv-elements>
 
 Every caller value is one `shlex`-quoted argv element. A semicolon or pipeline
 inside an argv element therefore remains data. Explicit `sh -c`/`bash -c`
-requests are refused because they would turn the structured boundary back into a
+requests are refused because they will turn the structured boundary back into a
 caller-owned shell string.
 
 ## Authorization and dispatch

@@ -1,12 +1,12 @@
 # Installation
 
 `tunnel-manager` is a standard Python package and a prebuilt container image. Pick the
-path that matches how you want to run it.
+path that matches how the operator want to run it.
 
 ## Requirements
 
 - **Python 3.11 – 3.14**.
-- SSH access to the hosts you intend to manage, an independently verified
+- SSH access to the hosts the operator intend to manage, an independently verified
   `known_hosts` file, and either an SSH key/agent identity or an opaque runtime
   password reference. Literal password configuration is rejected — see
   [Deployment](deployment.md#configuration-environment).
@@ -20,7 +20,7 @@ pip install tunnel-manager
 ### Optional extras
 
 The base install ships the SSH client layer and CLI. Install the extra for the
-interface you need:
+interface the operator need:
 
 | Extra | Install | Pulls in |
 |---|---|---|
