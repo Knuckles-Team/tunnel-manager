@@ -1120,7 +1120,7 @@
 <p>This document describes the unified connection architecture of the <code>tunnel-manager</code> project, explaining how it integrates with standard SSH services, Teleport/Teleport Connect, and operates natively across <strong>Linux</strong> and <strong>Windows</strong> host operating systems.</p>
 <hr />
 <h2 id="1-connection-architectures">1. Connection Architectures<a class="headerlink" href="#1-connection-architectures" title="Permanent link">&para;</a></h2>
-<p>The connection layer is designed around standard OpenSSH specifications. It dynamically resolves configuration parameters, allowing seamless transition between custom security environments and standard TCP connections.</p>
+<p>The connection layer is designed around standard OpenSSH specifications. It dynamically resolves configuration parameters, allowing smooth transition between custom security environments and standard TCP connections.</p>
 <h3 id="architecture-a-agentic-certificate-proxy-tunneling-with-tsh-teleport-connect">Architecture A: Agentic Certificate &amp; Proxy Tunneling (With <code>tsh</code> / Teleport Connect)<a class="headerlink" href="#architecture-a-agentic-certificate-proxy-tunneling-with-tsh-teleport-connect" title="Permanent link">&para;</a></h3>
 <p>Designed for zero-trust environments where resources are protected by an access gateway (e.g. Teleport, HashiCorp Vault, or an enterprise SSH Bastion). Connections require short-lived, CA-signed OpenSSH certificates rather than static keys, and transport streams must be proxied.</p>
 <pre class="mermaid"><code>graph TD
@@ -1197,7 +1197,7 @@ caching, or password authentication through an opaque runtime secret reference.<
 <h2 id="3-configuration-opt-in-mechanics">3. Configuration &amp; Opt-in Mechanics<a class="headerlink" href="#3-configuration-opt-in-mechanics" title="Permanent link">&para;</a></h2>
 <p>Teleport Connect integration is <strong>opt-in and automated</strong>. If standard SSH config rules match the target, or if a proxy command / certificate path is explicitly specified, the engine activates Architecture A. If not, it gracefully defaults to Architecture B.</p>
 <h3 id="example-standard-ssh-config-sshconfig">Example: Standard SSH Config (<code>~/.ssh/config</code>)<a class="headerlink" href="#example-standard-ssh-config-sshconfig" title="Permanent link">&para;</a></h3>
-<p>No modifications are required in <code>tunnel-manager</code> inventory files if your standard SSH configuration is already mapped:</p>
+<p>No modifications are required in <code>tunnel-manager</code> inventory files if the operator's standard SSH configuration is already mapped:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Host *.teleport.example.com
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    User local-user
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    IdentityFile ~/.tsh/keys/teleport.example.com/local-user

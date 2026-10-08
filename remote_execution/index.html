@@ -905,7 +905,7 @@
 <h1 id="structured-remote-execution">Structured remote execution<a class="headerlink" href="#structured-remote-execution" title="Permanent link">&para;</a></h1>
 <p>RMDD-14 provides the reusable remote-worker boundary for Repository Manager. It
 is intentionally narrower than the existing <code>tm_remote</code> MCP action: a caller
-selects an authorized inventory alias and supplies a structured argv request.
+selects an authorized inventory alias and provides a structured argv request.
 Tunnel Manager remains the authority for inventory, SSH identity, known-host
 trust, proxy policy, and secret references.</p>
 <h2 id="public-contract">Public contract<a class="headerlink" href="#public-contract" title="Permanent link">&para;</a></h2>
@@ -941,13 +941,13 @@ WorkItem CAS and discard stale-fence output.</p>
 never contains a hostname, username, identity path, proxy, known-host file,
 password, or secret value. <code>RemoteCommandRequest</code> accepts <code>argv</code>, an absolute
 remote <code>workdir</code>, opaque environment-reference names, and bounded timeout/output
-limits. A raw shell string and caller-supplied connection fields are invalid.</p>
+limits. A raw shell string and caller-provided connection fields are invalid.</p>
 <p>The adapter renders one controller-owned command frame:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>cd -- &lt;quoted-workdir&gt; &amp;&amp; exec &lt;quoted-argv-elements&gt;
 </span></code></pre></div>
 <p>Every caller value is one <code>shlex</code>-quoted argv element. A semicolon or pipeline
 inside an argv element therefore remains data. Explicit <code>sh -c</code>/<code>bash -c</code>
-requests are refused because they would turn the structured boundary back into a
+requests are refused because they will turn the structured boundary back into a
 caller-owned shell string.</p>
 <h2 id="authorization-and-dispatch">Authorization and dispatch<a class="headerlink" href="#authorization-and-dispatch" title="Permanent link">&para;</a></h2>
 <pre class="mermaid"><code>sequenceDiagram

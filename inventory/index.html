@@ -659,15 +659,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#create-your-inventory" class="md-nav__link">
+  <a href="#create-the-operators-inventory" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Create your inventory
+        Create the operator's inventory
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Create your inventory">
+    <nav class="md-nav" aria-label="Create the operator&#39;s inventory">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -933,15 +933,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#create-your-inventory" class="md-nav__link">
+  <a href="#create-the-operators-inventory" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Create your inventory
+        Create the operator's inventory
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Create your inventory">
+    <nav class="md-nav" aria-label="Create the operator&#39;s inventory">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1051,7 +1051,7 @@
 (for example, <code>managed-node</code>) to connection metadata. Every entry
 point — the <code>HostManager</code> Python API, the <code>tunnel-manager</code> CLI, the
 <code>tunnel-manager-mcp</code> MCP server, <strong>and</strong> <code>container-manager-mcp</code> and the
-<code>ssh-bootstrap</code> skill — reads the <strong>same file</strong>, so you define your fleet once.</p>
+<code>ssh-bootstrap</code> skill — reads the <strong>same file</strong>, so the operator define the operator's fleet once.</p>
 <h2 id="default-location">Default location<a class="headerlink" href="#default-location" title="Permanent link">&para;</a></h2>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>$XDG_CONFIG_HOME/agent-utilities/inventory.yml      # preferred
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>$XDG_CONFIG_HOME/agent-utilities/inventory.yaml     # legacy fallback
@@ -1065,21 +1065,21 @@ point — the <code>HostManager</code> Python API, the <code>tunnel-manager</cod
 </ol>
 <p>So existing <code>.yaml</code> users keep working untouched, while new installs standardize on
 <code>.yml</code>. If neither file exists, tunnel-manager starts with an empty inventory (no error)
-and you can add hosts via the API/CLI.</p>
+and the operator can add hosts via the API/CLI.</p>
 <blockquote>
 <p><strong>Note:</strong> this is the <code>agent-utilities</code> config directory on purpose — the inventory
 is shared across the ecosystem. Earlier builds of the MCP server defaulted to
 <code>~/.config/tunnel-manager/inventory.yml</code>; that has been unified to the path above.</p>
 </blockquote>
-<h2 id="create-your-inventory">Create your inventory<a class="headerlink" href="#create-your-inventory" title="Permanent link">&para;</a></h2>
+<h2 id="create-the-operators-inventory">Create the operator's inventory<a class="headerlink" href="#create-the-operators-inventory" title="Permanent link">&para;</a></h2>
 <p>The fastest start is the <code>init</code> command, which writes a fully-commented template to
 the resolved path:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>tunnel-manager<span class="w"> </span>inventory<span class="w"> </span>init<span class="w">        </span><span class="c1"># writes ~/.config/agent-utilities/inventory.yml</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nv">$EDITOR</span><span class="w"> </span>~/.config/agent-utilities/inventory.yml
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>tunnel-manager<span class="w"> </span>inventory<span class="w"> </span>doctor<span class="w">      </span><span class="c1"># validate it</span>
 </span></code></pre></div>
-<p><code>init</code> refuses to clobber an existing file unless you pass <code>--force</code>, and creates the
-parent directory for you. The template documents every supported host field with
+<p><code>init</code> refuses to clobber an existing file unless the operator pass <code>--force</code>, and creates the
+parent directory for the operator. The template documents every supported host field with
 example hosts and group structure (reproduced under <a href="#template">Template</a> below).</p>
 <h3 id="inventory-cli-commands">Inventory CLI commands<a class="headerlink" href="#inventory-cli-commands" title="Permanent link">&para;</a></h3>
 <table>
