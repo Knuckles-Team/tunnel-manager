@@ -29,17 +29,14 @@ import sys
 from typing import Any
 
 import yaml
-from agent_utilities.core.config import load_config, setting
-from agent_utilities.mcp.action_dispatch import resolve_action
-from agent_utilities.mcp.concurrency import run_blocking
-from agent_utilities.mcp.context_helpers import (
-    ctx_confirm_destructive,
-    ctx_log,
-    ctx_progress,
-)
-from agent_utilities.mcp.server_factory import create_mcp_server
-from agent_utilities.mcp.verbose_tools import register_tool_surface
-from agent_utilities.security.persistence_privacy import sanitize_for_persistence
+from agent_connector_sdk.config import load_config, setting
+from agent_connector_sdk.mcp.action_dispatch import resolve_action
+from agent_connector_sdk.mcp.concurrency import run_blocking
+from agent_connector_sdk.mcp.context import ctx_confirm_destructive, ctx_log
+from agent_connector_sdk.mcp.server import create_mcp_server
+from agent_connector_sdk.mcp.tool_surface import register_tool_surface
+from agent_connector_sdk.privacy import sanitize_for_persistence
+from agent_connector_sdk.progress import ctx_progress
 
 from tunnel_manager.advanced_file_manager import AdvancedFileManager
 from tunnel_manager.connection_security import (
@@ -481,7 +478,7 @@ async def _tm_hosts_list() -> dict:
         try:
             from tunnel_manager.kg_ingest import ingest_hosts
 
-            await run_blocking(ingest_hosts, hosts, group="all")
+            await ingest_hosts(hosts, group="all")
         except Exception as e:  # noqa: BLE001 — ingestion must not break list
             logger.debug("Operation failed: error_type=%s", type(e).__name__)
     return {"hosts": hosts}
@@ -660,7 +657,7 @@ async def _tm_remote_run_command(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Cmd fail")
+        await ctx_log(ctx, "Cmd fail", logger=logger, level="error")
         await ctx_progress(ctx, 100, 100)
         return ResponseBuilder.build(
             500, "Cmd fail", {"host": host, "cmd": cmd}, type(e).__name__
@@ -765,7 +762,7 @@ async def _tm_remote_send_file(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, _logger, "error", "Upload fail")
+        await ctx_log(ctx, "Upload fail", logger=_logger, level="error")
         return ResponseBuilder.build(
             500,
             "Upload fail",
@@ -844,7 +841,7 @@ async def _tm_remote_receive_file(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Download fail")
+        await ctx_log(ctx, "Download fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Download fail",
@@ -919,7 +916,7 @@ async def _tm_remote_check_ssh(
             errors=[] if success else [msg],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Check fail")
+        await ctx_log(ctx, "Check fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500, "Check fail", {"host": host}, type(e).__name__
         )
@@ -993,7 +990,7 @@ async def _tm_remote_test_key_auth(
             errors=[] if success else [msg],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Key test fail")
+        await ctx_log(ctx, "Key test fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500, "Key test fail", {"host": host, "key": _key}, type(e).__name__
         )
@@ -1114,7 +1111,7 @@ async def _tm_remote_setup_passwordless(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "SSH setup fail")
+        await ctx_log(ctx, "SSH setup fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "SSH setup fail",
@@ -1192,7 +1189,7 @@ async def _tm_remote_copy_ssh_config(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Copy cfg fail")
+        await ctx_log(ctx, "Copy cfg fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Copy cfg fail",
@@ -1323,7 +1320,7 @@ async def _tm_remote_rotate_key(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Rotate fail")
+        await ctx_log(ctx, "Rotate fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Rotate fail",
@@ -1382,7 +1379,7 @@ async def _tm_remote_remove_host_key(
             errors=[] if "Removed" in msg else [msg],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Remove fail")
+        await ctx_log(ctx, "Remove fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Remove fail",
@@ -1866,7 +1863,7 @@ async def _tm_inventory_configure_key_auth(
             errors=collected.errors,
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Setup all fail")
+        await ctx_log(ctx, "Setup all fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Setup all fail",
@@ -1933,7 +1930,7 @@ async def _tm_inventory_mesh_bootstrap(
             errors=res["errors"],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Mesh bootstrap fail")
+        await ctx_log(ctx, "Mesh bootstrap fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Mesh bootstrap fail",
@@ -2031,7 +2028,7 @@ async def _tm_inventory_run_command(
             collected,
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Cmd all fail")
+        await ctx_log(ctx, "Cmd all fail", logger=logger, level="error")
         await ctx_progress(ctx, 100, 100)
         return ResponseBuilder.build(
             500,
@@ -2139,7 +2136,7 @@ async def _tm_inventory_copy_ssh_config(
             errors=collected.errors,
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Copy all fail")
+        await ctx_log(ctx, "Copy all fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Copy all fail",
@@ -2252,7 +2249,7 @@ async def _tm_inventory_rotate_key(
             errors=collected.errors,
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Rotate all fail")
+        await ctx_log(ctx, "Rotate all fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Rotate all fail",
@@ -2358,7 +2355,7 @@ async def _tm_inventory_send_file(
             errors=collected.errors,
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Upload all fail")
+        await ctx_log(ctx, "Upload all fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Upload all fail",
@@ -2474,7 +2471,7 @@ async def _tm_inventory_receive_file(
             errors=collected.errors,
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Download all fail")
+        await ctx_log(ctx, "Download all fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Download all fail",
@@ -2685,7 +2682,7 @@ async def _tm_operations_start(
             {"operation_id": op_id, "operation_type": operation_type},
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Failed to start operation")
+        await ctx_log(ctx, "Failed to start operation", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Failed to start operation",
@@ -2727,7 +2724,7 @@ async def _tm_operations_get_progress(
             {"operation_id": operation_id, "status": status},
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Failed to get operation progress")
+        await ctx_log(ctx, "Failed to get operation progress", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Failed to get operation progress",
@@ -2773,7 +2770,7 @@ async def _tm_operations_cancel(
                 errors=["Operation not found or already completed"],
             )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Failed to cancel operation")
+        await ctx_log(ctx, "Failed to cancel operation", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Failed to cancel operation",
@@ -2812,7 +2809,7 @@ async def _tm_operations_get_metrics(
             },
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Failed to get resource metrics")
+        await ctx_log(ctx, "Failed to get resource metrics", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Failed to get resource metrics",
@@ -2841,7 +2838,7 @@ async def _tm_operations_list_sessions(
             },
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Failed to list active sessions")
+        await ctx_log(ctx, "Failed to list active sessions", logger=logger, level="error")
         return ResponseBuilder.build(
             500, "Failed to list active sessions", {}, type(e).__name__
         )
@@ -3041,7 +3038,7 @@ def register_system_tools(mcp: FastMCP):
                 action, intelligence, remote_host, log_paths, patterns
             )
         except Exception as e:
-            ctx_log(ctx, logger, "error", "System intelligence fail ({action})")
+            await ctx_log(ctx, "System intelligence fail ({action})", logger=logger, level="error")
             return ResponseBuilder.build(
                 500,
                 f"System intelligence fail ({action})",
@@ -3106,7 +3103,7 @@ async def _tm_files_recursive_ops(action: str, conn: dict, params: dict, ctx) ->
             errors=result.get("errors", []),
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Recursive file ops fail")
+        await ctx_log(ctx, "Recursive file ops fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Recursive file ops fail",
@@ -3144,7 +3141,7 @@ async def _tm_files_content_search(action: str, conn: dict, params: dict, ctx) -
             error=result.get("error", ""),
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "File content search fail")
+        await ctx_log(ctx, "File content search fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "File content search fail",
@@ -3176,7 +3173,7 @@ async def _tm_files_watch(action: str, conn: dict, params: dict, ctx) -> dict:
             error=result.get("error", ""),
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "File watch fail")
+        await ctx_log(ctx, "File watch fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "File watch fail",
@@ -3212,7 +3209,7 @@ async def _tm_files_diff_compare(action: str, conn: dict, params: dict, ctx) -> 
             error=result.get("error", ""),
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "File diff fail")
+        await ctx_log(ctx, "File diff fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "File diff fail",
@@ -3251,7 +3248,7 @@ async def _tm_files_backup(action: str, conn: dict, params: dict, ctx) -> dict:
             error=result.get("error", ""),
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Backup fail")
+        await ctx_log(ctx, "Backup fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Backup fail",
@@ -3556,7 +3553,7 @@ def register_security_tools(mcp: FastMCP):
                 action, auditor, remote_host, scope, standard, scan_type
             )
         except Exception as e:
-            ctx_log(ctx, logger, "error", "Security audit fail ({action})")
+            await ctx_log(ctx, "Security audit fail ({action})", logger=logger, level="error")
             return ResponseBuilder.build(
                 500,
                 f"Security audit fail ({action})",
@@ -3593,7 +3590,7 @@ def register_ingest_tools(mcp: FastMCP):
         from tunnel_manager.kg_ingest import ingest_hosts
 
         hosts = await run_blocking(host_manager.list_hosts)
-        result = await run_blocking(ingest_hosts, hosts, group=group or "all")
+        result = await ingest_hosts(hosts, group=group or "all")
         if result is None:
             return {
                 "status": "skipped",

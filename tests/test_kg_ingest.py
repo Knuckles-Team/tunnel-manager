@@ -1,21 +1,20 @@
 """Native epistemic-graph typed-node ingestion — Wire-First coverage.
 
 Exercises the real ``ingest_entities`` / ``ingest_documents`` / ``ingest_hosts`` seam
-with a fake engine client (no engine required), asserting the txn add_node/commit +
-edge calls and the HostManager inventory → :Host/:HostGroup/:SshKey mapping.
+with a fake transport one level below ``agent_connector_sdk.ingest.KnowledgeIngest``
+(no engine required), so the SDK's own request-building/validation/privacy-guard
+contract runs unfaked, asserting the HostManager inventory →
+:Host/:HostGroup/:SshKey mapping.
 CONCEPT:AU-KG.ingest.enterprise-source-extractor.
 """
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
-import msgpack
 import pytest
-from agent_utilities.knowledge_graph.core.session import GraphSession, use_session
-from agent_utilities.knowledge_graph.memory.native_ingest import NativeIngestError
-from agent_utilities.security.actor_identity import ActorType
-from agent_utilities.security.brain_context import ActorContext, use_actor
+from agent_connector_sdk.ingest import IngestError, KnowledgeIngest
 
 from tunnel_manager.kg_ingest import (
     ingest_documents,
@@ -25,116 +24,53 @@ from tunnel_manager.kg_ingest import (
 from tunnel_manager.models import HostConfig
 
 
-@pytest.fixture(autouse=True)
-def _governed_session():
-    actor = ActorContext(
-        actor_id="subject:opaque:synthetic",
-        actor_type=ActorType.AUTOMATED_SERVICE,
-        roles=(),
-        tenant_id="tenant:opaque:synthetic",
-        authenticated=True,
-    )
-    session = GraphSession(
-        actor=actor,
-        tenant=actor.tenant_id,
-        scopes=frozenset({"kg:write"}),
-        graph="graph:opaque:synthetic",
-        policy_version="policy:opaque:synthetic",
-        audience="epistemic-graph",
-    )
-    with use_actor(actor), use_session(session):
-        yield
-
-
-class _FakeNodes:
+class _FakeTransport:
     def __init__(self) -> None:
-        self.values: dict[str, dict[str, Any]] = {}
+        self.requests: list[Any] = []
 
-    def properties(self, node_id: str) -> dict[str, Any] | None:
-        return self.values.get(node_id)
+    async def source_status(self, connector: str, stream: str):
+        return SimpleNamespace(accepted_checkpoint=None)
 
-    def list(self) -> list[tuple[str, dict[str, Any]]]:
-        return list(self.values.items())
+    async def submit(self, request):
+        self.requests.append(request)
+        return SimpleNamespace(
+            affected_count=len(request.records),
+            relationship_count=len(request.relationships),
+        )
 
-
-class _FakeChanges:
-    def __init__(self, nodes: _FakeNodes) -> None:
-        self.nodes = nodes
-        self.edges: list[tuple[str, str, dict[str, Any]]] = []
-        self.applied: list[dict[str, Any]] = []
-        self.records: dict[str, dict[str, Any]] = {}
-        self.versions: dict[str, dict[str, Any]] = {}
-
-    def get(self, envelope_id: str) -> dict[str, Any] | None:
-        return self.records.get(envelope_id)
-
-    def content_version(self, object_id: str) -> dict[str, Any] | None:
-        return self.versions.get(object_id)
-
-    def cursor(self, _source: str, _partition: str = "") -> None:
-        return None
-
-    def apply(self, envelope: dict[str, Any]) -> dict[str, Any]:
-        self.applied.append(envelope)
-        mutation = envelope["mutation"]
-        for operation in mutation["operations"]:
-            method = operation["method"]
-            params = method["params"]
-            properties = msgpack.unpackb(params["properties_msgpack"], raw=False)
-            if method["method"] == "AddNode":
-                self.nodes.values[params["node_id"]] = properties
-            elif method["method"] == "AddEdge":
-                self.edges.append(
-                    (params["source_id"], params["target_id"], properties)
-                )
-        version = envelope["content_version"]
-        self.versions[version["object_id"]] = version
-        self.records[envelope["envelope_id"]] = envelope
-        return {
-            "batch_id": mutation["batch_id"],
-            "replayed": False,
-            "projection_pending": False,
-        }
+    async def store_blob(self, data: bytes) -> str:
+        raise AssertionError("this connector's node/edge ingestion carries no media")
 
 
-class _FakeRdf:
-    def validate_shacl(self, _shapes: str, _data_graph: str) -> dict[str, Any]:
-        return {"conforms": True, "results": []}
+@pytest.fixture
+def ingest():
+    transport = _FakeTransport()
+    return KnowledgeIngest(transport, loop=None), transport
 
 
-class _FakeClient:
-    def __init__(self) -> None:
-        self.nodes = _FakeNodes()
-        self.changes = _FakeChanges(self.nodes)
-        self.rdf = _FakeRdf()
-
-    @staticmethod
-    def supports(operation: str) -> bool:
-        return operation == "ApplyChangeEnvelope"
+def _by_id(request):
+    return {record.record_id: record for record in request.records}
 
 
-def test_ingest_entities_writes_nodes_and_edges():
-    c = _FakeClient()
-    res = ingest_entities(
+async def test_ingest_entities_writes_nodes_and_edges(ingest):
+    service, transport = ingest
+    res = await ingest_entities(
         [
             {"id": "a", "node_type": "Host", "name": "box"},
             {"id": "g", "node_type": "HostGroup"},
         ],
         [{"source": "a", "target": "g", "relationship": "inGroup"}],
-        client=c,
+        ingest=service,
     )
     assert res == {"nodes": 2, "edges": 1}
-    assert len(c.changes.applied) == 1
-    assert set(c.nodes.values) == {"a", "g"}
-    # provenance is stamped
-    assert c.nodes.values["a"]["source"] == "tunnel-manager"
-    assert c.nodes.values["a"]["domain"] == "tunnel"
-    assert c.changes.edges == [("a", "g", {"relationship": "inGroup"})]
+    request = transport.requests[0]
+    assert set(_by_id(request)) == {"a", "g"}
+    assert len(request.relationships) == 1
 
 
-def test_ingest_hosts_maps_host_group_and_key():
-    c = _FakeClient()
-    res = ingest_hosts(
+async def test_ingest_hosts_maps_host_group_and_key(ingest):
+    service, transport = ingest
+    res = await ingest_hosts(
         {
             "app-node": {
                 "hostname": "192.0.2.14",
@@ -144,70 +80,78 @@ def test_ingest_hosts_maps_host_group_and_key():
             }
         },
         group="example-fleet",
-        client=c,
+        ingest=service,
     )
     # 3 nodes: group + host + key; 2 edges: inGroup + usesKey
     assert res == {"nodes": 3, "edges": 2}
-    host = c.nodes.values["tunnel:host:app-node"]
-    assert host["node_type"] == "Host"
-    # native_ingest's governed PII scrubber redacts IP-shaped values.
-    assert host["hostname"] == "[REDACTED_LOCATION]"
-    assert host["sshUser"] == "operator"
-    assert host["sshPort"] == 22
-    assert host["identityFile"] == "~/.ssh/id_shared"
-    assert host["externalToolId"] == "app-node"
-    assert c.nodes.values["tunnel:group:example-fleet"]["node_type"] == "HostGroup"
-    assert c.nodes.values["tunnel:sshkey:~/.ssh/id_shared"]["node_type"] == "SshKey"
-    assert (
-        "tunnel:host:app-node",
-        "tunnel:group:example-fleet",
-        {"relationship": "inGroup"},
-    ) in (c.changes.edges)
-    assert (
-        "tunnel:host:app-node",
-        "tunnel:sshkey:~/.ssh/id_shared",
-        {"relationship": "usesKey"},
-    ) in c.changes.edges
+    request = transport.requests[0]
+    by_id = _by_id(request)
+    host = by_id["tunnel:host:app-node"]
+    assert host.mapping_reference.endswith("/Host")
+    # the SDK's PersistencePrivacyGuard redacts IP-shaped values.
+    assert host.payload["hostname"] == "[REDACTED_LOCATION]"
+    assert host.payload["sshUser"] == "operator"
+    assert host.payload["sshPort"] == 22
+    assert host.payload["identityFile"] == "~/.ssh/id_shared"
+    assert host.payload["externalToolId"] == "app-node"
+    assert by_id["tunnel:group:example-fleet"].mapping_reference.endswith("/HostGroup")
+    assert by_id["tunnel:sshkey:~/.ssh/id_shared"].mapping_reference.endswith("/SshKey")
+    edge_types = {
+        (rel.source.record_id, rel.target.record_id, rel.relation_reference.rsplit("/relations/", 1)[-1])
+        for rel in request.relationships
+    }
+    assert ("tunnel:host:app-node", "tunnel:group:example-fleet", "inGroup") in edge_types
+    assert ("tunnel:host:app-node", "tunnel:sshkey:~/.ssh/id_shared", "usesKey") in edge_types
 
 
-def test_ingest_hosts_dedups_shared_key():
-    c = _FakeClient()
-    res = ingest_hosts(
+async def test_ingest_hosts_dedups_shared_key(ingest):
+    service, transport = ingest
+    res = await ingest_hosts(
         {
             "a": {"hostname": "h1", "user": "u", "identity_file": "/k"},
             "b": {"hostname": "h2", "user": "u", "identity_file": "/k"},
         },
         group="g",
-        client=c,
+        ingest=service,
     )
     # group + 2 hosts + 1 shared key = 4 nodes; 2 inGroup + 2 usesKey = 4 edges
     assert res == {"nodes": 4, "edges": 4}
-    assert "tunnel:sshkey:/k" in c.nodes.values
+    assert "tunnel:sshkey:/k" in _by_id(transport.requests[0])
 
 
-def test_ingest_hosts_accepts_host_config_model_dump():
-    c = _FakeClient()
-    res = ingest_hosts({"x": HostConfig(hostname="h", user="u", port=2222)}, client=c)
-    assert res == {"nodes": 1, "edges": 0}
-    assert c.nodes.values["tunnel:host:x"]["sshPort"] == 2222
-
-
-def test_ingest_documents_tags_document_type():
-    c = _FakeClient()
-    res = ingest_documents(
-        [{"id": "d1", "text": "audit report", "title": "CIS scan"}],
-        client=c,
+async def test_ingest_hosts_accepts_host_config_model_dump(ingest):
+    service, transport = ingest
+    res = await ingest_hosts(
+        {"x": HostConfig(hostname="h", user="u", port=2222)}, ingest=service
     )
     assert res == {"nodes": 1, "edges": 0}
-    assert c.nodes.values["d1"]["node_type"] == "Document"
-    assert c.nodes.values["d1"]["text"] == "audit report"
+    assert _by_id(transport.requests[0])["tunnel:host:x"].payload["sshPort"] == 2222
 
 
-def test_retired_structural_alias_is_rejected():
-    with pytest.raises(NativeIngestError, match="canonical node_type"):
-        ingest_entities([{"id": "a", "type": "Host"}], client=_FakeClient())
+async def test_ingest_hosts_empty_is_a_noop(ingest):
+    service, _ = ingest
+    assert await ingest_hosts({}, ingest=service) is None
 
 
-def test_empty_native_ingest_is_rejected():
-    with pytest.raises(NativeIngestError, match="at least one entity"):
-        ingest_entities([], client=_FakeClient())
+async def test_ingest_documents_tags_document_type(ingest):
+    service, transport = ingest
+    res = await ingest_documents(
+        [{"id": "d1", "text": "audit report", "title": "CIS scan"}],
+        ingest=service,
+    )
+    assert res == {"nodes": 1, "edges": 0}
+    record = _by_id(transport.requests[0])["d1"]
+    assert record.mapping_reference.endswith("/Document")
+    assert record.payload["text"] == "audit report"
+
+
+async def test_retired_structural_alias_is_rejected(ingest):
+    service, _ = ingest
+    with pytest.raises(IngestError, match="node_type"):
+        await ingest_entities([{"id": "a", "type": "Host"}], ingest=service)
+
+
+async def test_empty_native_ingest_is_rejected(ingest):
+    service, _ = ingest
+    with pytest.raises(IngestError, match="at least one entity"):
+        await ingest_entities([], ingest=service)

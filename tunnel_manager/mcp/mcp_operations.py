@@ -5,12 +5,9 @@ Auto-generated from mcp_server.py during ecosystem standardization.
 
 import logging
 
-from agent_utilities.mcp.concurrency import run_blocking
-from agent_utilities.mcp.context_helpers import (
-    ctx_confirm_destructive,
-    ctx_log,
-    ctx_progress,
-)
+from agent_connector_sdk.mcp.concurrency import run_blocking
+from agent_connector_sdk.mcp.context import ctx_confirm_destructive, ctx_log
+from agent_connector_sdk.progress import ctx_progress
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
@@ -70,7 +67,7 @@ def register_operations_tools(mcp: FastMCP):
                     {"operation_id": op_id, "operation_type": operation_type},
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", "Failed to start operation")
+                await ctx_log(ctx, "Failed to start operation", logger=logger, level="error")
                 return ResponseBuilder.build(
                     500,
                     "Failed to start operation",
@@ -103,7 +100,7 @@ def register_operations_tools(mcp: FastMCP):
                     {"operation_id": operation_id, "status": status},
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", "Failed to get operation progress")
+                await ctx_log(ctx, "Failed to get operation progress", logger=logger, level="error")
                 return ResponseBuilder.build(
                     500,
                     "Failed to get operation progress",
@@ -140,7 +137,7 @@ def register_operations_tools(mcp: FastMCP):
                         errors=["Operation not found or already completed"],
                     )
             except Exception as e:
-                ctx_log(ctx, logger, "error", "Failed to cancel operation")
+                await ctx_log(ctx, "Failed to cancel operation", logger=logger, level="error")
                 return ResponseBuilder.build(
                     500,
                     "Failed to cancel operation",
@@ -170,7 +167,7 @@ def register_operations_tools(mcp: FastMCP):
                     },
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", "Failed to get resource metrics")
+                await ctx_log(ctx, "Failed to get resource metrics", logger=logger, level="error")
                 return ResponseBuilder.build(
                     500,
                     "Failed to get resource metrics",
@@ -190,7 +187,7 @@ def register_operations_tools(mcp: FastMCP):
                     },
                 )
             except Exception as e:
-                ctx_log(ctx, logger, "error", "Failed to list active sessions")
+                await ctx_log(ctx, "Failed to list active sessions", logger=logger, level="error")
                 return ResponseBuilder.build(
                     500, "Failed to list active sessions", {}, type(e).__name__
                 )

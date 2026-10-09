@@ -10,13 +10,11 @@ import os
 import shlex
 import subprocess
 
-from agent_utilities.base_utilities import to_boolean, to_integer
-from agent_utilities.core.config import setting
-from agent_utilities.mcp.concurrency import run_blocking
-from agent_utilities.mcp.context_helpers import (
-    ctx_log,
-    ctx_progress,
-)
+from agent_connector_sdk.config import setting
+from agent_connector_sdk.mcp.concurrency import run_blocking
+from agent_connector_sdk.mcp.context import ctx_log
+from agent_connector_sdk.progress import ctx_progress
+from agent_connector_sdk.utilities import to_boolean, to_integer
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
@@ -217,7 +215,7 @@ async def _tm_inventory_configure_key_auth(
             errors=errors,
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Setup all fail")
+        await ctx_log(ctx, "Setup all fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Setup all fail",
@@ -275,7 +273,7 @@ async def _tm_inventory_mesh_bootstrap(
             errors=res["errors"],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Mesh bootstrap fail")
+        await ctx_log(ctx, "Mesh bootstrap fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Mesh bootstrap fail",
@@ -426,7 +424,7 @@ async def _tm_inventory_run_command(
             errors=errors,
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Cmd all fail")
+        await ctx_log(ctx, "Cmd all fail", logger=logger, level="error")
         await ctx_progress(ctx, 100, 100)
         return ResponseBuilder.build(
             500,
@@ -560,7 +558,7 @@ async def _tm_inventory_copy_ssh_config(
             errors=errors,
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Copy all fail")
+        await ctx_log(ctx, "Copy all fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Copy all fail",
@@ -703,7 +701,7 @@ async def _tm_inventory_rotate_key(
             errors=errors,
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Rotate all fail")
+        await ctx_log(ctx, "Rotate all fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Rotate all fail",
@@ -852,7 +850,7 @@ async def _tm_inventory_send_file(
             errors=errors,
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Upload all fail")
+        await ctx_log(ctx, "Upload all fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Upload all fail",
@@ -993,7 +991,7 @@ async def _tm_inventory_receive_file(
             errors=errors,
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Download all fail")
+        await ctx_log(ctx, "Download all fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Download all fail",

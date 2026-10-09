@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from agent_utilities.core.config import setting
+from agent_connector_sdk.config import setting
 
 from .connection_security import ConnectionPolicyError, security_posture
 

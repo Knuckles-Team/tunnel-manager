@@ -1,9 +1,9 @@
 """Native epistemic-graph ingestion for governed SSH inventory metadata.
 
-All writes use the required ``agent_utilities.knowledge_graph.memory.native_ingest``
-primitive. Nodes use canonical ``node_type`` and edges use canonical ``relationship``;
-nodes and edges commit in one native transaction. Missing engine dependencies, rejected
-records, conflicts, and transaction failures propagate as ``NativeIngestError``.
+All writes go through the ``agent_connector_sdk.ingest`` knowledge-ingest facade
+(the generated EG client). Nodes use canonical ``node_type`` and edges use
+canonical ``relationship``; nodes and edges commit in one submission. Missing
+engine dependencies, rejected records, and conflicts propagate as ``IngestError``.
 """
 
 from __future__ import annotations
@@ -11,51 +11,89 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from agent_utilities.knowledge_graph.memory.native_ingest import (
-    ingest_documents as _native_ingest_documents,
-)
-from agent_utilities.knowledge_graph.memory.native_ingest import (
-    ingest_entities as _native_ingest_entities,
+from agent_connector_sdk.ingest import (
+    ChangeSet,
+    Document,
+    Entity,
+    IngestBinding,
+    IngestError,
+    KnowledgeIngest,
+    Relationship,
+    current_ingest,
 )
 
 logger = logging.getLogger("tunnel_manager.kg")
 
 _SOURCE = "tunnel-manager"
 _DOMAIN = "tunnel"
+_BINDING = IngestBinding(connector="tunnel-manager", stream=_DOMAIN)
 
 
-def ingest_entities(
+def _to_entity(record: dict[str, Any]) -> Entity:
+    return Entity(
+        id=record.get("id"),
+        node_type=record.get("node_type"),
+        properties={
+            k: v for k, v in record.items() if k not in ("id", "node_type")
+        },
+    )
+
+
+def _to_relationship(record: dict[str, Any]) -> Relationship:
+    props = {
+        k: v
+        for k, v in record.items()
+        if k not in ("source", "target", "relationship")
+    }
+    return Relationship(
+        source=record["source"],
+        target=record["target"],
+        relationship=record["relationship"],
+        properties=props or None,
+    )
+
+
+def _to_document(record: dict[str, Any]) -> Document:
+    return Document(
+        id=record.get("id"),
+        text=record.get("text", ""),
+        title=record.get("title"),
+        properties={
+            k: v for k, v in record.items() if k not in ("id", "text", "title")
+        },
+    )
+
+
+async def ingest_entities(
     entities: list[dict[str, Any]],
     relationships: list[dict[str, Any]] | None = None,
     *,
-    source: str = _SOURCE,
-    domain: str = _DOMAIN,
-    client: Any | None = None,
-    graph: str | None = None,
+    ingest: KnowledgeIngest | None = None,
 ) -> dict[str, int]:
-    """Write canonical typed nodes and relationships in one native transaction."""
-    return _native_ingest_entities(
-        entities,
-        relationships,
-        source=source,
-        domain=domain,
-        client=client,
-        graph=graph,
+    """Write canonical typed nodes and relationships in one submission."""
+    if not entities:
+        raise IngestError("ingest_entities needs at least one entity")
+    change_set = ChangeSet(
+        entities=tuple(_to_entity(e) for e in entities),
+        relationships=tuple(_to_relationship(r) for r in relationships or ()),
     )
+    service = ingest or current_ingest()
+    receipt = await service.submit(_BINDING, change_set)
+    return {"nodes": receipt.affected_count, "edges": receipt.relationship_count}
 
 
-def ingest_documents(
+async def ingest_documents(
     documents: list[dict[str, Any]],
     *,
-    source: str = _SOURCE,
-    domain: str = _DOMAIN,
-    client: Any | None = None,
-    graph: str | None = None,
+    ingest: KnowledgeIngest | None = None,
 ) -> dict[str, int]:
     """Write text records as canonical Document nodes."""
-    return _native_ingest_documents(
-        documents, source=source, domain=domain, client=client, graph=graph
-    )
+    if not documents:
+        raise IngestError("ingest_documents needs at least one document")
+    change_set = ChangeSet(documents=tuple(_to_document(d) for d in documents))
+    service = ingest or current_ingest()
+    receipt = await service.submit(_BINDING, change_set)
+    return {"nodes": receipt.affected_count, "edges": receipt.relationship_count}
 
 
 def _host_to_dict(host: Any) -> dict[str, Any]:
@@ -72,13 +110,12 @@ def _host_to_dict(host: Any) -> dict[str, Any]:
     return {}
 
 
-def ingest_hosts(
+async def ingest_hosts(
     hosts: dict[str, Any],
     *,
     group: str | None = None,
-    client: Any | None = None,
-    graph: str | None = None,
-) -> dict[str, int]:
+    ingest: KnowledgeIngest | None = None,
+) -> dict[str, int] | None:
     """Map a HostManager inventory (``{alias: HostConfig|dict}``) → ``:Host`` nodes.
 
     Emits a ``:Host`` per alias (with hostname/user/port/identity/proxy fields), an
@@ -133,4 +170,6 @@ def ingest_hosts(
                 {"source": host_id, "target": key_id, "relationship": "usesKey"}
             )
 
-    return ingest_entities(entities, relationships, client=client, graph=graph)
+    if not entities:
+        return None
+    return await ingest_entities(entities, relationships, ingest=ingest)

@@ -5,8 +5,8 @@ Auto-generated from mcp_server.py during ecosystem standardization.
 
 import logging
 
-from agent_utilities.mcp.concurrency import run_blocking
-from agent_utilities.mcp.context_helpers import ctx_log
+from agent_connector_sdk.mcp.concurrency import run_blocking
+from agent_connector_sdk.mcp.context import ctx_log
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
@@ -123,7 +123,7 @@ def register_security_tools(mcp: FastMCP):
                     ],
                 )
         except Exception as e:
-            ctx_log(ctx, logger, "error", "Security audit fail ({action})")
+            await ctx_log(ctx, "Security audit fail ({action})", logger=logger, level="error")
             return ResponseBuilder.build(
                 500,
                 f"Security audit fail ({action})",
