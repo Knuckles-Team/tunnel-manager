@@ -3638,9 +3638,6 @@ def mcp_server() -> None:
     print(f"  Auth: {args.auth_type}", file=sys.stderr)
     print(f"  Dynamic Tags Loaded: {len(set(registered_tags))}", file=sys.stderr)
 
-    from agent_utilities.mcp.server_factory import (
-        mcp_network_run_kwargs,
-    )
     from agent_utilities.security.request_identity import (
         apply_served_security_profile,
     )
@@ -3662,14 +3659,12 @@ def mcp_server() -> None:
             transport="streamable-http",
             host=args.host,
             port=args.port,
-            **mcp_network_run_kwargs(args),
         )
     elif args.transport == "sse":
         mcp.run(
             transport="sse",
             host=args.host,
             port=args.port,
-            **mcp_network_run_kwargs(args),
         )
     else:
         logger.error("Invalid transport", extra={"transport": args.transport})
