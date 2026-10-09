@@ -7,7 +7,7 @@ import shlex
 import shutil
 from pathlib import Path
 
-from agent_utilities.core.config import setting
+from agent_connector_sdk.config import setting
 
 _DEFAULT_EXECUTABLES = "ssh,nc,ncat,connect-proxy,corkscrew,tsh"
 _MAX_COMMAND_LENGTH = 8_192

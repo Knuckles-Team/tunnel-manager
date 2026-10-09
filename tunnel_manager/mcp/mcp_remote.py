@@ -7,14 +7,11 @@ import logging
 import os
 import subprocess
 
-from agent_utilities.base_utilities import to_integer
-from agent_utilities.core.config import setting
-from agent_utilities.mcp.concurrency import run_blocking
-from agent_utilities.mcp.context_helpers import (
-    ctx_confirm_destructive,
-    ctx_log,
-    ctx_progress,
-)
+from agent_connector_sdk.config import setting
+from agent_connector_sdk.mcp.concurrency import run_blocking
+from agent_connector_sdk.mcp.context import ctx_confirm_destructive, ctx_log
+from agent_connector_sdk.progress import ctx_progress
+from agent_connector_sdk.utilities import to_integer
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
@@ -88,7 +85,7 @@ async def _tm_remote_run_command(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Cmd fail")
+        await ctx_log(ctx, "Cmd fail", logger=logger, level="error")
         await ctx_progress(ctx, 100, 100)
         return ResponseBuilder.build(
             500, "Cmd fail", {"host": host, "cmd": cmd}, type(e).__name__
@@ -171,7 +168,7 @@ async def _tm_remote_send_file(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, _logger, "error", "Upload fail")
+        await ctx_log(ctx, "Upload fail", logger=_logger, level="error")
         return ResponseBuilder.build(
             500,
             "Upload fail",
@@ -240,7 +237,7 @@ async def _tm_remote_receive_file(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Download fail")
+        await ctx_log(ctx, "Download fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Download fail",
@@ -303,7 +300,7 @@ async def _tm_remote_check_ssh(
             errors=[] if success else [msg],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Check fail")
+        await ctx_log(ctx, "Check fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500, "Check fail", {"host": host}, type(e).__name__
         )
@@ -353,7 +350,7 @@ async def _tm_remote_test_key_auth(
             errors=[] if success else [msg],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Key test fail")
+        await ctx_log(ctx, "Key test fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500, "Key test fail", {"host": host, "key": _key}, type(e).__name__
         )
@@ -457,7 +454,7 @@ async def _tm_remote_setup_passwordless(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "SSH setup fail")
+        await ctx_log(ctx, "SSH setup fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "SSH setup fail",
@@ -525,7 +522,7 @@ async def _tm_remote_copy_ssh_config(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Copy cfg fail")
+        await ctx_log(ctx, "Copy cfg fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Copy cfg fail",
@@ -646,7 +643,7 @@ async def _tm_remote_rotate_key(
             errors=[],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Rotate fail")
+        await ctx_log(ctx, "Rotate fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Rotate fail",
@@ -687,7 +684,7 @@ async def _tm_remote_remove_host_key(
             errors=[] if "Removed" in msg else [msg],
         )
     except Exception as e:
-        ctx_log(ctx, logger, "error", "Remove fail")
+        await ctx_log(ctx, "Remove fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
             "Remove fail",

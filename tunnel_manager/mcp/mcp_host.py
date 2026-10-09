@@ -5,11 +5,9 @@ Auto-generated from mcp_server.py during ecosystem standardization.
 
 import logging
 
-from agent_utilities.mcp.concurrency import run_blocking
-from agent_utilities.mcp.context_helpers import (
-    ctx_confirm_destructive,
-    ctx_progress,
-)
+from agent_connector_sdk.mcp.concurrency import run_blocking
+from agent_connector_sdk.mcp.context import ctx_confirm_destructive
+from agent_connector_sdk.progress import ctx_progress
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
