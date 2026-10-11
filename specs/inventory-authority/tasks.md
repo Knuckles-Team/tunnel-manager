@@ -1,4 +1,4 @@
-# TM-INVENTORY-001 delivery tasks
+# TM-INVENTORY delivery tasks
 
 | Task | Owner and deliverable | Required proof | State |
 | --- | --- | --- | --- |

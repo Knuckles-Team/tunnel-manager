@@ -1,4 +1,4 @@
-# TM-INVENTORY-001 design and implementation plan
+# TM-INVENTORY design and implementation plan
 
 ## Architecture
 

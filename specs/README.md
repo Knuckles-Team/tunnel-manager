@@ -1,5 +1,7 @@
 # tunnel-manager specifications
 
+These specs follow the ecosystem [spec standard](https://github.com/Knuckles-Team/pipelines/blob/main/reference/spec-standard.md): one owning spec per capability, extend an existing spec before creating one, audits and reviews land in the owning spec, one ID and title form, one file set. The `spec-standard` gate enforces it.
+
 This tracked `specs/` directory is the public build contract for tunnel-manager. Each owner spec contains the behavior, architecture, interfaces, tests, quality requirements, and acceptance criteria needed to implement it from public repository contents. A draft source may inform a spec, but it is not a dependency for contributors.
 
 ## Structure
@@ -40,3 +42,5 @@ Related public owner specs: [agent-utilities](https://github.com/Knuckles-Team/a
 ## Contributions
 
 Read `AGENTS.md` and the [constitution](../.specify/memory/constitution.md). Propose `spec.md`, resolve architecture in `plan.md`, define proof in `test-spec.md`, then implement `tasks.md` in a dedicated branch or worktree. Link PRs to stable IDs and change status only with exact receipts. Contributors can use the public [universal-skills spec-generator](https://github.com/Knuckles-Team/universal-skills/tree/main/universal_skills/development/spec-generator), [spec-verifier](https://github.com/Knuckles-Team/universal-skills/tree/main/universal_skills/development/spec-verifier), [task-planner](https://github.com/Knuckles-Team/universal-skills/tree/main/universal_skills/development/task-planner), [SDD full lifecycle](https://github.com/Knuckles-Team/universal-skills/tree/main/universal_skills/development-workflows/sdd-full-lifecycle), and [graph-os-development](https://github.com/Knuckles-Team/graph-os/blob/main/graph_os/skills/graph-os-development/SKILL.md) skill.
+
+- [`TM-INVENTORY`](inventory-authority/spec.md) — One operator inventory authority
