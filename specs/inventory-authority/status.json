@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "spec_id": "TM-INVENTORY-001",
+  "spec_id": "TM-INVENTORY",
   "owner_repo": "tunnel-manager",
   "delivery_state": "SPECIFIED",
   "requirement_ids": [
