@@ -1,4 +1,4 @@
-# TM-INVENTORY-001 requirements
+# TM-INVENTORY requirements
 
 Every requirement this specification owns, with the proof that closes it. Delivery state and
 public evidence for each ID are recorded in [`status.json`](status.json); this file defines what

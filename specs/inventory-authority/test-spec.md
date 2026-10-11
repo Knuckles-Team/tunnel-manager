@@ -1,4 +1,4 @@
-# TM-INVENTORY-001 test specification
+# TM-INVENTORY test specification
 
 All fixtures use temporary XDG roots, synthetic host aliases, and non-routable example addresses. Do not require a live private fleet or publish inventory contents. Record the exact source revision, command, result, and generated manifest digest with each acceptance claim.
 

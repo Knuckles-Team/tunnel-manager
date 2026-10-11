@@ -1,4 +1,4 @@
-# TM-INVENTORY-001 — One operator inventory authority
+# TM-INVENTORY — One operator inventory authority
 
 **Owner:** tunnel-manager. **Requirement:** TM-INVENTORY-R001. **Delivery:** SPECIFIED. **Acceptance:** NOT_AUDITED.
 
