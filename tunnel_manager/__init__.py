@@ -9,7 +9,6 @@ __all__: list[str] = []
 CORE_MODULES: list[str] = ["tunnel_manager.tunnel_manager"]
 
 OPTIONAL_MODULES = {
-    "tunnel_manager.agent_server": "agent_server",
     "tunnel_manager.mcp_server": "mcp",
 }
 
@@ -74,7 +73,7 @@ __all__ += [
     "render_remote_command",
 ]
 
-# Dynamic/lazy loading of optional modules (agent_server, mcp_server)
+# Dynamic/lazy loading of optional modules (mcp_server)
 _loaded_optional_modules: dict[str, Any] = {}
 
 
@@ -92,11 +91,6 @@ def __getattr__(name: str) -> Any:
         mcp_key = next((k for k in OPTIONAL_MODULES if "mcp_server" in k), None)
         if mcp_key:
             return _import_module_safely(mcp_key) is not None
-        return False
-    if name == "_AGENT_AVAILABLE":
-        agent_key = next((k for k in OPTIONAL_MODULES if "agent_server" in k), None)
-        if agent_key:
-            return _import_module_safely(agent_key) is not None
         return False
 
     # Check optional modules

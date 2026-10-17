@@ -56,16 +56,16 @@ def test_deployment_authority_proves_raw_otlp_names_are_retired() -> None:
         "OTEL_EXPORTER_OTLP_PUBLIC_KEY",
         "OTEL_EXPORTER_OTLP_SECRET_KEY",
     }
-    from agent_utilities.mcp import check_env_var_drift as drift
+    from agent_connector_sdk.mcp import env_drift as drift
 
     runtime_reads = set(drift._scan_setting_calls(REPOSITORY_ROOT)) | set(
-        drift._agent_utilities_reads()
+        drift.framework_reads()
     )
     assert not runtime_reads & set(policy["retired_environment"])
 
 
 def test_deployment_authority_reconciles_only_exact_known_findings() -> None:
-    from agent_utilities.mcp import check_env_var_drift as drift
+    from agent_connector_sdk.mcp import env_drift as drift
 
     report = {
         "findings": [
@@ -121,7 +121,7 @@ def test_deployment_authority_rejects_a_live_retired_reader() -> None:
             return {"OTEL_EXPORTER_OTLP_PUBLIC_KEY"}
 
         @staticmethod
-        def _agent_utilities_reads():
+        def framework_reads():
             return set()
 
         @staticmethod
@@ -143,7 +143,7 @@ def test_deployment_authority_rejects_a_python_image_reader() -> None:
             return {"TUNNEL_MANAGER_MCP_IMAGE"}
 
         @staticmethod
-        def _agent_utilities_reads():
+        def framework_reads():
             return set()
 
     with pytest.raises(
@@ -216,7 +216,7 @@ def test_compose_gate_avoids_runtime_env_file(monkeypatch) -> None:
 
 
 def test_resource_limit_family_is_visible_to_env_drift_scanner() -> None:
-    from agent_utilities.mcp import check_env_var_drift as drift
+    from agent_connector_sdk.mcp import env_drift as drift
 
     root = REPOSITORY_ROOT
     families = drift._scan_dynamic_families(root)

@@ -2,7 +2,7 @@
 
 The caller's entitled SSH host aliases auto-load; a non-entitled named host is
 denied. Tests the resolution/enforcement logic with the entitlement source
-mocked (the resolver itself is tested in agent-utilities).
+mocked (the resolver itself is tested in agent-connector-sdk).
 """
 
 import pytest

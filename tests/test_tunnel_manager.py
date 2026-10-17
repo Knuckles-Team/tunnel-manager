@@ -40,7 +40,7 @@ class TestHostManager:
         mock_exists.return_value = False
         hm = HostManager()
         xdg_config = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-        expected = os.path.join(xdg_config, "agent-utilities", "inventory.yml")
+        expected = os.path.join(xdg_config, "agent-connectors", "inventory.yml")
         assert hm.config_file == expected
         assert hm.hosts == {}
 

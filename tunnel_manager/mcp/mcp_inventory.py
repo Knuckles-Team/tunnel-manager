@@ -980,7 +980,7 @@ def register_inventory_tools(mcp: FastMCP):
         ),
         inventory: str = Field(
             default=setting("TUNNEL_INVENTORY", _DEFAULT_INVENTORY_PATH),
-            description="YAML inventory path (default: $XDG_CONFIG_HOME/agent-utilities/inventory.yaml).",
+            description="YAML inventory path (default: $XDG_CONFIG_HOME/agent-connectors/inventory.yaml).",
         ),
         group: str = Field(
             default=setting("TUNNEL_INVENTORY_GROUP", "all"),

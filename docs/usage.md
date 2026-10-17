@@ -35,7 +35,7 @@ connection), both in `tunnel_manager.tunnel_manager`.
 ```python
 from tunnel_manager.tunnel_manager import HostManager, Tunnel
 
-# The inventory — defaults to ~/.config/agent-utilities/inventory.yaml
+# The inventory — defaults to ~/.config/agent-connector-sdk/inventory.yaml
 hosts = HostManager()
 hosts.add_host(
     alias="db-01",

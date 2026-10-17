@@ -1,5 +1,5 @@
 [build-system]
-requires = [ "setuptools>=80.9.0", "wheel",]
+requires = [ "setuptools>=84.0.0", "wheel",]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,7 +9,7 @@ description = "Create SSH Tunnels to your remote hosts and host as an MCP Server
 readme = "README.md"
 classifiers = [ "Development Status :: 5 - Production/Stable", "License :: Public Domain", "Environment :: Console", "Operating System :: POSIX :: Linux", "Programming Language :: Python :: 3",]
 requires-python = ">=3.12, <3.15"
-dependencies = [ "agent-connector-sdk>=0.1.0,<1.0.0", "agent-utilities>=2.0.0,<3.0.0", "fastmcp>=4.0.10", "paramiko>=5.0.0", "asyncssh>=2.24.0",]
+dependencies = [ "agent-connector-sdk>=0.2.0,<1.0.0", "requests>=2.34.2", "fastmcp>=4.1.0", "paramiko>=5.0.0", "asyncssh>=2.24.1",]
 [[project.authors]]
 name = "Project Maintainers"
 email = "maintainers@users.noreply.github.com"
@@ -18,30 +18,26 @@ email = "maintainers@users.noreply.github.com"
 text = "MIT"
 
 [project.optional-dependencies]
-mcp = [ "agent-utilities[mcp]>=2.0.0,<3.0.0",]
-agent = [ "agent-utilities[agent-runtime,logfire]>=2.0.0,<3.0.0",]
-all = [ "agent-utilities[mcp,agent-runtime,logfire]>=2.0.0,<3.0.0",]
+mcp = [ "agent-connector-sdk>=0.2.0,<1.0.0",]
+all = [ "agent-connector-sdk>=0.2.0,<1.0.0",]
 test = [
     "pytest-xdist>=3.8.0", "pytest>=9.1.1", "pytest-asyncio>=1.4.0", "pytest-cov>=7.1.0",]
 
 [project.scripts]
 tunnel-manager = "tunnel_manager.tunnel_manager:main"
 tunnel-manager-mcp = "tunnel_manager.mcp_server:mcp_server"
-tunnel-manager-agent = "tunnel_manager.agent_server:agent_server"
-tunnel-manager-health = "tunnel_manager.net_health:main_sample"
-tunnel-manager-health-derive = "tunnel_manager.net_health:main_derive"
 tunnel-manager-doctor = "tunnel_manager.doctor:main"
 
-[project.entry-points."agent_utilities.skill_providers"]
+[project.entry-points."agent_connector_sdk.skill_providers"]
 tunnel-manager = "tunnel_manager.skills"
 
-[project.entry-points."agent_utilities.ontology_providers"]
+[project.entry-points."agent_connector_sdk.ontology_providers"]
 tunnel-manager = "tunnel_manager.ontology"
 
-[project.entry-points."agent_utilities.source_connector_providers"]
+[project.entry-points."agent_connector_sdk.source_connector_providers"]
 tunnel-manager = "tunnel_manager.connectors"
 
-[project.entry-points."agent_utilities.prompt_providers"]
+[project.entry-points."agent_connector_sdk.prompt_providers"]
 tunnel-manager = "tunnel_manager.prompts"
 
 [tool.uv.workspace]
@@ -80,12 +76,8 @@ ignore_names = ["request", "config"]
 
 [tool.uv]
 override-dependencies = [
-    "fastmcp-slim[client,server]>=4.0.0b1",
+    "fastmcp-slim[client,server]>=4.1.0",
 ]
-
-[tool.uv.sources]
-agent-connector-sdk = { path = ".uv-workspace-siblings/agent-connector-sdk", editable = true }
-agent-utilities = { path = ".uv-workspace-siblings/agent-utilities", editable = true }
 
 [tool.pipelines_hooks.ste]
 exempt = ["specs/*", "specs/**/*"]

@@ -1,5 +1,5 @@
 site_name: "tunnel-manager"
-site_description: "SSH tunnel, remote-execution and MCP/agent server — the agentless execution arm of the agent-utilities ecosystem."
+site_description: "SSH tunnel, remote-execution and MCP/agent server — the agentless execution arm of the Graph OS ecosystem."
 site_url: "https://knuckles-team.github.io/tunnel-manager/"
 repo_name: "Knuckles-Team/tunnel-manager"
 repo_url: "https://github.com/Knuckles-Team/tunnel-manager"

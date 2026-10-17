@@ -12,7 +12,7 @@ An operator can keep one host inventory in the user's XDG configuration director
 
 ## Actors and user stories
 
-1. **Operator (P1):** place `inventory.yml` under the selected user's `$XDG_CONFIG_HOME/agent-utilities/`, then use `inventory show`, `doctor`, `tm_hosts`, and `tm_inventory` against that same file.
+1. **Operator (P1):** place `inventory.yml` under the selected user's `$XDG_CONFIG_HOME/agent-connector-sdk/`, then use `inventory show`, `doctor`, `tm_hosts`, and `tm_inventory` against that same file.
 2. **Container deployer (P1):** bind the operator file read-only to an inventory-reading runtime and see a clear startup failure if the source, mount, or path identity is wrong.
 3. **Offline caller (P2):** inspect a deliberately supplied inventory file through an explicit non-serving API without silently changing the serving process authority.
 
@@ -20,7 +20,7 @@ An operator can keep one host inventory in the user's XDG configuration director
 
 | ID | Requirement | Observable acceptance |
 | --- | --- | --- |
-| INVENTORY-1 | The automatic inventory path is exactly `$XDG_CONFIG_HOME/agent-utilities/inventory.yml`, using the XDG platform default when unset. No working-directory, package-resource, `.yaml`, or service-local fallback is allowed. | With only the XDG file present, every automatic reader resolves its normalized path; with only a legacy file present, no automatic reader uses it. |
+| INVENTORY-1 | The automatic inventory path is exactly `$XDG_CONFIG_HOME/agent-connector-sdk/inventory.yml`, using the XDG platform default when unset. No working-directory, package-resource, `.yaml`, or service-local fallback is allowed. | With only the XDG file present, every automatic reader resolves its normalized path; with only a legacy file present, no automatic reader uses it. |
 | INVENTORY-2 | CLI, `HostManager`, MCP host tools, bulk inventory tools, and remote execution consume the same resolved file and source identity. A serving process cannot redirect one surface to another path through `TUNNEL_INVENTORY` or a per-call argument. | A divergent serving selector is rejected before inventory-dependent actions; all surfaces report the same source digest in a synthetic fixture. |
 | INVENTORY-3 | Explicit file selection is confined to a named offline/replay boundary. It cannot replace the shared serving inventory, bypass authorization, or be inferred from a filename suffix. | Explicit offline input works with a temporary file; a serving call with a different file fails closed. |
 | INVENTORY-4 | Missing, malformed, unreadable, stale-digest, and wrong-source files are distinguishable errors for inventory-dependent serving actions. Empty inventory is accepted only when explicitly valid for the operation; no failed read is converted to an empty host set that can later be saved over the source. | Each negative fixture yields a deterministic failure and leaves source bytes unchanged. |
@@ -36,7 +36,7 @@ XDG may be unset, point to a path with spaces, or be projected into a container;
 
 | Requirement | Owner | Consumer / boundary | Acceptance evidence |
 | --- | --- | --- | --- |
-| INVENTORY-1 through INVENTORY-5, INVENTORY-7 | `Knuckles-Team/tunnel-manager` | `Knuckles-Team/agent-utilities` supplies shared config and identity services; tunnel-manager owns its inventory readers and writes. | Focused tests and source revision. |
+| INVENTORY-1 through INVENTORY-5, INVENTORY-7 | `Knuckles-Team/tunnel-manager` | `Knuckles-Team/agent-connector-sdk` supplies shared config and identity services; tunnel-manager owns its inventory readers and writes. | Focused tests and source revision. |
 | INVENTORY-6 | `Knuckles-Team/tunnel-manager` owns its deployable examples; the corresponding service manifest owner owns its generated runtime projection. | `Knuckles-Team/container-manager-mcp` is a **consumer** of the same operator file, never a second writer or authority. | Generated manifest diff, source digest, read-only runtime receipt. |
 
 The stable inter-repository contract is [contracts/inventory-volume.md](contracts/inventory-volume.md). Each consumer must implement and test that contract in its own repository. A consumer's implementation or a tunnel-manager source commit alone does not accept the ecosystem cutover.
