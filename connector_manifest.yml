@@ -164,8 +164,8 @@ schema_mappings:
 sync:
 - preset: tunnel-hosts
   server: tunnel-manager-mcp
-  tool: tm_hosts
-  action: list
+  tool: tunnel_manager_list_hosts
+  action: null
   records_path: hosts
   id_field: source_key
   title_field: hostname
@@ -173,14 +173,11 @@ sync:
   updated_field: null
   pagination: null
   doc_type: Host
-  tool_schema_sha256: 9c925f0e490db26e1742dcf426e9da9370b42e959da96341e370e586dcb1d988
+  tool_schema_sha256: 04c716cf7929254478aa9ab62d7d3336c3869f120695ffb7b2d79bc34acc7d55
   raw:
     server: tunnel-manager-mcp
-    tool: tm_hosts
+    tool: tunnel_manager_list_hosts
     params_style: args
-    action: list
-    params:
-      action: list
     records_path: hosts
     records_is_mapping: true
     mapping_key_field: source_key

@@ -38,6 +38,7 @@ from agent_connector_sdk.mcp.tool_surface import register_tool_surface
 from agent_connector_sdk.privacy import sanitize_for_persistence
 from agent_connector_sdk.progress import ctx_progress
 
+from tunnel_manager.action_split import register_split_action_tools
 from tunnel_manager.advanced_file_manager import AdvancedFileManager
 from tunnel_manager.connection_security import (
     max_concurrency,
@@ -59,7 +60,7 @@ from tunnel_manager.tunnel_manager import (
     default_inventory_path,
 )
 
-__version__ = "3.3.0"
+__version__ = "3.3.1"
 
 # XDG-compliant default paths. The inventory is shared across the ecosystem
 # (the HostManager library, container-manager-mcp, and the ssh-bootstrap skill all
@@ -3618,13 +3619,18 @@ def get_mcp_instance() -> tuple[Any, Any, Any, Any]:
         instructions="Tunnel Manager MCP Utility — Manage SSH tunnels, managed hosts, and remote execution.",
     )
 
+    # Host inventory operations are served as one tool per HostManager method.
     registered_tags = register_tool_surface(
         mcp,
         client_cls=HostManager,
         get_client=get_client,
         service="tunnel-manager",
-        tool_registry=[
-            ("hosts", "HOSTTOOL", register_host_tools),
+    )
+    # Remote execution, file, inventory, operation, system, security and ingest
+    # tools keep their typed parameters and gates and are served one tool per action.
+    registered_tags += register_split_action_tools(
+        mcp,
+        [
             ("remote", "REMOTETOOL", register_remote_tools),
             ("inventory", "INVENTORYTOOL", register_inventory_tools),
             ("operations", "OPERATIONSTOOL", register_operations_tools),
@@ -3633,6 +3639,14 @@ def get_mcp_instance() -> tuple[Any, Any, Any, Any]:
             ("security", "SECURITYTOOL", register_security_tools),
             ("ingest", "INGESTTOOL", register_ingest_tools),
         ],
+        prefixes={
+            "tm_remote": "tm_remote",
+            "tm_inventory": "tm_inventory",
+            "tm_operations": "tm_operation",
+            "tm_system": "tm_system",
+            "tm_files": "tm_file",
+            "tm_security": "tm_security",
+        },
     )
 
     for mw in middlewares:
