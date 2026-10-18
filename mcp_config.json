@@ -7,7 +7,6 @@
         "tunnel-manager-mcp"
       ],
       "env": {
-        "MCP_TOOL_MODE": "intent",
         "FILETOOL": "True",
         "HOSTTOOL": "True",
         "INGESTTOOL": "True",
@@ -20,7 +19,6 @@
         "TUNNEL_INVENTORY_GROUP": "all",
         "TUNNEL_KG_INGEST": "true",
         "TUNNEL_KNOWN_HOSTS": "~/.ssh/known_hosts",
-        "TUNNEL_MANAGER_HEALTH_AGGREGATE_S": "3600",
         "TUNNEL_MANAGER_HEALTH_INGEST": "true",
         "TUNNEL_MANAGER_HOSTS": "r510,r710,r820,rw710",
         "TUNNEL_MAX_THREADS": "6",

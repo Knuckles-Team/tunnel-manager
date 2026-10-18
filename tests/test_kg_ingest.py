@@ -28,7 +28,7 @@ class _FakeTransport:
     def __init__(self) -> None:
         self.requests: list[Any] = []
 
-    async def source_status(self, connector: str, stream: str):
+    async def source_status(self, connector: str, stream: str):  # noqa: V107
         return SimpleNamespace(accepted_checkpoint=None)
 
     async def submit(self, request):
@@ -97,11 +97,23 @@ async def test_ingest_hosts_maps_host_group_and_key(ingest):
     assert by_id["tunnel:group:example-fleet"].mapping_reference.endswith("/HostGroup")
     assert by_id["tunnel:sshkey:~/.ssh/id_shared"].mapping_reference.endswith("/SshKey")
     edge_types = {
-        (rel.source.record_id, rel.target.record_id, rel.relation_reference.rsplit("/relations/", 1)[-1])
+        (
+            rel.source.record_id,
+            rel.target.record_id,
+            rel.relation_reference.rsplit("/relations/", 1)[-1],
+        )
         for rel in request.relationships
     }
-    assert ("tunnel:host:app-node", "tunnel:group:example-fleet", "inGroup") in edge_types
-    assert ("tunnel:host:app-node", "tunnel:sshkey:~/.ssh/id_shared", "usesKey") in edge_types
+    assert (
+        "tunnel:host:app-node",
+        "tunnel:group:example-fleet",
+        "inGroup",
+    ) in edge_types
+    assert (
+        "tunnel:host:app-node",
+        "tunnel:sshkey:~/.ssh/id_shared",
+        "usesKey",
+    ) in edge_types
 
 
 async def test_ingest_hosts_dedups_shared_key(ingest):
