@@ -59,7 +59,7 @@ from tunnel_manager.tunnel_manager import (
     default_inventory_path,
 )
 
-__version__ = "3.2.0"
+__version__ = "3.2.1"
 
 # XDG-compliant default paths. The inventory is shared across the ecosystem
 # (the HostManager library, container-manager-mcp, and the ssh-bootstrap skill all
@@ -2722,7 +2722,9 @@ async def _tm_operations_get_progress(
             {"operation_id": operation_id, "status": status},
         )
     except Exception as e:
-        await ctx_log(ctx, "Failed to get operation progress", logger=logger, level="error")
+        await ctx_log(
+            ctx, "Failed to get operation progress", logger=logger, level="error"
+        )
         return ResponseBuilder.build(
             500,
             "Failed to get operation progress",
@@ -2807,7 +2809,9 @@ async def _tm_operations_get_metrics(
             },
         )
     except Exception as e:
-        await ctx_log(ctx, "Failed to get resource metrics", logger=logger, level="error")
+        await ctx_log(
+            ctx, "Failed to get resource metrics", logger=logger, level="error"
+        )
         return ResponseBuilder.build(
             500,
             "Failed to get resource metrics",
@@ -2836,7 +2840,9 @@ async def _tm_operations_list_sessions(
             },
         )
     except Exception as e:
-        await ctx_log(ctx, "Failed to list active sessions", logger=logger, level="error")
+        await ctx_log(
+            ctx, "Failed to list active sessions", logger=logger, level="error"
+        )
         return ResponseBuilder.build(
             500, "Failed to list active sessions", {}, type(e).__name__
         )
@@ -3036,7 +3042,9 @@ def register_system_tools(mcp: FastMCP):
                 action, intelligence, remote_host, log_paths, patterns
             )
         except Exception as e:
-            await ctx_log(ctx, "System intelligence fail ({action})", logger=logger, level="error")
+            await ctx_log(
+                ctx, "System intelligence fail ({action})", logger=logger, level="error"
+            )
             return ResponseBuilder.build(
                 500,
                 f"System intelligence fail ({action})",
@@ -3551,7 +3559,9 @@ def register_security_tools(mcp: FastMCP):
                 action, auditor, remote_host, scope, standard, scan_type
             )
         except Exception as e:
-            await ctx_log(ctx, "Security audit fail ({action})", logger=logger, level="error")
+            await ctx_log(
+                ctx, "Security audit fail ({action})", logger=logger, level="error"
+            )
             return ResponseBuilder.build(
                 500,
                 f"Security audit fail ({action})",
