@@ -1,4 +1,4 @@
-agent-connector-sdk[mcp]>=0.2.1,<1.0.0
+agent-connector-sdk[mcp]>=0.3.0,<1.0.0
 fastmcp>=4.0.10
 paramiko>=5.0.0
 asyncssh>=2.24.0
