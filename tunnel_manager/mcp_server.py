@@ -59,16 +59,16 @@ from tunnel_manager.tunnel_manager import (
     default_inventory_path,
 )
 
-__version__ = "3.1.0"
+__version__ = "3.2.0"
 
 # XDG-compliant default paths. The inventory is shared across the ecosystem
 # (the HostManager library, container-manager-mcp, and the ssh-bootstrap skill all
-# read $XDG_CONFIG_HOME/agent-utilities/inventory.yml), so the MCP server defaults
+# read $XDG_CONFIG_HOME/agent-connectors/inventory.yml), so the MCP server defaults
 # to the SAME file — one inventory, one location. The resolver prefers the new
 # `inventory.yml` and falls back to a legacy `inventory.yaml`. Override with
 # $TUNNEL_INVENTORY.
 _XDG_CONFIG_HOME = setting("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-_TM_CONFIG_DIR = os.path.join(_XDG_CONFIG_HOME, "agent-utilities")
+_TM_CONFIG_DIR = os.path.join(_XDG_CONFIG_HOME, "agent-connectors")
 _DEFAULT_INVENTORY_PATH = default_inventory_path()
 
 # Ensure config directory exists on import
@@ -2523,7 +2523,7 @@ def register_inventory_tools(mcp: FastMCP):
         ),
         inventory: str = Field(
             default=setting("TUNNEL_INVENTORY", _DEFAULT_INVENTORY_PATH),
-            description="YAML inventory path (default: $XDG_CONFIG_HOME/agent-utilities/inventory.yaml).",
+            description="YAML inventory path (default: $XDG_CONFIG_HOME/agent-connectors/inventory.yaml).",
         ),
         group: str = Field(
             default=setting("TUNNEL_INVENTORY_GROUP", "all"),
@@ -3638,20 +3638,9 @@ def mcp_server() -> None:
     print(f"  Auth: {args.auth_type}", file=sys.stderr)
     print(f"  Dynamic Tags Loaded: {len(set(registered_tags))}", file=sys.stderr)
 
-    from agent_utilities.security.request_identity import (
-        apply_served_security_profile,
-    )
-
-    apply_served_security_profile(
-        args.transport,
-        transport_auth_configured=(
-            str(getattr(args, "auth_type", "none") or "none").lower() != "none"
-        ),
-    )
-
     if args.transport == "stdio":
         # Stdout purity is owned fd-level by the MCP SDK's own stdio_server()
-        # (agent-utilities B-19): it claims fd 1 exclusively and dup2()s stderr
+        # (agent-connector-sdk B-19): it claims fd 1 exclusively and dup2()s stderr
         # over it for every other writer, so no process-wide patch is needed.
         mcp.run(transport="stdio")
     elif args.transport == "streamable-http":

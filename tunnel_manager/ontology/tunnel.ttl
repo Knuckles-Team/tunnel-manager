@@ -133,5 +133,5 @@
     rdfs:comment """Tunnel Manager SSH-access model — hosts and host groups, tunnels /
     connections, SSH key material, remote command executions, file transfers, tracked
     operations and security audits, with their access and provenance relationships —
-    federated into the agent-utilities knowledge-graph hub.""" ;
+    federated into the agent-connector-sdk knowledge-graph hub.""" ;
     owl:imports <http://knuckles.team/kg> .

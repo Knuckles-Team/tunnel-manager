@@ -2,12 +2,12 @@
 # =====================================================================
 # Copy this to the default location and edit:
 #
-#     mkdir -p ~/.config/agent-utilities
-#     cp inventory.example.yaml ~/.config/agent-utilities/inventory.yaml
+#     mkdir -p ~/.config/agent-connector-sdk
+#     cp inventory.example.yaml ~/.config/agent-connector-sdk/inventory.yaml
 #
 # Default search path (library, CLI, MCP server, container-manager-mcp, and the
 # ssh-bootstrap skill all read the SAME file):
-#     $XDG_CONFIG_HOME/agent-utilities/inventory.yaml   (== ~/.config/agent-utilities/inventory.yaml)
+#     $XDG_CONFIG_HOME/agent-connector-sdk/inventory.yaml   (== ~/.config/agent-connector-sdk/inventory.yaml)
 #
 # Override the path with:
 #     CLI:  tunnel-manager --inventory /path/to/inventory.yaml ...

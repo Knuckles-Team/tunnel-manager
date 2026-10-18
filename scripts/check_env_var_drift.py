@@ -17,16 +17,13 @@ from pathlib import Path
 from typing import Any
 
 from deployment_policy import DeploymentPolicyError, load_policy
-from run_agent_utilities_gate import _agent_utilities_root
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN_PASSWORD_ENV = "TUNNEL_PASSWORD"
 
 
 def _shared_checker() -> Any:
-    framework_root = _agent_utilities_root(REPOSITORY_ROOT)
-    sys.path.insert(0, str(framework_root))
-    from agent_utilities.mcp import check_env_var_drift
+    from agent_connector_sdk.mcp import env_drift as check_env_var_drift
 
     return check_env_var_drift
 
@@ -96,7 +93,7 @@ def _runtime_reads(checker: Any, root: Path) -> set[str]:
     """Return Python/runtime reads, excluding Compose interpolation itself."""
 
     reads = set(checker._scan_setting_calls(root)) | set(
-        checker._agent_utilities_reads()
+        checker.framework_reads()
     )
     for helper_name in ("_script_reads", "_derive_toggle_vars"):
         helper = getattr(checker, helper_name, None)
@@ -104,7 +101,7 @@ def _runtime_reads(checker: Any, root: Path) -> set[str]:
             reads.update(helper(root))
     family_reader = getattr(checker, "_scan_dynamic_family_reads", None)
     family_scanner = getattr(checker, "_scan_dynamic_families", None)
-    framework_families = getattr(checker, "_agent_utilities_dynamic_families", None)
+    framework_families = getattr(checker, "framework_dynamic_families", None)
     if family_reader is not None and family_scanner is not None:
         families = dict(framework_families() if framework_families else {})
         families.update(family_scanner(root))

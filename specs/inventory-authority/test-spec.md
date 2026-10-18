@@ -4,7 +4,7 @@ All fixtures use temporary XDG roots, synthetic host aliases, and non-routable e
 
 | Scenario | Requirements | Fixture and action | Expected result / evidence |
 | --- | --- | --- | --- |
-| Canonical path | 01, 02 | Temporary XDG root with `agent-utilities/inventory.yml`; exercise CLI, `HostManager`, MCP host tools, bulk tools, and remote execution. | One normalized path and digest; no second resolver result. Unit and integration tests. |
+| Canonical path | 01, 02 | Temporary XDG root with `agent-connector-sdk/inventory.yml`; exercise CLI, `HostManager`, MCP host tools, bulk tools, and remote execution. | One normalized path and digest; no second resolver result. Unit and integration tests. |
 | Legacy-only negative | 01, 07 | Place only `inventory.yaml`, then invoke all automatic readers and `doctor`. | No fallback, rename, auto-seed, or success from legacy content; clear migration guidance. |
 | Divergent selector | 02, 03 | Set `TUNNEL_INVENTORY` or supply a serving MCP inventory argument pointing to a different file. | Deterministic conflict/refusal before any SSH or write action. |
 | Explicit offline file | 03 | Named offline/replay API with a temporary noncanonical file. | Read succeeds without changing process-wide inventory identity; authorization and input validation still apply. |

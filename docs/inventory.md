@@ -9,11 +9,11 @@ point — the `HostManager` Python API, the `tunnel-manager` CLI, the
 ## Default location
 
 ```
-$XDG_CONFIG_HOME/agent-utilities/inventory.yml      # preferred
-$XDG_CONFIG_HOME/agent-utilities/inventory.yaml     # legacy fallback
+$XDG_CONFIG_HOME/agent-connector-sdk/inventory.yml      # preferred
+$XDG_CONFIG_HOME/agent-connector-sdk/inventory.yaml     # legacy fallback
 ```
 
-which is `~/.config/agent-utilities/inventory.yml` on a typical Linux/macOS host
+which is `~/.config/agent-connector-sdk/inventory.yml` on a typical Linux/macOS host
 (`XDG_CONFIG_HOME` defaults to `~/.config`). The path is **resolved** in this order:
 
 1. `inventory.yml` if it exists — the standard for fresh installs, **else**
@@ -24,7 +24,7 @@ So existing `.yaml` users keep working untouched, while new installs standardize
 `.yml`. If neither file exists, tunnel-manager starts with an empty inventory (no error)
 and the operator can add hosts via the API/CLI.
 
-> **Note:** this is the `agent-utilities` config directory on purpose — the inventory
+> **Note:** this is the `agent-connector-sdk` config directory on purpose — the inventory
 > is shared across the ecosystem. Earlier builds of the MCP server defaulted to
 > `~/.config/tunnel-manager/inventory.yml`; that has been unified to the path above.
 
@@ -34,8 +34,8 @@ The fastest start is the `init` command, which writes a fully-commented template
 the resolved path:
 
 ```bash
-tunnel-manager inventory init        # writes ~/.config/agent-utilities/inventory.yml
-$EDITOR ~/.config/agent-utilities/inventory.yml
+tunnel-manager inventory init        # writes ~/.config/agent-connector-sdk/inventory.yml
+$EDITOR ~/.config/agent-connector-sdk/inventory.yml
 tunnel-manager inventory doctor      # validate it
 ```
 

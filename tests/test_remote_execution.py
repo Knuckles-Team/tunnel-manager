@@ -9,7 +9,7 @@ from unittest.mock import Mock
 
 import pytest
 import yaml
-from agent_utilities.security.brain_context import ActorContext
+from agent_connector_sdk.identity import ActorContext, ActorType
 from pydantic import ValidationError
 
 from tunnel_manager.models import CommandResult, HostConfig
@@ -31,6 +31,7 @@ from tunnel_manager.tunnel_manager import Tunnel
 def _actor(*roles: str) -> ActorContext:
     return ActorContext(
         actor_id="agent:repository-manager",
+        actor_type=ActorType.AI_AGENT,
         tenant_id="tenant:development",
         authenticated=True,
         roles=roles,
@@ -156,7 +157,7 @@ def test_inventory_uses_canonical_default_resolver_when_no_override(monkeypatch)
     )
     monkeypatch.setattr(
         "tunnel_manager.remote_execution.default_inventory_path",
-        lambda: "/xdg/agent-utilities/inventory.yml",
+        lambda: "/xdg/agent-connectors/inventory.yml",
     )
     monkeypatch.setattr(
         "tunnel_manager.remote_execution.identity_scoped_resources",
@@ -167,7 +168,7 @@ def test_inventory_uses_canonical_default_resolver_when_no_override(monkeypatch)
         HostInventory().resolve("missing", _actor("ssh:*"))
 
     manager_class.assert_called_once_with(
-        config_file="/xdg/agent-utilities/inventory.yml"
+        config_file="/xdg/agent-connectors/inventory.yml"
     )
 
 

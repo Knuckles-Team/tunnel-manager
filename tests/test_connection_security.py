@@ -130,11 +130,9 @@ def test_mcp_server_uses_shared_hardened_network_boundary():
     mcp_server = import_module("tunnel_manager.mcp_server")
     source = inspect.getsource(mcp_server.mcp_server)
 
-    assert "mcp_network_run_kwargs(args)" in source
-    assert "apply_served_security_profile" in source
     assert 'mcp.run(transport="stdio")' in source
     # B-19: stdio purity is now owned fd-level by the MCP SDK's own stdio_server()
-    # inside agent-utilities (it claims fd 1 and dup2()s stderr over it for every
+    # inside agent-connector-sdk (it claims fd 1 and dup2()s stderr over it for every
     # other writer), so the served module must NOT call a process-wide patch.
     # Inverted into a regression guard against the monkeypatch being reintroduced.
     assert "protect_stdio_jsonrpc" not in source

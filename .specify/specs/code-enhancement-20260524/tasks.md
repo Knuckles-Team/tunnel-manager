@@ -5,7 +5,7 @@ Skipped informational: 5
 
 - [ ] [P] **T001** [Dependency Audit] Minor update: pytest-xdist 3.6.0 (constraint — not installed) -> 3.8.0
   - Priority: P3-Low | Effort: Small
-- [ ] [P] **T002** [Dependency Audit] Minor update: agent-utilities 0.2.40 (installed) -> 0.16.0
+- [ ] [P] **T002** [Dependency Audit] Minor update: agent-connector-sdk 0.2.40 (installed) -> 0.16.0
   - Priority: P3-Low | Effort: Small
 - [ ] [P] **T003** [Dependency Audit] Minor update: asyncssh 2.14.0 (constraint — not installed) -> 2.23.0
   - Priority: P3-Low | Effort: Small
@@ -91,5 +91,5 @@ Skipped informational: 5
   - Priority: P2-Medium | Effort: Medium
 - [ ] [P] **T044** [Environment Variables] 15 Python env vars not in .env.example: LLM_API_KEY, LLM_BASE_URL, MCP_URL, MODE
   - Priority: P2-Medium | Effort: Medium
-- [ ] [P] **T045** [analyze_xdg_kg] Analysis error: No module named 'agent_utilities.knowledge_graph'
+- [ ] [P] **T045** [analyze_xdg_kg] Analysis error: No module named 'agent_connector_sdk.knowledge_graph'
   - Priority: P1-High | Effort: Medium

@@ -36,7 +36,7 @@ from .connection_security import (
 from .models import CommandResult, HostConfig
 from .proxy_security import proxy_command_argv, proxy_command_string
 
-__version__ = "3.1.0"
+__version__ = "3.2.0"
 
 
 def _first_field(sources: tuple, keys: tuple, default=None):
@@ -388,14 +388,14 @@ def default_inventory_path() -> str:
     skill all read the same file). The standard filename is now ``inventory.yml``,
     but earlier builds wrote ``inventory.yaml``; this resolver keeps both working:
 
-    1. ``$XDG_CONFIG_HOME/agent-utilities/inventory.yml`` if it exists, else
-    2. ``$XDG_CONFIG_HOME/agent-utilities/inventory.yaml`` if it exists (legacy), else
+    1. ``$XDG_CONFIG_HOME/agent-connectors/inventory.yml`` if it exists, else
+    2. ``$XDG_CONFIG_HOME/agent-connectors/inventory.yaml`` if it exists (legacy), else
     3. ``inventory.yml`` (the new standard for a fresh install).
 
     ``XDG_CONFIG_HOME`` defaults to ``~/.config``.
     """
     xdg_config = setting("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-    config_dir = os.path.join(xdg_config, "agent-utilities")
+    config_dir = os.path.join(xdg_config, "agent-connectors")
     yml = os.path.join(config_dir, "inventory.yml")
     yaml_legacy = os.path.join(config_dir, "inventory.yaml")
     if os.path.exists(yml):
@@ -739,18 +739,16 @@ class HostManager:
     def _entitled(self, namespace: str, names: list[str]) -> list[str]:
         """Filter a resource-name list to what the calling identity may reach.
 
-        Routes the names through agent-utilities' shared identity-scoped resolver
+        Routes the names through agent-connector-sdk' shared identity-scoped resolver
         (CONCEPT:AU-OS.identity.identity-scoped-resource-autoload): a caller's
         Okta/Keycloak groups decide which SSH host aliases auto-load for them.
         The ambient ``SYSTEM_ACTOR`` (unauthenticated/local) holds ``admin`` →
         sees all, so behaviour is unchanged until a real identity scopes it
-        down. Degrades to the full list if agent-utilities predates the
+        down. Degrades to the full list if agent-connector-sdk predates the
         resolver.
         """
         try:
-            from agent_utilities.security.entitlements import (
-                identity_scoped_resources,
-            )
+            from agent_connector_sdk.entitlements import identity_scoped_resources
         except Exception:
             return list(names)
         return list(identity_scoped_resources(namespace, names))
@@ -1966,15 +1964,15 @@ class Tunnel:
 # A well-commented template documenting every supported host field and the
 # Ansible-style group structure. Written verbatim by `tunnel-manager inventory init`.
 INVENTORY_TEMPLATE = """\
-# tunnel-manager / agent-utilities shared inventory
+# tunnel-manager / agent-connector-sdk shared inventory
 # ------------------------------------------------------------------------------
 # Maps short host aliases (e.g. `edge-node`) to their SSH connection details. Every
 # ecosystem surface reads THIS file: the HostManager Python API, the
 # `tunnel-manager` CLI, the tunnel-manager-mcp MCP server, container-manager-mcp
 # (cm_* host aliases), and the ssh-bootstrap skill. Define your fleet once here.
 #
-# Preferred path: $XDG_CONFIG_HOME/agent-utilities/inventory.yml
-#   (~/.config/agent-utilities/inventory.yml on a typical Linux/macOS host).
+# Preferred path: $XDG_CONFIG_HOME/agent-connectors/inventory.yml
+#   (~/.config/agent-connectors/inventory.yml on a typical Linux/macOS host).
 #   A legacy inventory.yaml at the same location is still read if no .yml exists.
 #
 # Two layouts are accepted: Ansible-style (recommended, shown below) and flat.
@@ -2462,7 +2460,7 @@ def _check_group_reference_problems(raw: dict, hosts: dict) -> list[str]:
 def _inventory_doctor(inventory: str, fix: bool) -> int:
     """Validate the inventory; return a non-zero exit code on hard errors."""
     xdg_config = setting("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-    config_dir = os.path.join(xdg_config, "agent-utilities")
+    config_dir = os.path.join(xdg_config, "agent-connectors")
     yml_path = os.path.join(config_dir, "inventory.yml")
     yaml_path = os.path.join(config_dir, "inventory.yaml")
 

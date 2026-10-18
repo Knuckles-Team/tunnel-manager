@@ -20,7 +20,7 @@
 ![PyPI - Wheel](https://img.shields.io/pypi/wheel/tunnel-manager)
 ![PyPI - Implementation](https://img.shields.io/pypi/implementation/tunnel-manager)
 
-*Version: 3.1.0*
+*Version: 3.2.0*
 
 > **Documentation** — Installation, deployment, usage across the API, CLI, and MCP
 > and agent interfaces are maintained in the
@@ -121,7 +121,7 @@ When query strings or parameters are supplied, an LLM-free **Knowledge Graph res
 <!-- MCP-CONFIG-EXAMPLES:START -->
 
 > **Install the connector-focused `[mcp]` extra.** Examples use `tunnel-manager[mcp]` to add
-> FastMCP / FastAPI through `agent-utilities[mcp]`; the required Agent Utilities core
+> FastMCP / FastAPI through `agent-connector-sdk[mcp]`; the required Agent Utilities core
 > still carries `epistemic-graph[full]`. The `[agent-runtime]` extra additionally
 > enables model orchestration.
 
@@ -163,7 +163,7 @@ When query strings or parameters are supplied, an LLM-free **Knowledge Graph res
 }
 ```
 
-Runtime references require an alias-aware launcher such as GraphOS. Other
+Runtime references require an alias-aware launcher such as Arbora. Other
 launchers must omit those entries and inject the resolved values through their
 own runtime secret boundary.
 
@@ -290,7 +290,7 @@ the **same file** — the `HostManager` API, the `tunnel-manager` CLI, the MCP s
 **container-manager-mcp** (its `cm_*` host aliases), and the `ssh-bootstrap` skill — so
 the operator define the operator's fleet once.
 
-- **Location** — `~/.config/agent-utilities/inventory.yml` (`.yml` preferred). A legacy
+- **Location** — `~/.config/agent-connector-sdk/inventory.yml` (`.yml` preferred). A legacy
   `inventory.yaml` at the same path is still read when no `.yml` exists, so existing
   installs keep working. Override with `TUNNEL_INVENTORY`.
 - **Manage it** with the `inventory` subcommand:
@@ -359,7 +359,7 @@ Full schema, every host field, the copy-paste template, and override options liv
 | `TUNNEL_MANAGER_HOSTS` | `r510,r710,r820,rw710` | comma-separated inventory aliases to probe/derive over (default: full inventory) |
 | `TUNNEL_MANAGER_HEALTH_NOTIFY_URL` | — | best-effort webhook for network-anomaly notifications |
 
-#### Inherited agent-utilities variables (apply to every connector)
+#### Inherited agent-connector-sdk variables (apply to every connector)
 
 | Variable | Example | Description |
 |----------|---------|-------------|
@@ -378,7 +378,7 @@ Full schema, every host field, the copy-paste template, and override options liv
 | `MODEL_ID` | `gpt-4o` | Model id for the agent |
 | `ENABLE_WEB_UI` | `True` | Serve the AG-UI web interface |
 
-_44 package + 14 inherited variable(s). Auto-generated from `.env.example` + the shared agent-utilities set — do not edit._
+_44 package + 14 inherited variable(s). Auto-generated from `.env.example` + the shared agent-connector-sdk set — do not edit._
 <!-- ENV-VARS-TABLE:END -->
 
 
@@ -400,7 +400,7 @@ for a copy-paste starting point.
 ### Inventory & parallelism
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TUNNEL_INVENTORY` | Path to the shared inventory (`.yml` preferred, `.yaml` legacy fallback) | `~/.config/agent-utilities/inventory.yml` |
+| `TUNNEL_INVENTORY` | Path to the shared inventory (`.yml` preferred, `.yaml` legacy fallback) | `~/.config/agent-connector-sdk/inventory.yml` |
 | `TUNNEL_INVENTORY_GROUP` | Default inventory host group | — |
 | `TUNNEL_PARALLEL` | Run bulk operations in parallel | — |
 | `TUNNEL_MAX_THREADS` | Max concurrent SSH worker threads | — |
@@ -534,7 +534,7 @@ Detailed graph node architecture explanations, custom skill configurations, and 
 
 ## Security & Governance
 
-Built directly upon the enterprise-ready [`agent-utilities`](https://github.com/Knuckles-Team/agent-utilities) core, standard security parameters are fully supported:
+Built directly upon the enterprise-ready [`agent-connector-sdk`](https://github.com/Knuckles-Team/agent-connector-sdk) core, standard security parameters are fully supported:
 
 ### Access Control & Policy Enforcement
 - **Eunomia Policies:** Fine-grained, policy-driven tool authorization. Supports `none`, local `embedded` (`mcp_policies.json`), or centralized `remote` modes.
@@ -556,8 +556,8 @@ Pick the extra that matches what the operator want to run:
 
 | Extra | Installs | Use when |
 |-------|----------|----------|
-| `tunnel-manager[mcp]` | Connector-focused MCP server (`agent-utilities[mcp]` — FastMCP/FastAPI + `epistemic-graph[full]`) | The operator only run the **MCP server** (smallest install / image) |
-| `tunnel-manager[agent]` | Agent runtime (`agent-utilities[agent-runtime,logfire]` — model orchestration + `epistemic-graph[full]`) | The operator run the **integrated agent** |
+| `tunnel-manager[mcp]` | Connector-focused MCP server (`agent-connector-sdk[mcp]` — FastMCP/FastAPI + `epistemic-graph[full]`) | The operator only run the **MCP server** (smallest install / image) |
+| `tunnel-manager[agent]` | Agent runtime (`agent-connector-sdk[agent-runtime,logfire]` — model orchestration + `epistemic-graph[full]`) | The operator run the **integrated agent** |
 | `tunnel-manager[all]` | Everything (`mcp` + `agent` + `logfire`) | Development / both surfaces |
 
 ```bash
@@ -635,15 +635,15 @@ Contributions are welcome! Please ensure code quality by running local checks be
 - Run test suites using `pytest`
 
 
-<!-- BEGIN agent-utilities-deployment (generated; do not edit between markers) -->
+<!-- BEGIN agent-connector-sdk-deployment (generated; do not edit between markers) -->
 
-## Deploy with `agent-utilities-deployment`
+## Deploy with `agent-connector-sdk-deployment`
 
-Provision this package with the consolidated **`agent-utilities-deployment`**
+Provision this package with the consolidated **`agent-connector-sdk-deployment`**
 workflow. It selects an installed-package, editable-source, or immutable-container
 path; records only runtime secret and TLS-profile references in `AgentConfig`; and
 runs doctor, registration, policy, observability, and rollback gates. Ask your agent
-to **"deploy `tunnel-manager` with agent-utilities-deployment"**.
+to **"deploy `tunnel-manager` with agent-connector-sdk-deployment"**.
 
 | Install mode | Command |
 |------|---------|
@@ -655,7 +655,7 @@ The repository embeds no deployment profile, credential value, certificate path,
 environment-specific endpoint. Supply those at runtime through `AgentConfig` and the
 configured secret provider.
 
-<!-- END agent-utilities-deployment -->
+<!-- END agent-connector-sdk-deployment -->
 
 <!-- GOVERNED-CAPABILITY:START -->
 ## Governed capability contract
@@ -670,5 +670,5 @@ historical per-task skill wrappers.
 Runtime endpoints, credentials, certificate trust, tenant identity, retention,
 and observability policy are deployment inputs and are never packaged values.
 See [Configuration, trust, and privacy](docs/configuration.md) before enabling a
-network transport, connector ingestion, GraphOS delegation, or trace export.
+network transport, connector ingestion, Arbora delegation, or trace export.
 <!-- GOVERNED-CAPABILITY:END -->
