@@ -4,7 +4,8 @@
   "owner_repo": "tunnel-manager",
   "delivery_state": "SPECIFIED",
   "requirement_ids": [
-    "TM-INVENTORY-R001"
+    "TM-INVENTORY-R001",
+    "TM-INVENTORY-R002"
   ],
   "requirements": [
     {
@@ -13,6 +14,17 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
+    },
+    {
+      "id": "TM-INVENTORY-R002",
+      "title": "Fleet name",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "3b4464796d93"
+      ],
+      "verified_by": [
+        "tests/test_fleet_name.py:35"
+      ]
     }
   ]
 }
