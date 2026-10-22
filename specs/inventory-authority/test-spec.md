@@ -19,3 +19,7 @@ All fixtures use temporary XDG roots, synthetic host aliases, and non-routable e
 Run the repository's applicable unit/integration checks and configured pre-commit checks for changed code. CCCC, `jscpd`, and Dupehound are required quality dimensions for any implementation: report command, configured threshold, and result when the tooling is configured. This repository currently exposes no checked-in command or threshold for those three tools, so the implementation PR must either add a reproducible configuration or explicitly record that gap and seek the ecosystem's agreed threshold; it cannot claim those gates passed by omission. KISS requires reusing `default_inventory_path`, `HostManager`, the existing MCP registrations, and the atomic writer; a new store or parallel resolver needs a demonstrated necessity.
 
 Acceptance requires positive and negative source tests, manifest reproducibility, a disposable runtime read/write-denial receipt, and a source/consumer revision pair. A source-only unit pass can justify `LANDED`, not `ACCEPTED`.
+
+## TM-INVENTORY-R002
+
+`tests/test_fleet_name.py::test_connector_name_is_the_fleet_name` reads every connector name in the package. Each one is `tunnel-manager-mcp`.

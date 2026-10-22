@@ -40,6 +40,10 @@ tunnel-manager = "tunnel_manager.connectors"
 [project.entry-points."agent_connector_sdk.prompt_providers"]
 tunnel-manager = "tunnel_manager.prompts"
 
+# The one declared connector identity: the fleet name (SDK-CONNECTOR-CONTROL-R071).
+[project.entry-points."agent_connector_sdk.connector"]
+tunnel-manager-mcp = "tunnel_manager"
+
 [tool.uv.workspace]
 members = ["."]
 

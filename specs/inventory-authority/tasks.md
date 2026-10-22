@@ -12,3 +12,4 @@
 | T08 | release owner: verify disposable runtime read, write denial, digest parity, and absence of active legacy readers. | Exact public revisions, test receipts, and runtime evidence. | TODO |
 
 Each task closes only with a link to a public revision or attached reproducible receipt. Do not mark this spec landed because a draft exists, and do not mark it accepted because one implementation slice passes tests. If a tool requires unavailable infrastructure, keep that specific acceptance item open and retain the local deterministic proof.
+- [x] **TM-INVENTORY-R002:** File the pack, manifest and ingest binding under the fleet name `tunnel-manager-mcp`.

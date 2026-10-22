@@ -1,4 +1,4 @@
-connector: tunnel-manager
+connector: tunnel-manager-mcp
 ontology_source: tunnel
 schema_version: '1'
 resources:
