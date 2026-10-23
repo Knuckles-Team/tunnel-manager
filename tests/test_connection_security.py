@@ -136,3 +136,31 @@ def test_mcp_server_uses_shared_hardened_network_boundary():
     # other writer), so the served module must NOT call a process-wide patch.
     # Inverted into a regression guard against the monkeypatch being reintroduced.
     assert "protect_stdio_jsonrpc" not in source
+
+
+# spec: CONN-TUNNEL-MANAGER-SDK-R001, CONN-TUNNEL-MANAGER-SDK-R003, CONN-TUNNEL-MANAGER-SDK-R004
+def test_secret_ref_resolves_through_sdk_resolver(monkeypatch):
+    from tunnel_manager.connection_security import (
+        ConnectionPolicyError,
+        resolve_secret_ref,
+    )
+
+    monkeypatch.setenv("TUNNEL_SDK_TEST_PASSWORD", "synthetic-value")
+    assert resolve_secret_ref("env://TUNNEL_SDK_TEST_PASSWORD") == "synthetic-value"
+    monkeypatch.delenv("TUNNEL_SDK_TEST_PASSWORD")
+    with pytest.raises(ConnectionPolicyError):
+        resolve_secret_ref("env://TUNNEL_SDK_TEST_PASSWORD")
+    assert resolve_secret_ref(None) is None
+
+
+# spec: CONN-TUNNEL-MANAGER-SDK-R002
+def test_dependencies_carry_sdk_floor_and_no_requests_pin():
+    import pathlib
+    import tomllib
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    deps = tomllib.loads((root / "pyproject.toml").read_text())["project"][
+        "dependencies"
+    ]
+    assert any(d.startswith("agent-connector-sdk[mcp]>=0.3.11") for d in deps)
+    assert not any(d.lower().startswith("requests") for d in deps)

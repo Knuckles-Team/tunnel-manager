@@ -25,7 +25,6 @@ _PUBLIC_KEY_RE = re.compile(
     r"(?:ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521)) "
     r"[A-Za-z0-9+/]{32,16384}={0,3}\Z"
 )
-_ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}\Z")
 
 DEFAULT_KNOWN_HOSTS = "~/.ssh/known_hosts"
 LOOPBACK_BIND_HOST = "127.0.0.1"
@@ -179,24 +178,14 @@ def resolve_secret_ref(value: str | None) -> str | None:
     reference = validate_secret_ref(value)
     if reference is None:
         return None
-    if reference.startswith("env://"):
-        variable = reference.removeprefix("env://")
-        if not _ENV_NAME_RE.fullmatch(variable):
-            raise ConnectionPolicyError("SSH credential resolution failed")
-        resolved = setting(variable)
-    else:
-        from agent_connector_sdk.credentials.references import SecretReferenceError
-        from agent_connector_sdk.credentials.resolution import (
-            resolve_secret_reference,
-        )
-        from agent_connector_sdk.credentials.resolver import (
-            CredentialUnavailableError,
-        )
+    from agent_connector_sdk.credentials.references import SecretReferenceError
+    from agent_connector_sdk.credentials.resolution import resolve_secret_reference
+    from agent_connector_sdk.credentials.resolver import CredentialUnavailableError
 
-        try:
-            resolved = resolve_secret_reference(reference)
-        except (SecretReferenceError, CredentialUnavailableError) as exc:
-            raise ConnectionPolicyError("SSH credential resolution failed") from exc
+    try:
+        resolved = resolve_secret_reference(reference)
+    except (SecretReferenceError, CredentialUnavailableError) as exc:
+        raise ConnectionPolicyError("SSH credential resolution failed") from exc
     if resolved is None or not isinstance(resolved, str) or not resolved:
         raise ConnectionPolicyError("SSH credential resolution failed")
     if len(resolved) > 65_536 or "\x00" in resolved:
