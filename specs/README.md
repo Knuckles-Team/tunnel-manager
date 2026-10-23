@@ -36,6 +36,7 @@ Use `SPECIFIED/NOT_AUDITED` for a complete build spec with open implementation. 
 | Stable ID | Owner spec | Responsibility | State |
 | --- | --- | --- | --- |
 | `TM-INVENTORY-001` | [One operator inventory authority](inventory-authority/spec.md) | XDG inventory selection, tunnel-manager consumers, and read-only runtime projection contract | `SPECIFIED / NOT_AUDITED` |
+| `CONN-TUNNEL-MANAGER-SDK` | [Shared SDK capabilities in tunnel-manager](sdk/spec.md) | Credential resolution and the SDK floor | `SPECIFIED` |
 
 Related public owner specs: [agent-connector-sdk](https://github.com/Knuckles-Team/agent-connector-sdk/tree/main/specs) owns shared application services; [arbora](https://github.com/Knuckles-Team/arbora/tree/main/specs) owns serving composition; [repository-manager](https://github.com/Knuckles-Team/repository-manager/tree/main/specs) owns repository/workspace discovery. [container-manager-mcp](https://github.com/Knuckles-Team/container-manager-mcp) consumes the inventory projection. Tunnel-manager remains the owner of its reader and write behavior.
 
@@ -44,3 +45,4 @@ Related public owner specs: [agent-connector-sdk](https://github.com/Knuckles-Te
 Read `AGENTS.md` and the [constitution](../.specify/memory/constitution.md). Propose `spec.md`, resolve architecture in `plan.md`, define proof in `test-spec.md`, then implement `tasks.md` in a dedicated branch or worktree. Link PRs to stable IDs and change status only with exact receipts. Contributors can use the public [universal-skills spec-generator](https://github.com/Knuckles-Team/universal-skills/tree/main/universal_skills/development/spec-generator), [spec-verifier](https://github.com/Knuckles-Team/universal-skills/tree/main/universal_skills/development/spec-verifier), [task-planner](https://github.com/Knuckles-Team/universal-skills/tree/main/universal_skills/development/task-planner), [SDD full lifecycle](https://github.com/Knuckles-Team/universal-skills/tree/main/universal_skills/development-workflows/sdd-full-lifecycle), and [arbora-development](https://github.com/Knuckles-Team/arbora/blob/main/arbora/skills/arbora-development/SKILL.md) skill.
 
 - [`TM-INVENTORY`](inventory-authority/spec.md) — One operator inventory authority
+- [`CONN-TUNNEL-MANAGER-SDK`](sdk/spec.md) — Shared SDK capabilities in tunnel-manager
