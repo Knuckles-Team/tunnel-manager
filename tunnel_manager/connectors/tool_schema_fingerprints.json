@@ -1,8 +1,0 @@
-{
-  "algorithm": "agent-connector-sdk:mcp-tool-contract-compat:v2",
-  "connector": "tunnel-manager-mcp",
-  "schema_version": "1",
-  "tools": {
-    "tunnel_manager_list_hosts": "04c716cf7929254478aa9ab62d7d3336c3869f120695ffb7b2d79bc34acc7d55"
-  }
-}

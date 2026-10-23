@@ -4,8 +4,6 @@
   "schema_version": "1.0",
   "prompt_version": "0.1.0",
   "source": "tunnel-manager",
-  "extends": "agent-connector-sdk:base",
-  "compose": "append",
   "description": "SSH infrastructure specialist: host inventory, remote execution, key hardening and security audits over the tunnel-manager MCP server.",
   "metadata": {
     "topic": "SSH fleet access",

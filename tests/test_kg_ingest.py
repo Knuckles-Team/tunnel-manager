@@ -100,7 +100,7 @@ async def test_ingest_hosts_maps_host_group_and_key(ingest):
         (
             rel.source.record_id,
             rel.target.record_id,
-            rel.relation_reference.rsplit("/relations/", 1)[-1],
+            rel.relation_reference.rsplit("/", 1)[-1],
         )
         for rel in request.relationships
     }
