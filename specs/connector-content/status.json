@@ -2,7 +2,7 @@
   "schema_version": 2,
   "spec_id": "CONN-TUNNEL-MANAGER-CONNECTOR-CONTENT",
   "owner_repo": "tunnel-manager",
-  "delivery_state": "VERIFIED",
+  "delivery_state": "LANDED",
   "requirement_ids": [
     "CONN-TUNNEL-MANAGER-CONNECTOR-CONTENT-R001"
   ],
@@ -10,13 +10,11 @@
     {
       "id": "CONN-TUNNEL-MANAGER-CONNECTOR-CONTENT-R001",
       "title": "Default content",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "LANDED",
       "landed_in": [
         "3349a4f3eb56"
       ],
-      "verified_by": [
-        "tests/test_default_content_surfaces.py:15"
-      ]
+      "verified_by": []
     }
   ]
 }

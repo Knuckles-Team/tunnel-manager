@@ -16,16 +16,18 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": [
-        "tests/test_connection_security.py:141"
+        "tests/test_connection_security.py:129"
       ]
     },
     {
       "id": "CONN-TUNNEL-MANAGER-SDK-R002",
       "title": "SDK floor and dependency set",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "2ad135203ee0"
+      ],
       "verified_by": [
-        "tests/test_connection_security.py:156"
+        "tests/test_connection_security.py:144"
       ]
     },
     {
@@ -34,7 +36,7 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": [
-        "tests/test_connection_security.py:141"
+        "tests/test_connection_security.py:129"
       ]
     },
     {
@@ -43,7 +45,7 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": [
-        "tests/test_connection_security.py:141"
+        "tests/test_connection_security.py:129"
       ]
     }
   ]
