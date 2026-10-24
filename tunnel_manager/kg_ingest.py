@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from agent_connector_sdk.connector_identity import connector_name
 from agent_connector_sdk.ingest import (
     ChangeSet,
     Document,
@@ -24,7 +25,7 @@ from agent_connector_sdk.ingest import (
 
 logger = logging.getLogger("tunnel_manager.kg")
 
-_SOURCE = "tunnel-manager"
+_SOURCE = connector_name("tunnel_manager")
 _DOMAIN = "tunnel"
 _BINDING = IngestBinding(connector="tunnel-manager-mcp", stream=_DOMAIN)
 

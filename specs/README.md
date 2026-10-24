@@ -46,3 +46,4 @@ Read `AGENTS.md` and the [constitution](../.specify/memory/constitution.md). Pro
 
 - [`TM-INVENTORY`](inventory-authority/spec.md) — One operator inventory authority
 - [`CONN-TUNNEL-MANAGER-SDK`](sdk/spec.md) — Shared SDK capabilities in tunnel-manager
+- [`CONN-TUNNEL-MANAGER-CONNECTOR-CONTENT`](connector-content/spec.md) — The connector serves its packaged content.

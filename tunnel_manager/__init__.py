@@ -110,3 +110,43 @@ def __getattr__(name: str) -> Any:
 
 def __dir__() -> list[str]:
     return sorted(list(globals().keys()) + __all__)
+
+
+from agent_connector_sdk.connector import Connector
+
+from tunnel_manager.mcp_server import (
+    get_client,
+    register_file_tools,
+    register_ingest_tools,
+    register_inventory_tools,
+    register_operations_tools,
+    register_remote_tools,
+    register_security_tools,
+    register_system_tools,
+)
+from tunnel_manager.tunnel_manager import HostManager
+
+connector = Connector(
+    api=HostManager,
+    get_client=get_client,
+    instructions="Tunnel Manager MCP Utility — Manage SSH tunnels, managed hosts, and remote execution.",
+    action_tools=(
+        ("remote", "REMOTETOOL", register_remote_tools),
+        ("inventory", "INVENTORYTOOL", register_inventory_tools),
+        ("operations", "OPERATIONSTOOL", register_operations_tools),
+        ("system", "SYSTEMTOOL", register_system_tools),
+        ("files", "FILETOOL", register_file_tools),
+        ("security", "SECURITYTOOL", register_security_tools),
+        ("ingest", "INGESTTOOL", register_ingest_tools),
+    ),
+    action_prefixes={
+        "tm_remote": "tm_remote",
+        "tm_inventory": "tm_inventory",
+        "tm_operations": "tm_operation",
+        "tm_system": "tm_system",
+        "tm_files": "tm_file",
+        "tm_security": "tm_security",
+    },
+)
+
+__all__ = ["connector"]

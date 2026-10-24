@@ -25,20 +25,16 @@ import logging
 import os
 import shlex
 import subprocess
-import sys
 from typing import Any
 
 import yaml
-from agent_connector_sdk.config import load_config, setting
+from agent_connector_sdk.config import setting
 from agent_connector_sdk.mcp.action_dispatch import resolve_action
 from agent_connector_sdk.mcp.concurrency import run_blocking
 from agent_connector_sdk.mcp.context import ctx_confirm_destructive, ctx_log
-from agent_connector_sdk.mcp.server import create_mcp_server
-from agent_connector_sdk.mcp.tool_surface import register_tool_surface
 from agent_connector_sdk.privacy import sanitize_for_persistence
 from agent_connector_sdk.progress import ctx_progress
 
-from tunnel_manager.action_split import register_split_action_tools
 from tunnel_manager.advanced_file_manager import AdvancedFileManager
 from tunnel_manager.connection_security import (
     max_concurrency,
@@ -59,8 +55,6 @@ from tunnel_manager.tunnel_manager import (
     _known_hosts_file,
     default_inventory_path,
 )
-
-__version__ = "3.3.4"
 
 # XDG-compliant default paths. The inventory is shared across the ecosystem
 # (the HostManager library, container-manager-mcp, and the ssh-bootstrap skill all
@@ -3607,82 +3601,3 @@ def register_ingest_tools(mcp: FastMCP):
                 "hosts": len(hosts),
             }
         return {"status": "success", "hosts": len(hosts), **result}
-
-
-def get_mcp_instance() -> tuple[Any, Any, Any, Any]:
-    """Initialize and return the MCP instance, args, and middlewares."""
-    load_config()
-
-    args, mcp, middlewares = create_mcp_server(
-        name="TunnelManagerMCP",
-        version=__version__,
-        instructions="Tunnel Manager MCP Utility — Manage SSH tunnels, managed hosts, and remote execution.",
-    )
-
-    # Host inventory operations are served as one tool per HostManager method.
-    registered_tags = register_tool_surface(
-        mcp,
-        client_cls=HostManager,
-        get_client=get_client,
-        service="tunnel-manager",
-    )
-    # Remote execution, file, inventory, operation, system, security and ingest
-    # tools keep their typed parameters and gates and are served one tool per action.
-    registered_tags += register_split_action_tools(
-        mcp,
-        [
-            ("remote", "REMOTETOOL", register_remote_tools),
-            ("inventory", "INVENTORYTOOL", register_inventory_tools),
-            ("operations", "OPERATIONSTOOL", register_operations_tools),
-            ("system", "SYSTEMTOOL", register_system_tools),
-            ("files", "FILETOOL", register_file_tools),
-            ("security", "SECURITYTOOL", register_security_tools),
-            ("ingest", "INGESTTOOL", register_ingest_tools),
-        ],
-        prefixes={
-            "tm_remote": "tm_remote",
-            "tm_inventory": "tm_inventory",
-            "tm_operations": "tm_operation",
-            "tm_system": "tm_system",
-            "tm_files": "tm_file",
-            "tm_security": "tm_security",
-        },
-    )
-
-    for mw in middlewares:
-        mcp.add_middleware(mw)
-    return mcp, args, middlewares, registered_tags
-
-
-def mcp_server() -> None:
-    mcp, args, middlewares, registered_tags = get_mcp_instance()
-    print(f"{'tunnel-manager'} MCP v{__version__}", file=sys.stderr)
-    print("\nStarting MCP Server", file=sys.stderr)
-    print(f"  Transport: {args.transport.upper()}", file=sys.stderr)
-    print(f"  Auth: {args.auth_type}", file=sys.stderr)
-    print(f"  Dynamic Tags Loaded: {len(set(registered_tags))}", file=sys.stderr)
-
-    if args.transport == "stdio":
-        # Stdout purity is owned fd-level by the MCP SDK's own stdio_server()
-        # (agent-connector-sdk B-19): it claims fd 1 exclusively and dup2()s stderr
-        # over it for every other writer, so no process-wide patch is needed.
-        mcp.run(transport="stdio")
-    elif args.transport == "streamable-http":
-        mcp.run(
-            transport="streamable-http",
-            host=args.host,
-            port=args.port,
-        )
-    elif args.transport == "sse":
-        mcp.run(
-            transport="sse",
-            host=args.host,
-            port=args.port,
-        )
-    else:
-        logger.error("Invalid transport", extra={"transport": args.transport})
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    mcp_server()
