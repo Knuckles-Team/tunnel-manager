@@ -8,7 +8,7 @@
 # (agent-packages/agents/aris-mcp/.mergequeue.yaml, same day) for the same reason.
 #
 # Interpreter: no repo-local .venv here. Confirmed BOTH the system `python3` and the
-# shared /home/apps/workspace/.venv/bin/python3 import `tunnel_manager` cleanly from
+# shared workspace venv python3 import `tunnel_manager` cleanly from
 # this repo root; pinning the shared workspace venv because that is the interpreter
 # the D-CDX-88 fix was actually tested against (157 passed / 10 pre-existing failures
 # reproduced identically on the untouched canonical checkout -- see that lane's
@@ -17,7 +17,7 @@
 base: main
 batch_size: 8
 
-environment_signature: ["/home/apps/workspace/.venv/bin/python3", "-c", "import sys, sysconfig; print(sys.version, sysconfig.get_paths()['purelib'])"]
+environment_signature: ["python3", "-c", "import sys, sysconfig; print(sys.version, sysconfig.get_paths()['purelib'])"]
 
 gates:
   # ── the whole unit suite ────────────────────────────────────────────────
@@ -28,21 +28,21 @@ gates:
   # artifact in test_init_dynamics.py); judging by exit code alone would refuse every
   # candidate the moment one unrelated test goes red on base.
   - name: pytest
-    command: ["/home/apps/workspace/.venv/bin/python3", "-m", "pytest", "-q", "tests"]
+    command: ["python3", "-m", "pytest", "-q", "tests"]
     tier: fast
     timeout: 180
     baseline_timeout: 180
     compare: pytest-ids
 
   - name: ruff-check
-    command: ["/home/apps/workspace/.venv/bin/python3", "-m", "ruff", "check", "--output-format", "concise", "."]
+    command: ["python3", "-m", "ruff", "check", "--output-format", "concise", "."]
     tier: fast
     timeout: 60
     compare: lines
     when_changed: ["*.py", "**/*.py"]
 
   - name: ruff-format
-    command: ["/home/apps/workspace/.venv/bin/python3", "-m", "ruff", "format", "--check", "."]
+    command: ["python3", "-m", "ruff", "format", "--check", "."]
     tier: fast
     timeout: 60
     compare: lines

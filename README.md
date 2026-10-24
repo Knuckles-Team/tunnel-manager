@@ -151,7 +151,7 @@ When query strings or parameters are supplied, an LLM-free **Knowledge Graph res
         "TUNNEL_KNOWN_HOSTS": "~/.ssh/known_hosts",
         "TUNNEL_MANAGER_HEALTH_AGGREGATE_S": "3600",
         "TUNNEL_MANAGER_HEALTH_INGEST": "true",
-        "TUNNEL_MANAGER_HOSTS": "r510,r710,r820,rw710",
+        "TUNNEL_MANAGER_HOSTS": "node-a,node-b,node-c,node-d",
         "TUNNEL_MAX_THREADS": "6",
         "TUNNEL_PARALLEL": "False",
         "TUNNEL_REMOTE_PORT": "22"
@@ -200,7 +200,7 @@ own runtime secret boundary.
         "TUNNEL_KNOWN_HOSTS": "~/.ssh/known_hosts",
         "TUNNEL_MANAGER_HEALTH_AGGREGATE_S": "3600",
         "TUNNEL_MANAGER_HEALTH_INGEST": "true",
-        "TUNNEL_MANAGER_HOSTS": "r510,r710,r820,rw710",
+        "TUNNEL_MANAGER_HOSTS": "node-a,node-b,node-c,node-d",
         "TUNNEL_MAX_THREADS": "6",
         "TUNNEL_PARALLEL": "False",
         "TUNNEL_REMOTE_PORT": "22"
@@ -248,7 +248,7 @@ docker run -i --rm \
   -e TUNNEL_KNOWN_HOSTS=~/.ssh/known_hosts \
   -e TUNNEL_MANAGER_HEALTH_AGGREGATE_S=3600 \
   -e TUNNEL_MANAGER_HEALTH_INGEST=true \
-  -e TUNNEL_MANAGER_HOSTS=r510,r710,r820,rw710 \
+  -e TUNNEL_MANAGER_HOSTS=node-a,node-b,node-c,node-d \
   -e TUNNEL_MAX_THREADS=6 \
   -e TUNNEL_PARALLEL=False \
   -e TUNNEL_REMOTE_PORT=22 \
@@ -354,7 +354,7 @@ Full schema, every host field, the copy-paste template, and override options liv
 | `TUNNEL_KG_INGEST` | `true` | default-on best-effort inventory ingest on `list` |
 | `TUNNEL_MANAGER_HEALTH_INGEST` | `true` | default-on best-effort network-signal trend ingestion |
 | `TUNNEL_MANAGER_HEALTH_AGGREGATE_S` | `3600` | window (s) over which samples distill to ONE :HealthTrend node/host/signal |
-| `TUNNEL_MANAGER_HOSTS` | `r510,r710,r820,rw710` | comma-separated inventory aliases to probe/derive over (default: full inventory) |
+| `TUNNEL_MANAGER_HOSTS` | `node-a,node-b,node-c,node-d` | comma-separated inventory aliases to probe/derive over (default: full inventory) |
 | `TUNNEL_MANAGER_HEALTH_NOTIFY_URL` | — | best-effort webhook for network-anomaly notifications |
 
 #### Inherited agent-connector-sdk variables (apply to every connector)

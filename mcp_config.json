@@ -20,7 +20,7 @@
         "TUNNEL_KG_INGEST": "true",
         "TUNNEL_KNOWN_HOSTS": "~/.ssh/known_hosts",
         "TUNNEL_MANAGER_HEALTH_INGEST": "true",
-        "TUNNEL_MANAGER_HOSTS": "r510,r710,r820,rw710",
+        "TUNNEL_MANAGER_HOSTS": "node-a,node-b,node-c,node-d",
         "TUNNEL_MAX_THREADS": "6",
         "TUNNEL_PARALLEL": "False",
         "TUNNEL_REMOTE_PORT": "22"
