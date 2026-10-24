@@ -16,8 +16,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from deployment_policy import DeploymentPolicyError, load_policy
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN_PASSWORD_ENV = "TUNNEL_PASSWORD"
 
@@ -89,79 +87,6 @@ def _password_sentinel_accepted(report: dict[str, Any], root: Path) -> bool:
     )
 
 
-def _runtime_reads(checker: Any, root: Path) -> set[str]:
-    """Return Python/runtime reads, excluding Compose interpolation itself."""
-
-    reads = set(checker._scan_setting_calls(root)) | set(
-        checker.framework_reads()
-    )
-    for helper_name in ("_script_reads", "_derive_toggle_vars"):
-        helper = getattr(checker, helper_name, None)
-        if helper is not None:
-            reads.update(helper(root))
-    family_reader = getattr(checker, "_scan_dynamic_family_reads", None)
-    family_scanner = getattr(checker, "_scan_dynamic_families", None)
-    framework_families = getattr(checker, "framework_dynamic_families", None)
-    if family_reader is not None and family_scanner is not None:
-        families = dict(framework_families() if framework_families else {})
-        families.update(family_scanner(root))
-        reads.update(family_reader(root, families))
-    return reads
-
-
-def _reconcile_deployment_authority(
-    report: dict[str, Any], root: Path, checker: Any
-) -> tuple[dict[str, Any], tuple[str, ...]]:
-    """Apply only explicit deployment projections to shared-scanner findings.
-
-    ``.env.example`` is temporarily owned by the inventory-authority lane. The
-    deployment page therefore owns two narrow projections here: retired raw OTLP
-    declarations are no longer accepted configuration, and Compose image inputs
-    are documented there because Compose resolves them outside Python. Every
-    finding outside those exact source/name pairs remains fatal.
-    """
-
-    policy = load_policy(root)
-    retired = set(policy["retired_environment"])
-    runtime_reads = _runtime_reads(checker, root)
-    live_retired = retired & runtime_reads
-    if live_retired:
-        names = ", ".join(sorted(live_retired))
-        raise DeploymentPolicyError(
-            f"retired environment names still have runtime readers: {names}"
-        )
-
-    image_inputs = set(policy["compose_image_inputs"])
-    runtime_image_reads = image_inputs & runtime_reads
-    if runtime_image_reads:
-        names = ", ".join(sorted(runtime_image_reads))
-        raise DeploymentPolicyError(
-            f"deployment image inputs have Python/runtime readers: {names}"
-        )
-
-    reconciled: list[dict[str, Any]] = []
-    accepted: list[str] = []
-    for finding in report["findings"]:
-        var = finding.get("var")
-        source_set = set(finding.get("sources", []))
-        if (
-            finding.get("type") == "DEAD"
-            and var in retired
-            and source_set == {".env.example"}
-        ):
-            accepted.append(f"retired {var}")
-            continue
-        if (
-            finding.get("type") == "UNDOCUMENTED"
-            and var in image_inputs
-            and source_set == {"(code)"}
-        ):
-            accepted.append(f"Compose input {var}")
-            continue
-        reconciled.append(finding)
-    return dict(report, findings=reconciled, drift=len(reconciled)), tuple(accepted)
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Check Tunnel Manager env drift.")
     parser.add_argument("root", nargs="?", default=str(REPOSITORY_ROOT))
@@ -171,19 +96,12 @@ def main(argv: list[str] | None = None) -> int:
 
     root = Path(args.root).resolve()
     checker = _shared_checker()
-    try:
-        report, reconciled = _reconcile_deployment_authority(
-            checker.analyze(root), root, checker
-        )
-    except DeploymentPolicyError as error:
-        print(f"deployment authority invalid: {error}", file=sys.stderr)
-        return 1
+    report = checker.analyze(root)
     unexpected = _unexpected_findings(report, root)
     rendered = dict(
         report,
         findings=unexpected,
         drift=len(unexpected),
-        deployment_authority_reconciled=list(reconciled),
     )
     if args.json:
         import json
@@ -196,8 +114,6 @@ def main(argv: list[str] | None = None) -> int:
                 "  ✓ TUNNEL_PASSWORD is accepted only as the security posture "
                 "forbidden-input sentinel"
             )
-        for item in reconciled:
-            print(f"  ✓ deployment authority: {item}")
     if args.check and unexpected:
         print(
             "\nenv-var drift detected — unexpected configuration drift remains.",
