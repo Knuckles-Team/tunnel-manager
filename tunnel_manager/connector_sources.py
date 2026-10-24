@@ -9,9 +9,6 @@ from __future__ import annotations
 from typing import Any
 
 from agent_connector_sdk.ingest.live_declaration import source_meta
-from agent_connector_sdk.ingest.sources import IngestSourceDeclaration, IngestSourceSpec
-
-CONNECTOR: str = "tunnel-manager-mcp"
 
 SOURCES: tuple[Any, ...] = (
     source_meta(
@@ -32,109 +29,52 @@ SOURCES: tuple[Any, ...] = (
     ),
 )
 
+SCHEMA_VERSION = 2
+
+FIELD_SETS: dict[str, dict[str, str]] = {
+    "fields_1": {
+        "auditStandard": "xsd:string",
+        "connectionStatus": "xsd:string",
+        "exitStatus": "xsd:string",
+        "hostname": "xsd:string",
+        "identityFile": "xsd:string",
+        "proxyCommand": "xsd:string",
+        "sshPort": "xsd:integer",
+        "sshUser": "xsd:string",
+    },
+}
+
 SCHEMA_MAPPINGS: dict[str, Any] = {
     "CommandExecution": {
-        "fields": {
-            "auditStandard": "xsd:string",
-            "connectionStatus": "xsd:string",
-            "exitStatus": "xsd:string",
-            "hostname": "xsd:string",
-            "identityFile": "xsd:string",
-            "proxyCommand": "xsd:string",
-            "sshPort": "xsd:integer",
-            "sshUser": "xsd:string",
-        },
+        "field_sets": ["fields_1"],
         "ontology_class": None,
     },
     "FileTransfer": {
-        "fields": {
-            "auditStandard": "xsd:string",
-            "connectionStatus": "xsd:string",
-            "exitStatus": "xsd:string",
-            "hostname": "xsd:string",
-            "identityFile": "xsd:string",
-            "proxyCommand": "xsd:string",
-            "sshPort": "xsd:integer",
-            "sshUser": "xsd:string",
-        },
+        "field_sets": ["fields_1"],
         "ontology_class": "File",
     },
     "Host": {
-        "fields": {
-            "auditStandard": "xsd:string",
-            "connectionStatus": "xsd:string",
-            "exitStatus": "xsd:string",
-            "hostname": "xsd:string",
-            "identityFile": "xsd:string",
-            "proxyCommand": "xsd:string",
-            "sshPort": "xsd:integer",
-            "sshUser": "xsd:string",
-        },
+        "field_sets": ["fields_1"],
         "ontology_class": "Server",
     },
     "HostGroup": {
-        "fields": {
-            "auditStandard": "xsd:string",
-            "connectionStatus": "xsd:string",
-            "exitStatus": "xsd:string",
-            "hostname": "xsd:string",
-            "identityFile": "xsd:string",
-            "proxyCommand": "xsd:string",
-            "sshPort": "xsd:integer",
-            "sshUser": "xsd:string",
-        },
+        "field_sets": ["fields_1"],
         "ontology_class": "Server",
     },
     "Operation": {
-        "fields": {
-            "auditStandard": "xsd:string",
-            "connectionStatus": "xsd:string",
-            "exitStatus": "xsd:string",
-            "hostname": "xsd:string",
-            "identityFile": "xsd:string",
-            "proxyCommand": "xsd:string",
-            "sshPort": "xsd:integer",
-            "sshUser": "xsd:string",
-        },
+        "field_sets": ["fields_1"],
         "ontology_class": None,
     },
     "SecurityAudit": {
-        "fields": {
-            "auditStandard": "xsd:string",
-            "connectionStatus": "xsd:string",
-            "exitStatus": "xsd:string",
-            "hostname": "xsd:string",
-            "identityFile": "xsd:string",
-            "proxyCommand": "xsd:string",
-            "sshPort": "xsd:integer",
-            "sshUser": "xsd:string",
-        },
+        "field_sets": ["fields_1"],
         "ontology_class": None,
     },
     "SshKey": {
-        "fields": {
-            "auditStandard": "xsd:string",
-            "connectionStatus": "xsd:string",
-            "exitStatus": "xsd:string",
-            "hostname": "xsd:string",
-            "identityFile": "xsd:string",
-            "proxyCommand": "xsd:string",
-            "sshPort": "xsd:integer",
-            "sshUser": "xsd:string",
-        },
+        "field_sets": ["fields_1"],
         "ontology_class": None,
     },
     "Tunnel": {
-        "fields": {
-            "auditStandard": "xsd:string",
-            "connectionStatus": "xsd:string",
-            "exitStatus": "xsd:string",
-            "hostname": "xsd:string",
-            "identityFile": "xsd:string",
-            "proxyCommand": "xsd:string",
-            "sshPort": "xsd:integer",
-            "sshUser": "xsd:string",
-        },
+        "field_sets": ["fields_1"],
         "ontology_class": None,
     },
 }
@@ -181,23 +121,3 @@ RESOURCES: tuple[dict[str, str], ...] = (
         "name": "Tunnel",
     },
 )
-
-
-def declaration() -> IngestSourceDeclaration:
-    """The declaration the server assembles from this module."""
-    specs: list[IngestSourceSpec] = []
-    for item in SOURCES:
-        for entry in item["connector_sources"]:
-            body: dict[str, Any] = {
-                k: v for k, v in entry.items() if k not in ("tool", "mapping")
-            }
-            spec = {**body, "tools": (entry["tool"],)}
-            specs.append(IngestSourceSpec.model_validate(spec))
-    return IngestSourceDeclaration.model_validate(
-        {
-            "connector": CONNECTOR,
-            "sources": specs,
-            "schema_mappings": SCHEMA_MAPPINGS,
-            "resources": RESOURCES,
-        }
-    )

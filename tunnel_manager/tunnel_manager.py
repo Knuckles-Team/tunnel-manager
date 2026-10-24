@@ -10,6 +10,7 @@ import shlex
 import sys
 import tempfile
 import time
+from importlib.metadata import version as _v
 
 import paramiko
 import yaml
@@ -35,8 +36,6 @@ from .connection_security import (
 )
 from .models import CommandResult, HostConfig
 from .proxy_security import proxy_command_argv, proxy_command_string
-
-__version__ = "3.3.4"
 
 
 def _first_field(sources: tuple, keys: tuple, default=None):
@@ -2807,7 +2806,7 @@ _TUNNEL_MANAGER_COMMANDS = {
 
 
 def tunnel_manager():
-    print(f"tunnel_manager v{__version__}", file=sys.stderr)
+    print(f"tunnel_manager v{_v('tunnel-manager')}", file=sys.stderr)
     default_inventory = setting("TUNNEL_INVENTORY") or default_inventory_path()
     parser = _build_tunnel_manager_parser(default_inventory)
 
