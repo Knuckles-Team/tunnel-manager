@@ -1586,7 +1586,7 @@ wheels = [
 
 [[package]]
 name = "tunnel-manager"
-version = "3.3.5"
+version = "3.3.6"
 source = { editable = "." }
 dependencies = [
     { name = "agent-connector-sdk", extra = ["mcp"] },
