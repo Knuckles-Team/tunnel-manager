@@ -29,10 +29,13 @@ packaged resources aligned when a change crosses a boundary.
   commands, redacted results, and transport failures.
 - `tunnel_manager/mcp_server.py` registers the action-routed MCP surfaces for
   remote, inventory, operations, system, files, security, and ingest calls.
-- `tunnel_manager/agent_server.py` owns the optional Pydantic-AI agent; do not
-  route application behavior around the MCP contract.
-- `tunnel_manager/skills/`, `prompts/`, `ontology/`, and `connectors/` are
-  package resources exposed by the connector entry point.
+- `tunnel_manager/__init__.py` is the connector entry point: it binds the
+  `Connector` to `HostManager`/`get_client` and the MCP action registrations.
+- `tunnel_manager/connector_sources.py` declares the live source and resource
+  mappings served through `connector://resources`.
+- `tunnel_manager/mcp_config.json`, `tunnel_manager/prompts/`,
+  `tunnel_manager/skills/`, and `tunnel_manager/ontology/` are the actual
+  packaged resource paths.
 - `specs/connector-content/`, `specs/inventory-authority/`, and `specs/sdk/`
   own the repository specifications and generated status evidence.
 
