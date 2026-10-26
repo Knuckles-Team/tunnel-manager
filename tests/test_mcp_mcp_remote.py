@@ -190,9 +190,7 @@ async def test_receive_file_success(tmp_path):
 @pytest.mark.asyncio
 async def test_receive_file_needs_host_rpath_lpath():
     fn = _capture_tm_remote()
-    result = await fn(
-        **_base_kwargs(action="receive_file", rpath="", lpath="")
-    )
+    result = await fn(**_base_kwargs(action="receive_file", rpath="", lpath=""))
     assert result["status_code"] == 400
     assert "Need host, rpath, lpath" in result["message"]
 
@@ -248,9 +246,7 @@ async def test_test_key_auth_success():
 @pytest.mark.asyncio
 async def test_test_key_auth_needs_host_and_key():
     fn = _capture_tm_remote()
-    with patch(
-        "tunnel_manager.mcp.mcp_remote.setting", return_value=""
-    ):
+    with patch("tunnel_manager.mcp.mcp_remote.setting", return_value=""):
         result = await fn(**_base_kwargs(action="test_key_auth", host="", key=""))
     assert result["status_code"] == 400
     assert "Need host, key" in result["message"]
@@ -319,9 +315,7 @@ async def test_copy_ssh_config_success(tmp_path):
         mock_tunnel = MagicMock()
         mock_tunnel_cls.return_value = mock_tunnel
 
-        result = await fn(
-            **_base_kwargs(action="copy_ssh_config", lcfg=str(local_cfg))
-        )
+        result = await fn(**_base_kwargs(action="copy_ssh_config", lcfg=str(local_cfg)))
 
         mock_tunnel.copy_ssh_config.assert_called_once_with(
             str(local_cfg), os.path.expanduser("~/.ssh/config")

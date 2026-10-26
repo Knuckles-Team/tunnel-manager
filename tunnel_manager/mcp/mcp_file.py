@@ -138,7 +138,9 @@ def register_file_tools(mcp: FastMCP):
                     errors=result.get("errors", []),
                 )
             except Exception as e:
-                await ctx_log(ctx, "Recursive file ops fail", logger=logger, level="error")
+                await ctx_log(
+                    ctx, "Recursive file ops fail", logger=logger, level="error"
+                )
                 return ResponseBuilder.build(
                     500,
                     "Recursive file ops fail",
@@ -177,7 +179,9 @@ def register_file_tools(mcp: FastMCP):
                     error=result.get("error", ""),
                 )
             except Exception as e:
-                await ctx_log(ctx, "File content search fail", logger=logger, level="error")
+                await ctx_log(
+                    ctx, "File content search fail", logger=logger, level="error"
+                )
                 return ResponseBuilder.build(
                     500,
                     "File content search fail",

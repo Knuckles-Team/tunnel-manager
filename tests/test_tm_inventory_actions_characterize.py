@@ -9,8 +9,7 @@ receive_file — plus the trailing "unknown action" branch, so the dispatcher
 can be decomposed without changing behaviour.
 """
 
-import inspect
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -383,9 +382,7 @@ class TestBulkHostFailureFailClosed:
 
         assert results.status_code == 403
         by_host = {r["hostname"]: r for r in results.results}
-        assert "bad-host" in by_host, (
-            f"offending host lost, only have: {list(by_host)}"
-        )
+        assert "bad-host" in by_host, f"offending host lost, only have: {list(by_host)}"
         assert "not entitled to ssh host 'bad-host'" in " ".join(
             by_host["bad-host"]["errors"]
         )

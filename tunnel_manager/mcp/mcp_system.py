@@ -109,7 +109,9 @@ def register_system_tools(mcp: FastMCP):
                     ],
                 )
         except Exception as e:
-            await ctx_log(ctx, "System intelligence fail ({action})", logger=logger, level="error")
+            await ctx_log(
+                ctx, "System intelligence fail ({action})", logger=logger, level="error"
+            )
             return ResponseBuilder.build(
                 500,
                 f"System intelligence fail ({action})",

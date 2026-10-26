@@ -1249,8 +1249,14 @@ class TestTunnelStaticMethods:
         inventory_data = {
             "all": {
                 "hosts": {
-                    "host1": {"ansible_host": "h1.example.invalid", "ansible_user": "u"},
-                    "host2": {"ansible_host": "h2.example.invalid", "ansible_user": "u"},
+                    "host1": {
+                        "ansible_host": "h1.example.invalid",
+                        "ansible_user": "u",
+                    },
+                    "host2": {
+                        "ansible_host": "h2.example.invalid",
+                        "ansible_user": "u",
+                    },
                 }
             }
         }

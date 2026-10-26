@@ -26,9 +26,8 @@ from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from agent_connector_sdk.config import setting
-from agent_connector_sdk.identity import ActorContext
-from agent_connector_sdk.identity import use_actor
 from agent_connector_sdk.entitlements import identity_scoped_resources
+from agent_connector_sdk.identity import ActorContext, use_actor
 from pydantic import (
     BaseModel,
     ConfigDict,

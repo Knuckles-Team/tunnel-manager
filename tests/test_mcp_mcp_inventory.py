@@ -16,7 +16,7 @@ load_inventory pattern already proven in ``tests/test_mcp_server.py``.
 """
 
 import os
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -198,9 +198,7 @@ async def test_copy_ssh_config_success(tmp_path, mock_hosts):
         mock_tunnel = MagicMock()
         mock_tunnel_cls.return_value = mock_tunnel
 
-        result = await fn(
-            **_base_kwargs(action="copy_ssh_config", cfg=str(cfg_path))
-        )
+        result = await fn(**_base_kwargs(action="copy_ssh_config", cfg=str(cfg_path)))
 
         mock_tunnel.copy_ssh_config.assert_called_once_with(
             str(cfg_path), "~/.ssh/config"
@@ -212,9 +210,7 @@ async def test_copy_ssh_config_success(tmp_path, mock_hosts):
 async def test_copy_ssh_config_needs_existing_cfg_file(tmp_path):
     fn = _capture_tm_inventory()
     result = await fn(
-        **_base_kwargs(
-            action="copy_ssh_config", cfg=str(tmp_path / "does-not-exist")
-        )
+        **_base_kwargs(action="copy_ssh_config", cfg=str(tmp_path / "does-not-exist"))
     )
     assert result["status_code"] == 400
     assert "No cfg file" in result["message"]
@@ -234,9 +230,7 @@ async def test_rotate_key_success(mock_hosts):
         mock_tunnel_cls.return_value = mock_tunnel
 
         result = await fn(
-            **_base_kwargs(
-                action="rotate_key", key_pfx="/fake/id_", key_type="ed25519"
-            )
+            **_base_kwargs(action="rotate_key", key_pfx="/fake/id_", key_type="ed25519")
         )
 
         mock_tunnel.rotate_ssh_key.assert_called_once()

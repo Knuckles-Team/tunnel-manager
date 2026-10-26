@@ -123,7 +123,9 @@ def register_security_tools(mcp: FastMCP):
                     ],
                 )
         except Exception as e:
-            await ctx_log(ctx, "Security audit fail ({action})", logger=logger, level="error")
+            await ctx_log(
+                ctx, "Security audit fail ({action})", logger=logger, level="error"
+            )
             return ResponseBuilder.build(
                 500,
                 f"Security audit fail ({action})",
