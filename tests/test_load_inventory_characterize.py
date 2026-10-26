@@ -204,9 +204,7 @@ class TestLimitsAndErrors:
         assert error["status_code"] == 400
         assert error["message"] == "No hosts in configured inventory group"
 
-    def test_exceeds_max_fleet_hosts_returns_400(
-        self, tmp_path, logger, monkeypatch
-    ):
+    def test_exceeds_max_fleet_hosts_returns_400(self, tmp_path, logger, monkeypatch):
         monkeypatch.setenv("TUNNEL_MAX_FLEET_HOSTS", "2")
         inv = {
             "all": {

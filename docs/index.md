@@ -40,6 +40,7 @@ SSH and audit hosts at scale without deploying persistent daemons. It provides:
 - :material-sitemap: **[Overview](overview.md)** — ecosystem role, distributed SSH swarm scaling, MCP configuration.
 - :material-transit-connection-variant: **[Teleport Architecture](teleport_architecture.md)** — certificate, proxy and cross-OS connection model.
 - :material-tag-multiple: **[Concepts](concepts.md)** — the `CONCEPT:TUN-*` registry.
+- :material-chart-timeline-variant: **[Spec delivery](spec-delivery/)** — generated requirements, status, and evidence from the canonical Pages dashboard.
 
 </div>
 
