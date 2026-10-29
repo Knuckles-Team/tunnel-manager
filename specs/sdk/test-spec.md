@@ -8,3 +8,4 @@ Tests use synthetic credentials and mock transports. They need no network.
 | SDK floor and dependency set | `CONN-TUNNEL-MANAGER-SDK-R002` | pyproject.toml shows the floor and no requests pin |
 | Production wiring | `CONN-TUNNEL-MANAGER-SDK-R003` | A test enters at the production entry point and reaches the wired call site. |
 | Hot-path proof | `CONN-TUNNEL-MANAGER-SDK-R004` | The named integration test passes. |
+| Served actor binding | `CONN-TUNNEL-MANAGER-SDK-R005` | Local lists all aliases, anonymous none, authenticated the entitled ones; a single alias is refused with -32000 |
