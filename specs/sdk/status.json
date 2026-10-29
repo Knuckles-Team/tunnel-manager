@@ -2,7 +2,7 @@
   "schema_version": 2,
   "spec_id": "CONN-TUNNEL-MANAGER-SDK",
   "owner_repo": "tunnel-manager",
-  "delivery_state": "SPECIFIED",
+  "delivery_state": "VERIFIED",
   "requirement_ids": [
     "CONN-TUNNEL-MANAGER-SDK-R001",
     "CONN-TUNNEL-MANAGER-SDK-R002",
@@ -13,8 +13,10 @@
     {
       "id": "CONN-TUNNEL-MANAGER-SDK-R001",
       "title": "Secret references resolve through the SDK",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "d78dc1527bd4"
+      ],
       "verified_by": [
         "tests/test_connection_security.py:129"
       ]
@@ -24,7 +26,8 @@
       "title": "SDK floor and dependency set",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "2ad135203ee0"
+        "2ad135203ee0",
+        "d78dc1527bd4"
       ],
       "verified_by": [
         "tests/test_connection_security.py:144"
@@ -33,8 +36,10 @@
     {
       "id": "CONN-TUNNEL-MANAGER-SDK-R003",
       "title": "Production wiring",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "d78dc1527bd4"
+      ],
       "verified_by": [
         "tests/test_connection_security.py:129"
       ]
@@ -42,8 +47,10 @@
     {
       "id": "CONN-TUNNEL-MANAGER-SDK-R004",
       "title": "Hot-path proof",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "d78dc1527bd4"
+      ],
       "verified_by": [
         "tests/test_connection_security.py:129"
       ]
