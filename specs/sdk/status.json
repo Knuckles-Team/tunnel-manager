@@ -7,7 +7,8 @@
     "CONN-TUNNEL-MANAGER-SDK-R001",
     "CONN-TUNNEL-MANAGER-SDK-R002",
     "CONN-TUNNEL-MANAGER-SDK-R003",
-    "CONN-TUNNEL-MANAGER-SDK-R004"
+    "CONN-TUNNEL-MANAGER-SDK-R004",
+    "CONN-TUNNEL-MANAGER-SDK-R005"
   ],
   "requirements": [
     {
@@ -53,6 +54,19 @@
       ],
       "verified_by": [
         "tests/test_connection_security.py:129"
+      ]
+    },
+    {
+      "id": "CONN-TUNNEL-MANAGER-SDK-R005",
+      "title": "Served actor binding",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "a91d2bdcce2b"
+      ],
+      "verified_by": [
+        "tests/test_served_actor_binding.py:111",
+        "tests/test_served_actor_binding.py:87",
+        "tests/test_served_actor_binding.py:96"
       ]
     }
   ]
