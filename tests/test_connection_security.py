@@ -153,7 +153,7 @@ def test_dependencies_carry_sdk_floor_and_no_requests_pin():
     floors = [
         tuple(int(n) for n in d.split(">=", 1)[1].split(",", 1)[0].split("."))
         for d in deps
-        if d.startswith("agent-connector-sdk[mcp]>=")
+        if d.startswith("scion-sdk[mcp]>=")
     ]
     assert floors and all(floor >= (0, 3, 11) for floor in floors)
     assert not any(d.lower().startswith("requests") for d in deps)
