@@ -3,6 +3,7 @@
 
 import argparse
 import concurrent.futures
+import errno
 import logging
 import os
 import secrets
@@ -18,6 +19,8 @@ from scion_sdk.config import setting
 
 from .connection_security import (
     ConnectionPolicyError,
+    describe_error,
+    generate_key_pair,
     max_concurrency,
     max_fleet_hosts,
     max_output_bytes,
@@ -615,6 +618,24 @@ def _clean_flat_hosts(hosts: dict) -> dict:
     return clean_hosts
 
 
+def remove_known_host_key(known_hosts_path: str, hostname: str, port: int = 22) -> str:
+    """Remove ``hostname``'s key (``[hostname]:port`` off port 22) from known_hosts."""
+    known_hosts_path = validated_known_hosts_path(known_hosts_path)
+    kh = paramiko.HostKeys()
+    kh.load(known_hosts_path)
+    names = [hostname] if int(port) == 22 else [f"[{hostname}]:{port}", hostname]
+    found = [name for name in names if name in kh]
+    if not found:
+        logging.getLogger(__name__).warning("Managed-host key was not found")
+        return "Managed-host key was not found"
+    for name in found:
+        del kh[name]
+    kh.save(known_hosts_path)
+    os.chmod(known_hosts_path, 0o600)
+    logging.getLogger(__name__).info("Removed managed-host key")
+    return "Removed managed-host key"
+
+
 class HostManager:
     def __init__(self, config_file: str = None):
         if config_file:
@@ -664,9 +685,17 @@ class HostManager:
             else:
                 _atomic_private_yaml(self.config_file, _clean_flat_hosts(self.hosts))
             self.logger.info("Saved configured inventory")
-        except Exception:
-            self.logger.error("Failed to save inventory")
-            raise RuntimeError("failed to save configured inventory") from None
+        except (PermissionError, OSError) as exc:
+            if isinstance(exc, PermissionError) or exc.errno == errno.EROFS:
+                message = f"inventory is read-only: {self.config_file}"
+            else:
+                message = f"failed to save inventory {self.config_file}: {exc}"
+            self.logger.error(message)
+            raise RuntimeError(message) from None
+        except Exception as exc:
+            message = f"failed to save inventory {self.config_file}: {exc}"
+            self.logger.error(message)
+            raise RuntimeError(message) from None
 
     def _save_ansible_style_inventory(self):
         existing_raw = _load_existing_ansible_raw(self.config_file)
@@ -1188,8 +1217,8 @@ class Tunnel:
                 raise
             return CommandResult(
                 success=False,
-                error_message="ManagedCommandError",
-                stderr="ManagedCommandError",
+                error_message=describe_error(e),
+                stderr=describe_error(e),
             )
 
     def _validate_local_upload_source(self, local_path: str) -> int:
@@ -1307,27 +1336,30 @@ class Tunnel:
 
     def check_ssh_server(self):
         """
-        Check if the SSH server is running and configured for key-based auth on the remote host.
-        :return: Tuple (bool, str) indicating if SSH server is running and any error message.
+        Check that the SSH server answers and accepts key-based auth.
+
+        Connecting proves the server runs. A session authenticated with a key
+        proves key auth works; otherwise key auth counts as enabled unless
+        ``sshd_config`` sets ``PubkeyAuthentication no`` (OpenSSH's default is yes).
+
+        :return: Tuple (bool, str) indicating success and a message.
         """
         try:
             self.connect()
-            out, err = self.run_command(
-                "systemctl status sshd || ps aux | grep '[s]shd'"
+            transport = self.ssh_client.get_transport()
+            handler = getattr(transport, "auth_handler", None)
+            if getattr(handler, "auth_method", "") == "publickey":
+                return True, "SSH server running; key-based auth works."
+            out, _err = self.run_command(
+                "grep -Eis '^[[:space:]]*PubkeyAuthentication[[:space:]]+no' "
+                "/etc/ssh/sshd_config"
             )
-            if "running" in out.lower() or "sshd" in out.lower():
-                out, err = self.run_command(
-                    "grep '^PubkeyAuthentication' /etc/ssh/sshd_config"
-                )
-                if "PubkeyAuthentication yes" in out:
-                    return True, "SSH server running with key-based auth enabled."
+            if out.strip():
                 return False, "SSH server running but key-based auth not enabled."
-            return False, "SSH server not running."
+            return True, "SSH server running with key-based auth enabled."
         except Exception as e:
-            self.logger.error(
-                "Failed to check SSH server: error_type=%s", type(e).__name__
-            )
-            return False, f"Failed to check SSH server: {type(e).__name__}"
+            self.logger.error("Failed to check SSH server: %s", describe_error(e))
+            return False, f"Failed to check SSH server: {describe_error(e)}"
         finally:
             self.close()
 
@@ -1343,7 +1375,9 @@ class Tunnel:
                 config=HostConfig(
                     hostname=self.remote_host,
                     user=self.username,
+                    port=self.port,
                     key_path=local_key_path,
+                    proxy_command=self.proxy_command,
                     known_hosts_file=self.known_hosts_file,
                 )
             )
@@ -1354,7 +1388,7 @@ class Tunnel:
             self.logger.error(
                 "Key authentication test failed: error_type=%s", type(e).__name__
             )
-            return False, f"Key auth test failed: {type(e).__name__}"
+            return False, f"Key auth test failed: {describe_error(e)}"
 
     def close(self):
         """
@@ -1385,44 +1419,10 @@ class Tunnel:
             raise ValueError("key_type must be 'rsa' or 'ed25519'")
 
         if not os.path.exists(pub_key_path):
-            import subprocess
-
             if key_type == "rsa":
-                subprocess.run(
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "rsa",
-                        "-b",
-                        "4096",
-                        "-f",
-                        local_key_path,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+                generate_key_pair(local_key_path, "rsa")
             else:
-                subprocess.run(
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "ed25519",
-                        "-f",
-                        local_key_path,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+                generate_key_pair(local_key_path, "ed25519")
             self.logger.info("Generated managed SSH key pair: key_type=%s", key_type)
 
         with open(pub_key_path) as f:
@@ -1489,18 +1489,7 @@ class Tunnel:
         Remove the host key for the remote host from the known_hosts file.
         :param known_hosts_path: Path to the known_hosts file (default: ~/.ssh/known_hosts).
         """
-        known_hosts_path = validated_known_hosts_path(known_hosts_path)
-        kh = paramiko.HostKeys()
-        kh.load(known_hosts_path)
-        if self.remote_host in kh:
-            del kh[self.remote_host]
-            kh.save(known_hosts_path)
-            os.chmod(known_hosts_path, 0o600)
-            self.logger.info("Removed managed-host key")
-            return "Removed managed-host key"
-        else:
-            self.logger.warning("Managed-host key was not found")
-            return "Managed-host key was not found"
+        return remove_known_host_key(known_hosts_path, self.remote_host, self.port)
 
     def copy_ssh_config(
         self, local_config_path, remote_config_path=os.path.expanduser("~/.ssh/config")
@@ -1521,19 +1510,8 @@ class Tunnel:
         self.logger.info("Copied managed SSH configuration")
 
     def _generate_rotated_key_pair(self, new_key_path: str, key_type: str) -> None:
-        import subprocess
 
-        type_args = (
-            ["-t", "rsa", "-b", "4096"] if key_type == "rsa" else ["-t", "ed25519"]
-        )
-        subprocess.run(
-            ["/usr/bin/ssh-keygen", *type_args, "-f", new_key_path, "-N", ""],
-            check=True,
-            timeout=30,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        generate_key_pair(new_key_path, key_type)
         self.logger.info("Generated new managed key pair: key_type=%s", key_type)
 
     def _read_old_authorized_key(self):
@@ -1640,44 +1618,10 @@ class Tunnel:
             raise ValueError("key_type must be 'rsa' or 'ed25519'")
 
         if not os.path.exists(shared_key_path):
-            import subprocess
-
             if key_type == "rsa":
-                subprocess.run(
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "rsa",
-                        "-b",
-                        "4096",
-                        "-f",
-                        shared_key_path,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+                generate_key_pair(shared_key_path, "rsa")
             else:
-                subprocess.run(
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "ed25519",
-                        "-f",
-                        shared_key_path,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+                generate_key_pair(shared_key_path, "ed25519")
             logging.info("Generated shared managed key pair: key_type=%s", key_type)
 
         with open(shared_pub_key_path) as f:
@@ -2055,18 +1999,9 @@ def _generate_mesh_key_pair(
     key_path: str, key_type: str, logger: logging.Logger
 ) -> None:
     """Generate the local full-mesh key pair (``setup_full_mesh_ssh``)."""
-    import subprocess
 
     os.makedirs(os.path.dirname(key_path), exist_ok=True)
-    type_args = ["-t", "rsa", "-b", "4096"] if key_type == "rsa" else ["-t", "ed25519"]
-    subprocess.run(
-        ["/usr/bin/ssh-keygen", *type_args, "-f", key_path, "-N", ""],
-        check=True,
-        timeout=30,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    generate_key_pair(key_path, key_type)
     logger.info("Generated local managed key pair: key_type=%s", key_type)
 
 
@@ -2081,6 +2016,18 @@ def _parse_mesh_inventory_hosts(
         logger.error("Failed to read inventory file")
         raise
 
+    if isinstance(inventory_data, dict) and isinstance(inventory_data.get("all"), dict):
+        # The same group/host-var resolution as every other inventory action.
+        return [
+            {
+                **entry,
+                "name": entry.get("alias") or entry["hostname"],
+                "key_path": entry.get("key_path") or key_path,
+            }
+            for entry in _hosts_from_ansible_style_inventory(
+                inventory_data, group, logger
+            )
+        ]
     hosts = []
     if (
         group in inventory_data

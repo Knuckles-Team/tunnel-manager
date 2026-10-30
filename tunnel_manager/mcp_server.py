@@ -21,10 +21,10 @@ warnings.filterwarnings("ignore", message=".*urllib3.*or charset_normalizer.*")
 
 import asyncio
 import concurrent.futures
+import contextvars
 import logging
 import os
 import shlex
-import subprocess
 from typing import Any
 
 import yaml
@@ -37,6 +37,8 @@ from scion_sdk.progress import ctx_progress
 
 from tunnel_manager.advanced_file_manager import AdvancedFileManager
 from tunnel_manager.connection_security import (
+    describe_error,
+    generate_key_pair,
     max_concurrency,
     max_fleet_hosts,
     max_transfer_bytes,
@@ -54,6 +56,7 @@ from tunnel_manager.tunnel_manager import (
     Tunnel,
     _known_hosts_file,
     default_inventory_path,
+    remove_known_host_key,
 )
 
 # XDG-compliant default paths. The inventory is shared across the ecosystem
@@ -361,8 +364,149 @@ def load_inventory(
             500,
             "Load inv fail",
             {"inventory": inventory, "group": group},
-            type(e).__name__,
+            describe_error(e),
         )
+
+
+#: The caller's explicit ``confirm=true`` for the current destructive request.
+_EXPLICIT_CONFIRM: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "tunnel_manager_explicit_confirm", default=False
+)
+
+
+async def confirmed(ctx: Any, action_description: str) -> bool:
+    """A destructive action may proceed: the caller passed ``confirm=true``,
+    or confirmed through elicitation. A client without elicitation that did not
+    pass ``confirm=true`` is refused, never failed with an error."""
+    if _EXPLICIT_CONFIRM.get():
+        return True
+    try:
+        return await ctx_confirm_destructive(ctx, action_description) is True
+    except Exception as exc:  # noqa: BLE001 - no elicitation: refuse, do not fail
+        logger.warning("confirmation unavailable (%s); pass confirm=true", exc)
+        return False
+
+
+class UnknownHostAlias(LookupError):
+    """A host name that is no inventory alias, with no caller user to reach it raw."""
+
+
+def _unset(value: Any) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def resolve_target(
+    host: str,
+    *,
+    user: str | None = None,
+    password: str | None = None,
+    port: int | None = None,
+    identity_file: str | None = None,
+    certificate_file: str | None = None,
+    proxy_command: str | None = None,
+    ssh_config_file: str | None = None,
+    known_hosts_file: str | None = None,
+) -> dict:
+    """The one connection resolver for every tool that names a host.
+
+    Each field takes the first set value of: the caller's explicit argument;
+    the inventory alias (host vars, then group vars, as :data:`host_manager`
+    flattens them); the ``TUNNEL_*`` settings; the built-in default (port 22,
+    ``~/.ssh/config``). ``tm_remote``, ``tm_inventory`` on one host,
+    ``tm_system``, ``tm_files`` and ``tm_security`` all resolve through here,
+    so their connections cannot diverge.
+
+    Raises:
+        PermissionError: the caller is not entitled to the alias (the SDK's
+            ``EntitlementError``, naming its cause).
+        UnknownHostAlias: ``host`` is no alias and the caller gave no user.
+    """
+    config = host_manager.get_host(host)
+    if config is None and _unset(user) and _unset(setting("TUNNEL_USERNAME", "")):
+        raise UnknownHostAlias(f"Unknown host alias: {host}")
+    alias = config.model_dump() if config is not None else {"hostname": host}
+    if config is not None:
+        alias["password"] = config.resolved_password()
+        alias["identity_file"] = config.identity_file or config.key_path
+    env_password_ref = setting("TUNNEL_PASSWORD_REF", "")
+    layers = {
+        "user": (user, alias.get("user"), setting("TUNNEL_USERNAME", ""), None),
+        "password": (
+            password,
+            alias.get("password"),
+            resolve_secret_ref(env_password_ref) if env_password_ref else None,
+            None,
+        ),
+        "port": (port, alias.get("port"), setting("TUNNEL_REMOTE_PORT", ""), 22),
+        "identity_file": (
+            identity_file,
+            alias.get("identity_file"),
+            setting("TUNNEL_IDENTITY_FILE", ""),
+            None,
+        ),
+        "certificate_file": (
+            certificate_file,
+            (alias.get("extra_config") or {}).get("certificate_file"),
+            setting("TUNNEL_CERTIFICATE", ""),
+            None,
+        ),
+        "proxy_command": (
+            proxy_command,
+            alias.get("proxy_command"),
+            setting("TUNNEL_PROXY_COMMAND", ""),
+            None,
+        ),
+        "known_hosts_file": (
+            known_hosts_file,
+            alias.get("known_hosts_file"),
+            setting("TUNNEL_KNOWN_HOSTS", ""),
+            None,
+        ),
+        "ssh_config_file": (
+            ssh_config_file,
+            None,
+            setting("TUNNEL_SSH_CONFIG", ""),
+            os.path.expanduser("~/.ssh/config"),
+        ),
+    }
+    target = {
+        field: next((value for value in values if not _unset(value)), None)
+        for field, values in layers.items()
+    }
+    target["port"] = int(target["port"])
+    target["hostname"] = alias["hostname"]
+    target["alias"] = host
+    target["password_ref"] = alias.get("password_ref")
+    return target
+
+
+def open_tunnel(target: dict) -> Tunnel:
+    """The :class:`Tunnel` for a :func:`resolve_target` result."""
+    return Tunnel(
+        remote_host=target["hostname"],
+        username=target.get("user"),
+        password=target.get("password"),
+        port=target.get("port") or 22,
+        identity_file=target.get("identity_file"),
+        certificate_file=target.get("certificate_file"),
+        proxy_command=target.get("proxy_command"),
+        known_hosts_file=target.get("known_hosts_file"),
+        ssh_config_file=target.get("ssh_config_file")
+        or os.path.expanduser("~/.ssh/config"),
+    )
+
+
+def target_refusal(exc: BaseException, details: dict) -> dict | None:
+    """The response for a host that cannot be targeted, the same from every tool.
+
+    ``None`` when ``exc`` is not a targeting refusal.
+    """
+    if isinstance(exc, UnknownHostAlias):
+        return ResponseBuilder.build(400, str(exc), details, errors=[str(exc)])
+    if isinstance(exc, PermissionError):
+        message = f"Refused: {exc}"
+        return ResponseBuilder.build(403, message, details, errors=[str(exc)])
+    return None
 
 
 def resolve_single_host(
@@ -370,48 +514,23 @@ def resolve_single_host(
 ) -> tuple[list[dict], dict]:
     """Resolve exactly ONE host for a single-host inventory selector.
 
-    D-CDX-88: bridges ``tm_inventory``'s YAML-group fan-out (``load_inventory``
-    above) to the SAME entitlement-checked alias store ``tm_remote``/
-    ``tm_hosts`` authorize against (:data:`host_manager`), instead of a second,
-    divergent notion of "known host". An unknown alias returns a 400 and a
-    caller not entitled to a known alias gets the identical ``PermissionError``
-    denial ``tm_remote`` would give them — never a silent no-op, matching this
-    codebase's fail-loudly convention.
-
-    Returns a one-item ``hosts`` list shaped like ``load_inventory``'s entries
-    (safe to feed straight into the same per-host execution loop) plus an
-    error-response dict (empty on success).
+    Goes through :func:`resolve_target`, the same resolver and refusals as
+    ``tm_remote``. Returns a one-item ``hosts`` list shaped like
+    ``load_inventory``'s entries plus an error response (empty on success).
     """
+    details = {"inventory": inventory, "host": host}
     try:
-        host_config = host_manager.get_host(host)
-    except PermissionError as e:
-        return [], ResponseBuilder.build(
-            403,
-            f"Not entitled to host alias: {host}",
-            {"inventory": inventory, "host": host},
-            errors=[str(e)],
-        )
-    if host_config is None:
-        return [], ResponseBuilder.build(
-            400,
-            f"Unknown host alias: {host}",
-            {"inventory": inventory, "host": host},
-            errors=[f"Unknown host alias: {host}"],
-        )
-    if not host_config.user:
-        return [], ResponseBuilder.build(
-            400,
-            f"Host alias '{host}' has no configured username",
-            {"inventory": inventory, "host": host},
-            errors=[f"Host alias '{host}' has no configured username"],
-        )
+        target = resolve_target(host)
+    except (UnknownHostAlias, PermissionError) as exc:
+        return [], target_refusal(exc, details)
     entry = {
-        "hostname": host_config.hostname,
-        "username": host_config.user,
-        "password_ref": host_config.password_ref,
-        "known_hosts_file": host_config.known_hosts_file,
-        "key_path": host_config.identity_file or host_config.key_path,
-        "port": host_config.port or 22,
+        "hostname": target["hostname"],
+        "username": target["user"],
+        "password_ref": target["password_ref"],
+        "known_hosts_file": target["known_hosts_file"],
+        "key_path": target["identity_file"],
+        "port": target["port"],
+        "target": target,
     }
     return [entry], {}
 
@@ -426,43 +545,18 @@ def _resolve_host(
     proxy_command: str | None = None,
     ssh_config_file: str | None = None,
 ) -> tuple[dict, str | None]:
-    """
-    Resolve host details from HostManager if alias exists,
-    otherwise return provided parameters as a config dict.
-    """
-    host_config = host_manager.get_host(host_alias)
-    if host_config:
-        logger.debug("Resolved configured host alias")
-
-        final_config = host_config.model_dump()
-        final_config["password"] = host_config.resolved_password()
-        final_config.pop("password_ref", None)
-        if user:
-            final_config["user"] = user
-        if password:
-            final_config["password"] = password
-        if port:
-            final_config["port"] = port
-        if identity_file:
-            final_config["identity_file"] = identity_file
-        if certificate_file:
-            final_config["certificate_file"] = certificate_file
-        if proxy_command:
-            final_config["proxy_command"] = proxy_command
-
-    else:
-        logger.debug("Configured host alias was not found; using request parameters")
-        final_config = {
-            "hostname": host_alias,
-            "user": user,
-            "password": password,
-            "port": port or 22,
-            "identity_file": identity_file,
-            "certificate_file": certificate_file,
-            "proxy_command": proxy_command,
-        }
-
-    return final_config, ssh_config_file
+    """:func:`resolve_target` in the ``(conf, ssh_config_file)`` shape."""
+    target = resolve_target(
+        host_alias,
+        user=user,
+        password=password,
+        port=port,
+        identity_file=identity_file,
+        certificate_file=certificate_file,
+        proxy_command=proxy_command,
+        ssh_config_file=ssh_config_file,
+    )
+    return target, target["ssh_config_file"]
 
 
 async def _tm_hosts_list() -> dict:
@@ -515,8 +609,11 @@ async def _tm_hosts_remove(action: str, alias: str, ctx) -> dict:
         return ResponseBuilder.build(
             400, "Need alias", {"action": action}, errors=["Need alias"]
         )
-    if not await ctx_confirm_destructive(ctx, "remove host"):
-        return {"status": "cancelled", "message": "Operation cancelled by user"}
+    if not await confirmed(ctx, "remove host"):
+        return {
+            "status": "cancelled",
+            "message": "Not confirmed: pass confirm=true or confirm when asked",
+        }
     await ctx_progress(ctx, 0, 100)
     await run_blocking(host_manager.remove_host, alias)
     return {"status": "success", "message": "Host removed."}
@@ -624,17 +721,7 @@ async def _tm_remote_run_command(
             proxy_command=proxy,
             ssh_config_file=cfg,
         )
-        t = Tunnel(
-            remote_host=conf["hostname"],
-            username=conf["user"],
-            password=conf["password"],
-            port=conf["port"],
-            identity_file=conf["identity_file"],
-            certificate_file=conf.get("certificate_file"),
-            proxy_command=conf.get("proxy_command"),
-            known_hosts_file=conf.get("known_hosts_file"),
-            ssh_config_file=final_cfg,
-        )
+        t = open_tunnel(conf)
         if ctx:
             await ctx.report_progress(progress=0, total=100)
         await run_blocking(t.connect)
@@ -663,7 +750,7 @@ async def _tm_remote_run_command(
         await ctx_log(ctx, "Cmd fail", logger=logger, level="error")
         await ctx_progress(ctx, 100, 100)
         return ResponseBuilder.build(
-            500, "Cmd fail", {"host": host, "cmd": cmd}, type(e).__name__
+            500, "Cmd fail", {"host": host, "cmd": cmd}, describe_error(e)
         )
     finally:
         if "t" in locals():
@@ -740,17 +827,7 @@ async def _tm_remote_send_file(
             proxy_command=proxy,
             ssh_config_file=cfg,
         )
-        t = Tunnel(
-            remote_host=conf["hostname"],
-            username=conf["user"],
-            password=conf["password"],
-            port=conf["port"],
-            identity_file=conf["identity_file"],
-            certificate_file=conf.get("certificate_file"),
-            proxy_command=conf.get("proxy_command"),
-            known_hosts_file=conf.get("known_hosts_file"),
-            ssh_config_file=final_cfg,
-        )
+        t = open_tunnel(conf)
         if ctx:
             await ctx.report_progress(progress=0, total=100)
         await run_blocking(t.send_file, _lpath, _rpath)
@@ -770,7 +847,7 @@ async def _tm_remote_send_file(
             500,
             "Upload fail",
             {"host": host, "lpath": _lpath, "rpath": _rpath},
-            type(e).__name__,
+            describe_error(e),
         )
     finally:
         if "t" in locals():
@@ -819,17 +896,7 @@ async def _tm_remote_receive_file(
             proxy_command=proxy,
             ssh_config_file=cfg,
         )
-        t = Tunnel(
-            remote_host=conf["hostname"],
-            username=conf["user"],
-            password=conf["password"],
-            port=conf["port"],
-            identity_file=conf["identity_file"],
-            certificate_file=conf.get("certificate_file"),
-            proxy_command=conf.get("proxy_command"),
-            known_hosts_file=conf.get("known_hosts_file"),
-            ssh_config_file=final_cfg,
-        )
+        t = open_tunnel(conf)
         if ctx:
             await ctx.report_progress(progress=0, total=100)
         await run_blocking(t.receive_file, rpath, _lpath)
@@ -849,7 +916,7 @@ async def _tm_remote_receive_file(
             500,
             "Download fail",
             {"host": host, "rpath": rpath, "lpath": _lpath},
-            type(e).__name__,
+            describe_error(e),
         )
     finally:
         if "t" in locals():
@@ -894,17 +961,7 @@ async def _tm_remote_check_ssh(
             proxy_command=proxy,
             ssh_config_file=cfg,
         )
-        t = Tunnel(
-            remote_host=conf["hostname"],
-            username=conf["user"],
-            password=conf["password"],
-            port=conf["port"],
-            identity_file=conf["identity_file"],
-            certificate_file=conf.get("certificate_file"),
-            proxy_command=conf.get("proxy_command"),
-            known_hosts_file=conf.get("known_hosts_file"),
-            ssh_config_file=final_cfg,
-        )
+        t = open_tunnel(conf)
         if ctx:
             await ctx.report_progress(progress=0, total=100)
         success, msg = await run_blocking(t.check_ssh_server)
@@ -921,7 +978,7 @@ async def _tm_remote_check_ssh(
     except Exception as e:
         await ctx_log(ctx, "Check fail", logger=logger, level="error")
         return ResponseBuilder.build(
-            500, "Check fail", {"host": host}, type(e).__name__
+            500, "Check fail", {"host": host}, describe_error(e)
         )
     finally:
         if "t" in locals():
@@ -969,16 +1026,7 @@ async def _tm_remote_test_key_auth(
             proxy_command=proxy,
             ssh_config_file=cfg,
         )
-        t = Tunnel(
-            remote_host=conf["hostname"],
-            username=conf["user"],
-            port=conf["port"],
-            identity_file=conf["identity_file"],
-            certificate_file=conf.get("certificate_file"),
-            proxy_command=conf.get("proxy_command"),
-            known_hosts_file=conf.get("known_hosts_file"),
-            ssh_config_file=final_cfg,
-        )
+        t = open_tunnel(conf)
         if ctx:
             await ctx.report_progress(progress=0, total=100)
         success, msg = await run_blocking(t.test_key_auth, _key)
@@ -995,7 +1043,7 @@ async def _tm_remote_test_key_auth(
     except Exception as e:
         await ctx_log(ctx, "Key test fail", logger=logger, level="error")
         return ResponseBuilder.build(
-            500, "Key test fail", {"host": host, "key": _key}, type(e).__name__
+            500, "Key test fail", {"host": host, "key": _key}, describe_error(e)
         )
     finally:
         if "t" in locals():
@@ -1034,16 +1082,7 @@ async def _ensure_ssh_keypair(
     """
     if os.path.exists(probe or key_path + ".pub"):
         return
-    type_args = ["-t", "rsa", "-b", "4096"] if key_type == "rsa" else ["-t", "ed25519"]
-    await run_blocking(
-        subprocess.run,
-        ["/usr/bin/ssh-keygen", *type_args, "-f", key_path, "-N", ""],
-        check=True,
-        timeout=30,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    await run_blocking(generate_key_pair, key_path, key_type)
 
 
 async def _tm_remote_setup_passwordless(
@@ -1084,17 +1123,7 @@ async def _tm_remote_setup_passwordless(
             proxy_command=proxy,
             ssh_config_file=cfg,
         )
-        t = Tunnel(
-            remote_host=conf["hostname"],
-            username=conf["user"],
-            password=conf["password"],
-            port=conf["port"],
-            identity_file=conf["identity_file"],
-            certificate_file=conf.get("certificate_file"),
-            proxy_command=conf.get("proxy_command"),
-            known_hosts_file=conf.get("known_hosts_file"),
-            ssh_config_file=final_cfg,
-        )
+        t = open_tunnel(conf)
         if ctx:
             await ctx.report_progress(progress=0, total=100)
         _key = os.path.expanduser(_key)
@@ -1119,7 +1148,7 @@ async def _tm_remote_setup_passwordless(
             500,
             "SSH setup fail",
             {"host": host, "key_type": key_type},
-            type(e).__name__,
+            describe_error(e),
         )
     finally:
         if "t" in locals():
@@ -1167,17 +1196,7 @@ async def _tm_remote_copy_ssh_config(
             proxy_command=proxy,
             ssh_config_file=cfg,
         )
-        t = Tunnel(
-            remote_host=conf["hostname"],
-            username=conf["user"],
-            password=conf["password"],
-            port=conf["port"],
-            identity_file=conf["identity_file"],
-            certificate_file=conf.get("certificate_file"),
-            proxy_command=conf.get("proxy_command"),
-            known_hosts_file=conf.get("known_hosts_file"),
-            ssh_config_file=final_cfg,
-        )
+        t = open_tunnel(conf)
         if ctx:
             await ctx.report_progress(progress=0, total=100)
         await run_blocking(t.copy_ssh_config, lcfg, rcfg)
@@ -1197,7 +1216,7 @@ async def _tm_remote_copy_ssh_config(
             500,
             "Copy cfg fail",
             {"host": host, "lcfg": lcfg, "rcfg": rcfg},
-            type(e).__name__,
+            describe_error(e),
         )
     finally:
         if "t" in locals():
@@ -1252,60 +1271,16 @@ async def _tm_remote_rotate_key(
             proxy_command=proxy,
             ssh_config_file=cfg,
         )
-        t = Tunnel(
-            remote_host=conf["hostname"],
-            username=conf["user"],
-            password=conf["password"],
-            port=conf["port"],
-            identity_file=conf["identity_file"],
-            certificate_file=conf.get("certificate_file"),
-            proxy_command=conf.get("proxy_command"),
-            known_hosts_file=conf.get("known_hosts_file"),
-            ssh_config_file=final_cfg,
-        )
+        t = open_tunnel(conf)
         if ctx:
             await ctx.report_progress(progress=0, total=100)
         _new_key = os.path.expanduser(new_key)
         new_public_key = _new_key + ".pub"
         if not os.path.exists(_new_key):
             if key_type == "rsa":
-                await run_blocking(
-                    subprocess.run,
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "rsa",
-                        "-b",
-                        "4096",
-                        "-f",
-                        _new_key,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+                await run_blocking(generate_key_pair, _new_key, "rsa")
             else:
-                await run_blocking(
-                    subprocess.run,
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "ed25519",
-                        "-f",
-                        _new_key,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+                await run_blocking(generate_key_pair, _new_key, "ed25519")
         await run_blocking(t.rotate_ssh_key, _new_key, key_type=key_type)
         if ctx:
             await ctx.report_progress(progress=100, total=100)
@@ -1328,7 +1303,7 @@ async def _tm_remote_rotate_key(
             500,
             "Rotate fail",
             {"host": host, "new_key": new_key, "key_type": key_type},
-            type(e).__name__,
+            describe_error(e),
         )
     finally:
         if "t" in locals():
@@ -1362,15 +1337,20 @@ async def _tm_remote_remove_host_key(
         return ResponseBuilder.build(
             400, "Need host", {"host": host}, errors=["Need host"]
         )
-    if not await ctx_confirm_destructive(ctx, "remove host key"):
-        return {"status": "cancelled", "message": "Operation cancelled by user"}
+    if not await confirmed(ctx, "remove host key"):
+        return {
+            "status": "cancelled",
+            "message": "Not confirmed: pass confirm=true or confirm when asked",
+        }
     try:
-        conf, _ = _resolve_host(host_alias=host)
-        t = Tunnel(remote_host=conf["hostname"])
+        config = host_manager.get_host(host)
+        hostname, ssh_port = (config.hostname, config.port) if config else (host, 22)
         if ctx:
             await ctx.report_progress(progress=0, total=100)
         _known_hosts = os.path.expanduser(known_hosts)
-        msg = await run_blocking(t.remove_host_key, known_hosts_path=_known_hosts)
+        msg = await run_blocking(
+            remove_known_host_key, _known_hosts, hostname, ssh_port
+        )
         if ctx:
             await ctx.report_progress(progress=100, total=100)
         return ResponseBuilder.build(
@@ -1387,7 +1367,7 @@ async def _tm_remote_remove_host_key(
             500,
             "Remove fail",
             {"host": host, "known_hosts": known_hosts},
-            type(e).__name__,
+            describe_error(e),
         )
 
 
@@ -1432,33 +1412,30 @@ def register_remote_tools(mcp: FastMCP):
             description="Action: 'run_command', 'send_file', 'receive_file', 'check_ssh', 'test_key_auth', 'setup_passwordless', 'copy_ssh_config', 'rotate_key', 'remove_host_key'"
         ),
         host: str = Field(
-            default=setting("TUNNEL_REMOTE_HOST", ""), description="Remote host."
+            default=setting("TUNNEL_REMOTE_HOST", ""),
+            description="Inventory alias, or a raw hostname with an explicit user.",
         ),
         user: str | None = Field(
-            default=setting("TUNNEL_USERNAME", ""), description="Username."
+            default=None, description="Username; unset uses the inventory alias."
         ),
         password_ref: str | None = Field(
-            default=setting("TUNNEL_PASSWORD_REF", ""),
-            description="Runtime secret reference for the SSH password.",
+            default=None,
+            description="Runtime secret reference for the SSH password; unset uses the alias.",
         ),
-        port: int = Field(
-            default=int(setting("TUNNEL_REMOTE_PORT", 22)),
-            description="Port.",
+        port: int | None = Field(
+            default=None, description="Port; unset uses the inventory alias, else 22."
         ),
         id_file: str | None = Field(
-            default=setting("TUNNEL_IDENTITY_FILE", ""),
-            description="Private key path.",
+            default=None, description="Private key path; unset uses the alias."
         ),
         certificate: str | None = Field(
-            default=setting("TUNNEL_CERTIFICATE", ""),
-            description="Teleport certificate.",
+            default=None, description="Teleport certificate; unset uses the alias."
         ),
         proxy: str | None = Field(
-            default=setting("TUNNEL_PROXY_COMMAND", ""),
-            description="Teleport proxy.",
+            default=None, description="Teleport proxy; unset uses the alias."
         ),
-        cfg: str = Field(
-            default=os.path.expanduser("~/.ssh/config"), description="SSH config path."
+        cfg: str | None = Field(
+            default=None, description="SSH config path; unset uses ~/.ssh/config."
         ),
         cmd: str = Field(default="", description="Shell command (run_command)."),
         lpath: str = Field(
@@ -1489,9 +1466,14 @@ def register_remote_tools(mcp: FastMCP):
             description="Known hosts path (remove_host_key).",
         ),
         timeout: int = Field(default=60, description="Command timeout in seconds."),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (remove_host_key) without elicitation.",
+        ),
         ctx: Context = Field(description="MCP context.", default=""),
     ) -> dict:
         """Single-host SSH operations with shared connection params."""
+        _EXPLICIT_CONFIRM.set(bool(confirm))
         resolved = resolve_action(
             action,
             [
@@ -1528,6 +1510,12 @@ def register_remote_tools(mcp: FastMCP):
         handler = _TM_REMOTE_ACTIONS.get(action)
         if handler is None:
             return await _tm_remote_unknown_action(action)
+        if host and action != "remove_host_key":
+            try:
+                _resolve_host(host, user=user)
+            except (UnknownHostAlias, PermissionError) as exc:
+                logger.warning("tm_remote %s refused for %s: %s", action, host, exc)
+                return target_refusal(exc, {"host": host, "action": action})
         return await handler(
             action,
             host,
@@ -1869,7 +1857,7 @@ async def _tm_inventory_configure_key_auth(
             500,
             "Setup all fail",
             {"inventory": inventory, "group": group, "key_type": key_type},
-            type(e).__name__,
+            describe_error(e),
         )
 
 
@@ -1936,7 +1924,7 @@ async def _tm_inventory_mesh_bootstrap(
             500,
             "Mesh bootstrap fail",
             {"inventory": inventory, "group": group, "key_type": key_type},
-            type(e).__name__,
+            describe_error(e),
         )
 
 
@@ -1985,14 +1973,18 @@ async def _tm_inventory_run_command(
             await ctx_progress(ctx, 0, 100)
             host = h["hostname"]
             try:
-                t = Tunnel(
-                    config=HostConfig(
-                        hostname=host,
-                        user=h["username"],
-                        port=h.get("port", 22),
-                        password_ref=h.get("password_ref"),
-                        identity_file=h.get("key_path"),
-                        known_hosts_file=h.get("known_hosts_file"),
+                t = (
+                    open_tunnel(h["target"])
+                    if "target" in h
+                    else Tunnel(
+                        config=HostConfig(
+                            hostname=host,
+                            user=h["username"],
+                            port=h.get("port", 22),
+                            password_ref=h.get("password_ref"),
+                            identity_file=h.get("key_path"),
+                            known_hosts_file=h.get("known_hosts_file"),
+                        )
                     )
                 )
                 out, error = await run_blocking(t.run_command, cmd, timeout=timeout)
@@ -2018,7 +2010,7 @@ async def _tm_inventory_run_command(
                     await run_blocking(t.close)
 
         collected = _HostResults(
-            error_extra=lambda e: {"stdout": "", "stderr": type(e).__name__}
+            error_extra=lambda e: {"stdout": "", "stderr": describe_error(e)}
         )
         await _fan_out_over_hosts(
             hosts, run_host, ctx, parallel, max_threads, collected
@@ -2035,7 +2027,7 @@ async def _tm_inventory_run_command(
             500,
             "Cmd all fail",
             {"inventory": inventory, "group": group, "host": host, "cmd": cmd},
-            type(e).__name__,
+            describe_error(e),
         )
 
 
@@ -2147,7 +2139,7 @@ async def _tm_inventory_copy_ssh_config(
                 "cfg": cfg,
                 "rmt_cfg": rmt_cfg,
             },
-            type(e).__name__,
+            describe_error(e),
         )
 
 
@@ -2260,7 +2252,7 @@ async def _tm_inventory_rotate_key(
                 "key_pfx": key_pfx,
                 "key_type": key_type,
             },
-            error=type(e).__name__,
+            error=describe_error(e),
         )
 
 
@@ -2366,7 +2358,7 @@ async def _tm_inventory_send_file(
                 "lpath": _lpath,
                 "rpath": _rpath,
             },
-            type(e).__name__,
+            describe_error(e),
         )
 
 
@@ -2482,7 +2474,7 @@ async def _tm_inventory_receive_file(
                 "rpath": rpath,
                 "lpath_prefix": lpath_prefix,
             },
-            type(e).__name__,
+            describe_error(e),
         )
 
 
@@ -2688,7 +2680,7 @@ async def _tm_operations_start(
             500,
             "Failed to start operation",
             {"operation_type": operation_type},
-            type(e).__name__,
+            describe_error(e),
         )
 
 
@@ -2732,7 +2724,7 @@ async def _tm_operations_get_progress(
             500,
             "Failed to get operation progress",
             {"operation_id": operation_id},
-            type(e).__name__,
+            describe_error(e),
         )
 
 
@@ -2753,7 +2745,10 @@ async def _tm_operations_cancel(
             errors=["Need operation_id"],
         )
     if not await ctx_confirm_destructive(ctx, "cancel operation"):
-        return {"status": "cancelled", "message": "Operation cancelled by user"}
+        return {
+            "status": "cancelled",
+            "message": "Not confirmed: pass confirm=true or confirm when asked",
+        }
     await ctx_progress(ctx, 0, 100)
     try:
         success = await run_blocking(
@@ -2778,7 +2773,7 @@ async def _tm_operations_cancel(
             500,
             "Failed to cancel operation",
             {"operation_id": operation_id},
-            type(e).__name__,
+            describe_error(e),
         )
 
 
@@ -2819,7 +2814,7 @@ async def _tm_operations_get_metrics(
             500,
             "Failed to get resource metrics",
             {"operation_id": operation_id},
-            type(e).__name__,
+            describe_error(e),
         )
 
 
@@ -2847,7 +2842,7 @@ async def _tm_operations_list_sessions(
             ctx, "Failed to list active sessions", logger=logger, level="error"
         )
         return ResponseBuilder.build(
-            500, "Failed to list active sessions", {}, type(e).__name__
+            500, "Failed to list active sessions", {}, describe_error(e)
         )
 
 
@@ -3033,11 +3028,13 @@ def register_system_tools(mcp: FastMCP):
         action = resolved
         try:
             password = resolve_secret_ref(password_ref)
-            tunnel = Tunnel(
-                remote_host=remote_host,
-                username=username or None,
-                password=password or None,
-                identity_file=identity_file or None,
+            tunnel = open_tunnel(
+                resolve_target(
+                    remote_host,
+                    user=username,
+                    password=password,
+                    identity_file=identity_file,
+                )
             )
             intelligence = SystemIntelligence(tunnel)
 
@@ -3045,6 +3042,10 @@ def register_system_tools(mcp: FastMCP):
                 action, intelligence, remote_host, log_paths, patterns
             )
         except Exception as e:
+            refusal = target_refusal(e, {"host": remote_host, "action": action})
+            if refusal is not None:
+                logger.warning("refused for %s: %s", remote_host, e)
+                return refusal
             await ctx_log(
                 ctx, "System intelligence fail ({action})", logger=logger, level="error"
             )
@@ -3052,23 +3053,24 @@ def register_system_tools(mcp: FastMCP):
                 500,
                 f"System intelligence fail ({action})",
                 {"host": remote_host},
-                type(e).__name__,
+                describe_error(e),
             )
 
 
 def _file_manager(conn: dict) -> AdvancedFileManager:
     """Build the AdvancedFileManager every ``tm_files`` action works through.
 
-    ``conn`` carries remote_host/username/password/identity_file; blank strings
-    mean "unset" and are normalised to ``None`` exactly as the inline
-    ``Tunnel(...)`` constructions this replaces did.
+    ``conn`` carries remote_host/username/password/identity_file; blank means
+    unset, and :func:`resolve_target` fills unset fields from the alias.
     """
     return AdvancedFileManager(
-        Tunnel(
-            remote_host=conn["remote_host"],
-            username=conn["username"] or None,
-            password=conn["password"] or None,
-            identity_file=conn["identity_file"] or None,
+        open_tunnel(
+            resolve_target(
+                conn["remote_host"],
+                user=conn["username"],
+                password=conn["password"],
+                identity_file=conn["identity_file"],
+            )
         )
     )
 
@@ -3117,7 +3119,7 @@ async def _tm_files_recursive_ops(action: str, conn: dict, params: dict, ctx) ->
             500,
             "Recursive file ops fail",
             {"host": remote_host, "operation": operation},
-            type(e).__name__,
+            describe_error(e),
         )
 
 
@@ -3155,7 +3157,7 @@ async def _tm_files_content_search(action: str, conn: dict, params: dict, ctx) -
             500,
             "File content search fail",
             {"host": remote_host, "pattern": pattern},
-            type(e).__name__,
+            describe_error(e),
         )
 
 
@@ -3187,7 +3189,7 @@ async def _tm_files_watch(action: str, conn: dict, params: dict, ctx) -> dict:
             500,
             "File watch fail",
             {"host": remote_host, "watch_paths": watch_paths},
-            type(e).__name__,
+            describe_error(e),
         )
 
 
@@ -3205,7 +3207,17 @@ async def _tm_files_diff_compare(action: str, conn: dict, params: dict, ctx) -> 
         )
     try:
         fm = _file_manager({**conn, "remote_host": host1})
-        result = await run_blocking(fm.file_diff_compare, host1, host2, file_path)
+        other = open_tunnel(
+            resolve_target(
+                host2,
+                user=conn["username"],
+                password=conn["password"],
+                identity_file=conn["identity_file"],
+            )
+        )
+        result = await run_blocking(
+            fm.file_diff_compare, host1, host2, file_path, other
+        )
         return ResponseBuilder.build(
             200 if result["success"] else 500,
             "File comparison completed",
@@ -3223,7 +3235,7 @@ async def _tm_files_diff_compare(action: str, conn: dict, params: dict, ctx) -> 
             500,
             "File diff fail",
             {"file": file_path, "host1": host1, "host2": host2},
-            type(e).__name__,
+            describe_error(e),
         )
 
 
@@ -3262,7 +3274,7 @@ async def _tm_files_backup(action: str, conn: dict, params: dict, ctx) -> dict:
             500,
             "Backup fail",
             {"host": remote_host, "backup_paths": backup_paths},
-            type(e).__name__,
+            describe_error(e),
         )
 
 
@@ -3366,6 +3378,12 @@ def register_file_tools(mcp: FastMCP):
                 {"credential_ref_configured": bool(password_ref)},
                 errors=["A supported runtime secret reference is required"],
             )
+        for named in {remote_host, host1, host2} - {""}:
+            try:
+                resolve_target(named, user=username)
+            except (UnknownHostAlias, PermissionError) as exc:
+                logger.warning("tm_files %s refused for %s: %s", action, named, exc)
+                return target_refusal(exc, {"host": named, "action": action})
         handler = _TM_FILES_ACTIONS.get(action)
         if handler is None:
             return ResponseBuilder.build(
@@ -3431,7 +3449,8 @@ async def _tm_security_compliance_check(
     result = await run_blocking(auditor.compliance_check, standard)
     return ResponseBuilder.build(
         200 if result["success"] else 500,
-        f"Compliance check completed: {result['compliance_percentage']:.1f}% compliant",
+        "Compliance check completed: "
+        f"{result.get('details', {}).get('compliance_percentage', 0):.1f}% compliant",
         {
             "host": remote_host,
             "standard": standard,
@@ -3550,11 +3569,13 @@ def register_security_tools(mcp: FastMCP):
         action = resolved
         try:
             password = resolve_secret_ref(password_ref)
-            tunnel = Tunnel(
-                remote_host=remote_host,
-                username=username or None,
-                password=password or None,
-                identity_file=identity_file or None,
+            tunnel = open_tunnel(
+                resolve_target(
+                    remote_host,
+                    user=username,
+                    password=password,
+                    identity_file=identity_file,
+                )
             )
             auditor = SecurityAuditor(tunnel)
 
@@ -3562,6 +3583,10 @@ def register_security_tools(mcp: FastMCP):
                 action, auditor, remote_host, scope, standard, scan_type
             )
         except Exception as e:
+            refusal = target_refusal(e, {"host": remote_host, "action": action})
+            if refusal is not None:
+                logger.warning("refused for %s: %s", remote_host, e)
+                return refusal
             await ctx_log(
                 ctx, "Security audit fail ({action})", logger=logger, level="error"
             )
@@ -3569,7 +3594,7 @@ def register_security_tools(mcp: FastMCP):
                 500,
                 f"Security audit fail ({action})",
                 {"host": remote_host},
-                type(e).__name__,
+                describe_error(e),
             )
 
 

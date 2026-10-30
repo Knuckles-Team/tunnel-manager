@@ -20,6 +20,7 @@ from typing import Any
 
 from tunnel_manager.connection_security import (
     ConnectionPolicyError,
+    describe_error,
     quote_remote_path,
     validate_timeout,
 )
@@ -250,7 +251,7 @@ class AdvancedFileManager:
                 "files_processed": 0,
                 "directories_processed": 0,
                 "bytes_transferred": "0",
-                "errors": [type(e).__name__],
+                "errors": [describe_error(e)],
                 "duration_seconds": 0,
                 "success": False,
             }
@@ -299,7 +300,7 @@ class AdvancedFileManager:
                 "Failed to list a remote path: error_type=%s", type(e).__name__
             )
             return {
-                "errors": [type(e).__name__],
+                "errors": [describe_error(e)],
                 "files_processed": 0,
                 "directories_processed": 0,
             }
@@ -342,7 +343,7 @@ class AdvancedFileManager:
 
         except Exception as e:
             self.logger.error("Failed to copy {source} to {destination}")
-            return {"errors": [type(e).__name__], "files_processed": 0}
+            return {"errors": [describe_error(e)], "files_processed": 0}
 
     def _recursive_delete(self, path: str, options: dict) -> dict:
         """Recursively delete directories."""
@@ -362,7 +363,7 @@ class AdvancedFileManager:
             self.logger.error(
                 "Failed to delete a remote path: error_type=%s", type(e).__name__
             )
-            return {"errors": [type(e).__name__], "files_processed": 0}
+            return {"errors": [describe_error(e)], "files_processed": 0}
 
     def _recursive_chmod(self, path: str, options: dict) -> dict:
         """Recursively change permissions."""
@@ -384,9 +385,9 @@ class AdvancedFileManager:
         except Exception as e:
             self.logger.error(
                 "Failed to change remote path permissions: error_type=%s",
-                type(e).__name__,
+                describe_error(e),
             )
-            return {"errors": [type(e).__name__], "files_processed": 0}
+            return {"errors": [describe_error(e)], "files_processed": 0}
 
     def _recursive_chown(self, path: str, options: dict) -> dict:
         """Recursively change ownership."""
@@ -414,7 +415,7 @@ class AdvancedFileManager:
 
         except Exception as e:
             self.logger.error("Failed to change configured path ownership")
-            return {"errors": [type(e).__name__], "files_processed": 0}
+            return {"errors": [describe_error(e)], "files_processed": 0}
 
     def file_content_search(
         self,
@@ -739,7 +740,13 @@ class AdvancedFileManager:
 
         return changes
 
-    def file_diff_compare(self, host1: str, host2: str, file_path: str) -> dict:
+    def file_diff_compare(
+        self,
+        host1: str,
+        host2: str,
+        file_path: str,
+        other_tunnel: Tunnel | None = None,
+    ) -> dict:
         """
         Compare files across different hosts.
 
@@ -747,6 +754,8 @@ class AdvancedFileManager:
             host1: First host
             host2: Second host
             file_path: File path to compare
+            other_tunnel: The resolved connection to ``host2``; built from this
+                tunnel's settings when omitted.
 
         Returns:
             Dictionary with diff results
@@ -755,7 +764,7 @@ class AdvancedFileManager:
             self.logger.info("Comparing a configured file across two hosts")
             file_arg = _remote_path(file_path)
 
-            other_tunnel = Tunnel(
+            other_tunnel = other_tunnel or Tunnel(
                 remote_host=host2,
                 username=self.tunnel.username,
                 password=self.tunnel.password,

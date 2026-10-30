@@ -556,7 +556,7 @@ def test_tunnel_legacy_run_command_error_shape_remains_default():
     legacy_result = tunnel.run_command("printf ok")
 
     assert legacy_result.success is False
-    assert legacy_result.error_message == "ManagedCommandError"
+    assert legacy_result.error_message == "TimeoutError: deadline"
     with pytest.raises(TimeoutError):
         tunnel.run_command("printf ok", propagate_errors=True)
 

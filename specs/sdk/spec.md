@@ -18,4 +18,7 @@ Search: `git grep -n "SDK" -- specs` found no row that owns SDK capability use i
 - `CONN-TUNNEL-MANAGER-SDK-R002`: SDK floor and dependency set.
 - `CONN-TUNNEL-MANAGER-SDK-R003`: Production wiring.
 - `CONN-TUNNEL-MANAGER-SDK-R004`: Hot-path proof.
-- `CONN-TUNNEL-MANAGER-SDK-R005`: Served actor binding.
+- `CONN-TUNNEL-MANAGER-SDK-R005`: One wiring for every transport.
+- `CONN-TUNNEL-MANAGER-SDK-R005.1`: One connection resolver.
+- `CONN-TUNNEL-MANAGER-SDK-R005.2`: Every tool behaves the same on every transport.
+- `CONN-TUNNEL-MANAGER-SDK-R005.3`: Failures name their cause; no host binaries.
