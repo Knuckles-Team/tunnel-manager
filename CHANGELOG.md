@@ -5,6 +5,12 @@ All notable changes to `tunnel-manager` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.8] - 2026-10-30
+
+### Fixed
+- SSH no longer depends on the local process username: a container uid with no passwd entry and no `USER`/`LOGNAME` connects using the inventory user. The published image runs as a real uid 1000 user.
+- Tool failures are logged with their cause, and `ConnectionPolicyError` names the failing check and path or setting.
+
 ## [3.3.7] - 2026-10-29
 
 ### Changed
