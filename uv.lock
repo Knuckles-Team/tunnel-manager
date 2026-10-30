@@ -1504,7 +1504,7 @@ wheels = [
 
 [[package]]
 name = "tunnel-manager"
-version = "3.4.0"
+version = "3.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "asyncssh" },
@@ -1535,7 +1535,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=1.4.0" },
     { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=7.1.0" },
     { name = "pytest-xdist", marker = "extra == 'test'", specifier = ">=3.8.0" },
-    { name = "scion-sdk", extras = ["mcp"], specifier = ">=0.6.0,<0.7.0" },
+    { name = "scion-sdk", extras = ["mcp"], specifier = ">=0.6.1,<0.7.0" },
 ]
 provides-extras = ["test"]
 

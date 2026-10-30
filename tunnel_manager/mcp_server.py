@@ -651,6 +651,14 @@ async def _tm_remote_run_command(
             locations=[],
             errors=[],
         )
+    except PermissionError as e:
+        await ctx_log(
+            ctx, f"Cmd refused on {host}: {e}", logger=logger, level="warning"
+        )
+        await ctx_progress(ctx, 100, 100)
+        return ResponseBuilder.build(
+            403, f"Cmd refused: {e}", {"host": host, "cmd": cmd}, errors=[str(e)]
+        )
     except Exception as e:
         await ctx_log(ctx, "Cmd fail", logger=logger, level="error")
         await ctx_progress(ctx, 100, 100)

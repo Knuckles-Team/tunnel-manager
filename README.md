@@ -260,6 +260,15 @@ direct server TLS), exact `MCP_ALLOWED_HOSTS`, and an exact trusted-proxy
 CIDR policy through the operator-owned deployment profile. The generator
 does not emit an unauthenticated non-loopback listener.
 
+### Identity and host entitlements
+
+Over stdio, and over HTTP started with `--auth-type none` (for example behind
+arbora), every caller is the trusted local actor and reaches every inventory
+alias. With auth configured, a caller reaches only the aliases its roles or
+groups grant (`ssh:<alias>`, `ssh:*` or `admin`). A refusal names its cause:
+anonymous caller, unauthenticated, no tenant, or `not entitled to ssh:<alias>`.
+See scion-sdk's [connector servers: caller identity](https://github.com/Knuckles-Team/scion-sdk/blob/main/docs/connector-servers.md#caller-identity).
+
 _Auto-generated from the code-read env surface (`MCP_TOOL_MODE` + package vars) — do not edit._
 <!-- MCP-CONFIG-EXAMPLES:END -->
 

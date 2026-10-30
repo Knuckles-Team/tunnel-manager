@@ -95,11 +95,15 @@ class _Transport:
             raise self.close_error
 
 
+def _not_entitled(namespace: str, resource: str, **_kwargs: object) -> None:
+    raise PermissionError(f"not entitled to {namespace}:{resource}")
+
+
 @pytest.fixture
 def entitled_inventory(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        "tunnel_manager.remote_execution.identity_scoped_resources",
-        lambda _namespace, available, **_kwargs: tuple(available),
+        "tunnel_manager.remote_execution.require_entitled",
+        lambda *_args, **_kwargs: None,
     )
     config = _config(tmp_path)
     manager = _Inventory({"build-host": config})
@@ -138,8 +142,8 @@ def test_inventory_uses_tunnel_inventory_override(monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        "tunnel_manager.remote_execution.identity_scoped_resources",
-        lambda _namespace, available, **_kwargs: tuple(available),
+        "tunnel_manager.remote_execution.require_entitled",
+        lambda *_args, **_kwargs: None,
     )
     with pytest.raises(RemoteTargetError):
         HostInventory().resolve("missing", _actor("ssh:*"))
@@ -160,8 +164,8 @@ def test_inventory_uses_canonical_default_resolver_when_no_override(monkeypatch)
         lambda: "/xdg/agent-connectors/inventory.yml",
     )
     monkeypatch.setattr(
-        "tunnel_manager.remote_execution.identity_scoped_resources",
-        lambda *_args, **_kwargs: (),
+        "tunnel_manager.remote_execution.require_entitled",
+        _not_entitled,
     )
 
     with pytest.raises(RemoteTargetError):
@@ -226,11 +230,11 @@ def test_unknown_or_malformed_alias_fails_closed(entitled_inventory, alias):
 def test_unauthorized_and_revoked_alias_fail_closed(monkeypatch, tmp_path):
     manager = _Inventory({"build-host": _config(tmp_path)})
     monkeypatch.setattr(
-        "tunnel_manager.remote_execution.identity_scoped_resources",
-        lambda *_args, **_kwargs: (),
+        "tunnel_manager.remote_execution.require_entitled",
+        _not_entitled,
     )
     inventory = HostInventory(manager_factory=lambda: manager)
-    with pytest.raises(RemoteTargetError):
+    with pytest.raises(RemoteTargetError, match="not entitled to ssh:build-host"):
         inventory.resolve("build-host", _actor("ssh:other-host"))
 
 
