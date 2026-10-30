@@ -61,12 +61,15 @@
       "title": "Served actor binding",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "214ef87d2878",
         "a91d2bdcce2b"
       ],
       "verified_by": [
-        "tests/test_served_actor_binding.py:111",
-        "tests/test_served_actor_binding.py:87",
-        "tests/test_served_actor_binding.py:96"
+        "tests/test_served_actor_binding.py:100",
+        "tests/test_served_actor_binding.py:119",
+        "tests/test_served_actor_binding.py:130",
+        "tests/test_served_actor_binding.py:154",
+        "tests/test_served_actor_binding.py:91"
       ]
     }
   ]

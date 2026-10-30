@@ -32,9 +32,7 @@
       "title": "SSH runs without a local username",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": [
-        "tests/test_no_local_username.py:1"
-      ]
+      "verified_by": []
     }
   ]
 }
