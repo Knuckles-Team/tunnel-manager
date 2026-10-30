@@ -5,6 +5,12 @@ All notable changes to `tunnel-manager` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.1] - 2026-10-30
+
+### Fixed
+- A no-auth HTTP deployment (`--auth-type none`, for example behind arbora) lists every host and runs commands again: with `scion-sdk>=0.6.1` its callers are the trusted local actor, not anonymous.
+- Authorization refusals name their cause (anonymous caller, unauthenticated, no tenant, or `not entitled to ssh:<alias>`) instead of a bare "remote target authorization failed". `tm_remote_run_command` returns it as a 403 and logs it; a refused remote execution carries it in `stderr_tail`.
+
 ## [3.4.0] - 2026-10-30
 
 ### Changed

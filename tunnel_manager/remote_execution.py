@@ -17,6 +17,7 @@ job scheduling and durable WorkItems.
 
 from __future__ import annotations
 
+import logging
 import re
 import shlex
 from collections.abc import Callable, Mapping
@@ -37,7 +38,7 @@ from pydantic import (
     model_validator,
 )
 from scion_sdk.config import setting
-from scion_sdk.entitlements import identity_scoped_resources
+from scion_sdk.entitlements import require_entitled
 from scion_sdk.identity import ActorContext, use_actor
 
 from .connection_security import (
@@ -54,6 +55,8 @@ from .connection_security import (
 from .models import CommandResult, HostConfig
 from .proxy_security import proxy_command_argv
 from .tunnel_manager import HostManager, Tunnel, default_inventory_path
+
+_logger = logging.getLogger(__name__)
 
 _ALIAS_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,126}[A-Za-z0-9])?\Z")
 _DIGEST_RE = re.compile(r"[0-9a-f]{64}\Z")
@@ -521,24 +524,36 @@ class HostInventory:
 
         alias = self._validate_alias(alias)
         if actor is None:
-            raise RemoteTargetError("remote target authorization failed")
+            raise RemoteTargetError(
+                "remote target authorization failed: no actor is bound"
+            )
         manager = self._manager_factory()
         try:
-            entitled = identity_scoped_resources("ssh", [alias], actor=actor)
-        except Exception as exc:  # noqa: BLE001 - fail closed without identity details
-            raise RemoteTargetError("remote target authorization failed") from exc
-        if alias not in entitled:
-            raise RemoteTargetError("remote target authorization failed")
+            require_entitled("ssh", alias, actor=actor)
+        except PermissionError as exc:
+            # The SDK refusal names its cause (anonymous caller, unauthenticated,
+            # no tenant, or not entitled to ssh:<alias>) and never a secret.
+            raise RemoteTargetError(
+                f"remote target authorization failed: {exc}"
+            ) from exc
         try:
             # HostManager.get_host repeats the same entitlement check against
             # the ambient actor.  Binding the verified actor here prevents a
             # stale or different ambient context from authorizing dispatch.
             with use_actor(actor):
                 config = manager.get_host(alias)
+        except PermissionError as exc:
+            raise RemoteTargetError(
+                f"remote target authorization failed: {exc}"
+            ) from exc
         except Exception as exc:  # noqa: BLE001 - do not leak inventory details
-            raise RemoteTargetError("remote target authorization failed") from exc
+            raise RemoteTargetError(
+                "remote target authorization failed: inventory could not be read"
+            ) from exc
         if config is None:
-            raise RemoteTargetError("remote target authorization failed")
+            raise RemoteTargetError(
+                f"remote target authorization failed: unknown alias {alias}"
+            )
         try:
             return config if isinstance(config, HostConfig) else HostConfig(**config)
         except Exception as exc:  # noqa: BLE001 - malformed inventory is not public
@@ -714,11 +729,15 @@ class TunnelCommandExecutor:
                     failure_class=failure,
                 )
         except RemoteTargetError as exc:
+            _logger.warning(
+                "remote command %s refused: %s", parsed_context.command_id, exc
+            )
             result = self._failure_result(
                 parsed_context,
                 started,
                 ExecutionOutcome.REFUSED,
                 exc.failure_class,
+                reason=str(exc),
             )
         except ConnectionPolicyError:
             result = self._failure_result(
@@ -819,6 +838,8 @@ class TunnelCommandExecutor:
         started: datetime,
         outcome: ExecutionOutcome,
         failure_class: FailureClass,
+        *,
+        reason: str = "",
     ) -> RemoteExecutionResult:
         finished = _utc_now()
         return RemoteExecutionResult(
@@ -830,6 +851,7 @@ class TunnelCommandExecutor:
             worker_id=context.worker_id,
             fence=context.fence,
             failure_class=failure_class,
+            stderr_tail=reason,
         )
 
 

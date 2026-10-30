@@ -780,10 +780,11 @@ class HostManager:
         data = self.hosts.get(alias)
         if data is None:
             return None
-        if alias not in self._entitled("ssh", [alias]):
-            raise PermissionError(
-                f"Your identity is not entitled to the ssh host '{alias}'."
-            )
+        from scion_sdk.entitlements import require_entitled
+
+        # Raises an EntitlementError (a PermissionError) naming the cause:
+        # anonymous caller, unauthenticated, no tenant, or not entitled.
+        require_entitled("ssh", alias)
         return HostConfig(**data)
 
 
