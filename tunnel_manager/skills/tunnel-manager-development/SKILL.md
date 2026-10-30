@@ -9,7 +9,7 @@ description: >-
 license: MIT
 tags: [tunnel-manager, ssh, connector, development, testing, pages, specs]
 metadata:
-  author: Genius
+  author: Knuckles-Team
   version: '0.1.0'
 ---
 # Tunnel Manager Development

@@ -12,7 +12,7 @@ description: >-
 license: MIT
 tags: [tunnel-manager, ssh, inventory, hosts, mcp]
 metadata:
-  author: Genius
+  author: Knuckles-Team
   version: '0.1.0'
 ---
 # Tunnel Manager — Host Inventory
@@ -64,7 +64,7 @@ List every managed host (also default-on ingests them to the KG):
 ```
 Add a key-authenticated host:
 ```json
-{"action": "add", "alias": "rw710", "hostname": "10.0.0.14", "user": "genius", "port": 22, "identity_file": "~/.ssh/id_shared"}
+{"action": "add", "alias": "host-a", "hostname": "192.0.2.14", "user": "admin", "port": 22, "identity_file": "~/.ssh/id_shared"}
 ```
 Remove a stale alias (destructive — the server confirms):
 ```json
