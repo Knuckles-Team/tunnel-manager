@@ -2,13 +2,16 @@
   "schema_version": 2,
   "spec_id": "CONN-TUNNEL-MANAGER-SDK",
   "owner_repo": "tunnel-manager",
-  "delivery_state": "VERIFIED",
+  "delivery_state": "LANDED",
   "requirement_ids": [
     "CONN-TUNNEL-MANAGER-SDK-R001",
     "CONN-TUNNEL-MANAGER-SDK-R002",
     "CONN-TUNNEL-MANAGER-SDK-R003",
     "CONN-TUNNEL-MANAGER-SDK-R004",
-    "CONN-TUNNEL-MANAGER-SDK-R005"
+    "CONN-TUNNEL-MANAGER-SDK-R005",
+    "CONN-TUNNEL-MANAGER-SDK-R005.1",
+    "CONN-TUNNEL-MANAGER-SDK-R005.2",
+    "CONN-TUNNEL-MANAGER-SDK-R005.3"
   ],
   "requirements": [
     {
@@ -58,19 +61,52 @@
     },
     {
       "id": "CONN-TUNNEL-MANAGER-SDK-R005",
-      "title": "Served actor binding",
-      "delivery_state": "VERIFIED",
+      "title": "One wiring for every transport",
+      "delivery_state": "LANDED",
       "landed_in": [
-        "214ef87d2878",
-        "a91d2bdcce2b"
+        "48f70b0ad8e4",
+        "a91d2bdcce2b",
+        "b807e6eb738f"
       ],
       "verified_by": [
-        "tests/test_served_actor_binding.py:100",
-        "tests/test_served_actor_binding.py:119",
-        "tests/test_served_actor_binding.py:130",
-        "tests/test_served_actor_binding.py:154",
-        "tests/test_served_actor_binding.py:91"
+        "tests/test_served_actor_binding.py:103",
+        "tests/test_served_actor_binding.py:114",
+        "tests/test_served_actor_binding.py:138",
+        "tests/test_served_actor_binding.py:75",
+        "tests/test_served_actor_binding.py:84"
+      ],
+      "rollup_of": [
+        "CONN-TUNNEL-MANAGER-SDK-R005.1",
+        "CONN-TUNNEL-MANAGER-SDK-R005.2",
+        "CONN-TUNNEL-MANAGER-SDK-R005.3"
       ]
+    },
+    {
+      "id": "CONN-TUNNEL-MANAGER-SDK-R005.1",
+      "title": "One connection resolver",
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "b807e6eb738f"
+      ],
+      "verified_by": []
+    },
+    {
+      "id": "CONN-TUNNEL-MANAGER-SDK-R005.2",
+      "title": "Every tool behaves the same on every transport",
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "b807e6eb738f"
+      ],
+      "verified_by": []
+    },
+    {
+      "id": "CONN-TUNNEL-MANAGER-SDK-R005.3",
+      "title": "Failures name their cause; no host binaries",
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "b807e6eb738f"
+      ],
+      "verified_by": []
     }
   ]
 }
