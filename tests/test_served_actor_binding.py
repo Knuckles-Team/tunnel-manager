@@ -11,7 +11,6 @@ scion-sdk ``tests/test_actor_binding_served.py``.
 
 from __future__ import annotations
 
-import functools
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -25,8 +24,6 @@ from fastmcp.server.auth.providers.jwt import RSAKeyPair
 from mcp.shared.exceptions import MCPError
 from scion_sdk.connector import build_server
 from scion_sdk.identity import ANONYMOUS_ACTOR, ActorContext, ActorType, use_actor
-from scion_sdk.mcp import server as sdk_server
-from scion_sdk.mcp.served_security import ServedSecurityOverride
 
 from tunnel_manager.mcp_server import _tm_remote_run_command, host_manager
 from tunnel_manager.remote_execution import HostInventory, RemoteTargetError
@@ -45,21 +42,8 @@ def _inventory(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def _server(*argv: str, no_auth: bool = False) -> Any:
-    create = sdk_server.create_mcp_server
-    if no_auth:
-        create = functools.partial(
-            create,
-            served_security_override=ServedSecurityOverride(
-                "test serves HTTP without auth"
-            ),
-        )
-    original = sdk_server.create_mcp_server
-    sdk_server.create_mcp_server = create
-    try:
-        _args, mcp = build_server("tunnel_manager", command_args=list(argv))
-    finally:
-        sdk_server.create_mcp_server = original
+def _server(*argv: str) -> Any:
+    _args, mcp = build_server("tunnel_manager", command_args=list(argv))
     return mcp
 
 
@@ -99,7 +83,7 @@ async def test_local_transport_lists_every_alias() -> None:
 
 @pytest.mark.spec("CONN-TUNNEL-MANAGER-SDK-R005")
 async def test_no_auth_http_lists_every_alias_and_runs_on_one() -> None:
-    mcp = _server("--transport", "streamable-http", "--auth-type", "none", no_auth=True)
+    mcp = _server("--transport", "streamable-http", "--auth-type", "none")
     tunnel = MagicMock()
     tunnel.run_command.return_value = ("up 3 days", "")
     with (

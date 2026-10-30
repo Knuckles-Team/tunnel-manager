@@ -354,3 +354,46 @@ def security_posture() -> dict[str, bool | int]:
         "max_fleet_hosts": max_fleet_hosts(),
         "max_concurrency": max_concurrency(),
     }
+
+
+def describe_error(exc: BaseException) -> str:
+    """``Type: message`` for a failure, so a caller sees the cause.
+
+    Every tool response passes through ``sanitize_for_persistence``, which
+    redacts secrets and local paths from this text before it leaves the server.
+    """
+    detail = str(exc).strip()
+    return f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+
+
+def generate_key_pair(key_path: str, key_type: str = "ed25519") -> None:
+    """Write an unencrypted OpenSSH key pair to ``key_path`` and ``key_path.pub``.
+
+    Native, so the server needs no ``ssh-keygen`` binary in its image. The
+    private key is created with mode 0600 and never overwritten.
+    """
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
+
+    if key_type not in ("rsa", "ed25519"):
+        raise ValueError("key_type must be 'rsa' or 'ed25519'")
+    path = os.path.expanduser(key_path)
+    key = (
+        rsa.generate_private_key(public_exponent=65537, key_size=4096)
+        if key_type == "rsa"
+        else ed25519.Ed25519PrivateKey.generate()
+    )
+    private = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.OpenSSH,
+        serialization.NoEncryption(),
+    )
+    public = key.public_key().public_bytes(
+        serialization.Encoding.OpenSSH, serialization.PublicFormat.OpenSSH
+    )
+    os.makedirs(os.path.dirname(path) or ".", mode=0o700, exist_ok=True)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "wb") as handle:
+        handle.write(private)
+    with open(path + ".pub", "wb") as handle:
+        handle.write(public + b"\n")

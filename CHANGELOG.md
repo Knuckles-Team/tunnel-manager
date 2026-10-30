@@ -5,6 +5,19 @@ All notable changes to `tunnel-manager` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.2] - 2026-10-30
+
+### Fixed
+- `tm_remote_*` no longer connects to port 22 (or the default key and SSH config) when an alias names its own. Every tool resolves a host through one resolver: explicit argument, then inventory host vars, then group vars, then `TUNNEL_*` settings, then built-in defaults.
+- `tm_system_*`, `tm_file_*` and `tm_security_*` accept an inventory alias.
+- Failures report `Type: message`, not only the exception type.
+- Key pairs are generated natively; the image needs no `ssh-keygen`.
+- `check_ssh` no longer reports key auth disabled when it works; `test_key_auth` keeps the target port.
+- `tm_remote_remove_host_key` accepts `confirm=true` when the client cannot elicit.
+- A read-only inventory reports `inventory is read-only: <path>`.
+- `mesh_bootstrap` reads group vars like every other inventory action; `compliance_check` no longer fails on its own result.
+- Requires `scion-sdk>=0.6.2`: one actor path for stdio, explicit no-auth HTTP and JWT HTTP.
+
 ## [3.4.1] - 2026-10-30
 
 ### Fixed

@@ -50,6 +50,7 @@ DEFAULT_KWARGS = dict(
     rcfg="/fake/.ssh/config",
     known_hosts="/fake/.ssh/known_hosts",
     timeout=60,
+    confirm=False,
     ctx=None,
 )
 
@@ -379,22 +380,18 @@ class TestRemoveHostKey:
         fn = _capture_tm_remote()
         with (
             patch(
-                "tunnel_manager.mcp_server._resolve_host",
-                return_value=({"hostname": "192.0.2.50"}, None),
-            ),
-            patch("tunnel_manager.mcp_server.Tunnel") as mock_tunnel_cls,
+                "tunnel_manager.mcp_server.remove_known_host_key",
+                return_value="Removed managed-host key",
+            ) as remove,
             patch(
                 "tunnel_manager.mcp_server.ctx_confirm_destructive",
                 new=AsyncMock(return_value=True),
             ),
         ):
-            mock_tunnel = MagicMock()
-            mock_tunnel.remove_host_key.return_value = "Removed key for 192.0.2.50"
-            mock_tunnel_cls.return_value = mock_tunnel
-
             result = await _call(fn, action="remove_host_key")
 
         assert result["status_code"] == 200
+        remove.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_cancelled_by_confirm(self):
@@ -406,8 +403,24 @@ class TestRemoveHostKey:
             result = await _call(fn, action="remove_host_key")
         assert result == {
             "status": "cancelled",
-            "message": "Operation cancelled by user",
+            "message": "Not confirmed: pass confirm=true or confirm when asked",
         }
+
+    @pytest.mark.asyncio
+    async def test_explicit_confirm_skips_elicitation(self):
+        fn = _capture_tm_remote()
+        with (
+            patch(
+                "tunnel_manager.mcp_server.remove_known_host_key",
+                return_value="Removed managed-host key",
+            ),
+            patch(
+                "tunnel_manager.mcp_server.ctx_confirm_destructive",
+                new=AsyncMock(side_effect=RuntimeError("Elicitation not supported")),
+            ),
+        ):
+            result = await _call(fn, action="remove_host_key", confirm=True)
+        assert result["status_code"] == 200
 
     @pytest.mark.asyncio
     async def test_missing_host_rejected(self):

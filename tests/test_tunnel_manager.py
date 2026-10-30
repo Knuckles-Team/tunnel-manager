@@ -716,10 +716,17 @@ class TestTunnel:
             with patch.object(
                 t,
                 "run_command",
-                side_effect=[("running\n", ""), ("PubkeyAuthentication yes\n", "")],
+                side_effect=[("", "")],
             ):
                 success, msg = t.check_ssh_server()
                 assert success is True
+            with patch.object(
+                t,
+                "run_command",
+                side_effect=[("PubkeyAuthentication no\n", "")],
+            ):
+                success, msg = t.check_ssh_server()
+                assert success is False and "not enabled" in msg
 
     @patch("paramiko.SSHConfig")
     @patch("paramiko.SSHClient")
@@ -839,7 +846,7 @@ class TestTunnel:
             os.unlink(local_config_path)
 
     @patch("os.path.exists")
-    @patch("subprocess.run")
+    @patch("tunnel_manager.tunnel_manager.generate_key_pair")
     @patch("paramiko.SSHConfig")
     @patch("paramiko.SSHClient")
     def test_rotate_ssh_key(
@@ -900,9 +907,8 @@ class TestTunnel:
         with patch("builtins.open", side_effect=custom_open):
             t.rotate_ssh_key("/new/key", key_type="ed25519")
 
-        # Verify subprocess.run called to generate ed25519 key
-        mock_subprocess.assert_called_once()
-        assert mock_subprocess.call_args[0][0][2] == "ed25519"
+        # The ed25519 key is generated natively, without ssh-keygen
+        mock_subprocess.assert_called_once_with("/new/key", "ed25519")
 
         # Authorized-key content is transferred as a file and never interpolated
         # into a remote shell command.
