@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from agent_connector_sdk.config import setting
+from scion_sdk.config import setting
 
 from .connection_security import ConnectionPolicyError, security_posture
 

@@ -5,7 +5,7 @@
 The sole automatic source is the operator-selected XDG configuration file:
 
 ```text
-$XDG_CONFIG_HOME/agent-connector-sdk/inventory.yml
+$XDG_CONFIG_HOME/scion-sdk/inventory.yml
 ```
 
 `XDG_CONFIG_HOME` is resolved for the executing operator or supplied as an explicit deployment input. The relative path and `.yml` basename are fixed. `inventory.yaml`, a checkout file, image seed, service-local document, and runtime cache are not alternative sources. A source receipt includes the normalized path, content digest, file type, selection mode, and validation result; it excludes contents and secret values.
@@ -14,8 +14,8 @@ $XDG_CONFIG_HOME/agent-connector-sdk/inventory.yml
 
 | Field | Contract |
 | --- | --- |
-| Host source | Exactly the resolved `agent-connector-sdk/inventory.yml` under the selected operator XDG config home. |
-| Container target | `/etc/agent-connector-sdk/inventory.yml` in an inventory-reading container. This is a mount target, not the application-level authority. |
+| Host source | Exactly the resolved `scion-sdk/inventory.yml` under the selected operator XDG config home. |
+| Container target | `/etc/scion-sdk/inventory.yml` in an inventory-reading container. This is a mount target, not the application-level authority. |
 | Mode | Read-only file bind (`:ro` in Compose or `readOnly: true` in Kubernetes) and no writable overlay at the target. |
 | Startup | Validate source existence/type, mount visibility, selected digest, and read permission before reporting inventory readiness. |
 | Failure | Missing/mismatched source, wrong basename, writable projection, or unreadable target prevents inventory-dependent service readiness. Do not use a package seed or another path. |

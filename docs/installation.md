@@ -24,8 +24,8 @@ interface the operator need:
 
 | Extra | Install | Pulls in |
 |---|---|---|
-| `mcp` | `pip install "tunnel-manager[mcp]"` | FastMCP MCP-server runtime (`agent-connector-sdk[mcp]`) |
-| `agent` | `pip install "tunnel-manager[agent]"` | Pydantic-AI agent + Logfire tracing (`agent-connector-sdk[agent-runtime,logfire]`) |
+| `mcp` | `pip install "tunnel-manager[mcp]"` | FastMCP MCP-server runtime (`scion-sdk[mcp]`) |
+| `agent` | `pip install "tunnel-manager[agent]"` | Pydantic-AI agent + Logfire tracing (`scion-sdk[agent-runtime,logfire]`) |
 | `all` | `pip install "tunnel-manager[all]"` | The MCP server, the agent, and tracing |
 | `test` | `pip install "tunnel-manager[test]"` | `pytest`, `pytest-asyncio`, `pytest-cov`, `pytest-xdist` |
 

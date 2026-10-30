@@ -4,7 +4,7 @@ import os
 
 import asyncssh
 import yaml
-from agent_connector_sdk.config import setting
+from scion_sdk.config import setting
 
 from .connection_security import (
     ConnectionPolicyError,

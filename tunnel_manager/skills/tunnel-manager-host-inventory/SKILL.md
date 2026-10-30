@@ -17,7 +17,7 @@ metadata:
 ---
 # Tunnel Manager — Host Inventory
 
-Domain-typed access to the shared SSH inventory (`$XDG_CONFIG_HOME/agent-connector-sdk/inventory.yml`)
+Domain-typed access to the shared SSH inventory (`$XDG_CONFIG_HOME/scion-sdk/inventory.yml`)
 via the **`tunnel-manager`** MCP server. One inventory, shared with the HostManager
 library, container-manager, and the `ssh-bootstrap` skill.
 

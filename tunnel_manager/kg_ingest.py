@@ -1,6 +1,6 @@
 """Native epistemic-graph ingestion for governed SSH inventory metadata.
 
-All writes go through the ``agent_connector_sdk.ingest`` knowledge-ingest facade
+All writes go through the ``scion_sdk.ingest`` knowledge-ingest facade
 (the generated EG client). Nodes use canonical ``node_type`` and edges use
 canonical ``relationship``; nodes and edges commit in one submission. Missing
 engine dependencies, rejected records, and conflicts propagate as ``IngestError``.
@@ -11,8 +11,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from agent_connector_sdk.connector_identity import connector_name
-from agent_connector_sdk.ingest import (
+from scion_sdk.connector_identity import connector_name
+from scion_sdk.ingest import (
     ChangeSet,
     Document,
     Entity,

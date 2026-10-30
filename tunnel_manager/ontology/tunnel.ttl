@@ -133,7 +133,7 @@
     rdfs:comment """Tunnel Manager SSH-access model — hosts and host groups, tunnels /
     connections, SSH key material, remote command executions, file transfers, tracked
     operations and security audits, with their access and provenance relationships —
-    federated into the agent-connector-sdk knowledge-graph hub.""" .
+    federated into the scion-sdk knowledge-graph hub.""" .
 
 # ontology-codemod R3
 <http://knuckles.team/kg#Host> rdfs:subClassOf <http://knuckles.team/kg/infrastructure#Host> .

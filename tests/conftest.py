@@ -14,7 +14,7 @@ def mock_env(monkeypatch):
 @pytest.fixture(autouse=True)
 def _bound_system_actor():
     """Bind an authenticated, tenant-bound admin actor (the SDK fails closed without one)."""
-    from agent_connector_sdk.identity import ActorContext, ActorType, use_actor
+    from scion_sdk.identity import ActorContext, ActorType, use_actor
 
     actor = ActorContext(
         actor_id="system:test",

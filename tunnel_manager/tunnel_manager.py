@@ -14,7 +14,7 @@ from importlib.metadata import version as _v
 
 import paramiko
 import yaml
-from agent_connector_sdk.config import setting
+from scion_sdk.config import setting
 
 from .connection_security import (
     ConnectionPolicyError,
@@ -738,16 +738,16 @@ class HostManager:
     def _entitled(self, namespace: str, names: list[str]) -> list[str]:
         """Filter a resource-name list to what the calling identity may reach.
 
-        Routes the names through agent-connector-sdk' shared identity-scoped resolver
+        Routes the names through scion-sdk' shared identity-scoped resolver
         (CONCEPT:AU-OS.identity.identity-scoped-resource-autoload): a caller's
         Okta/Keycloak groups decide which SSH host aliases auto-load for them.
         The ambient ``SYSTEM_ACTOR`` (unauthenticated/local) holds ``admin`` →
         sees all, so behaviour is unchanged until a real identity scopes it
-        down. Degrades to the full list if agent-connector-sdk predates the
+        down. Degrades to the full list if scion-sdk predates the
         resolver.
         """
         try:
-            from agent_connector_sdk.entitlements import identity_scoped_resources
+            from scion_sdk.entitlements import identity_scoped_resources
         except Exception:
             return list(names)
         return list(identity_scoped_resources(namespace, names))
@@ -1988,7 +1988,7 @@ class Tunnel:
 # A well-commented template documenting every supported host field and the
 # Ansible-style group structure. Written verbatim by `tunnel-manager inventory init`.
 INVENTORY_TEMPLATE = """\
-# tunnel-manager / agent-connector-sdk shared inventory
+# tunnel-manager / scion-sdk shared inventory
 # ------------------------------------------------------------------------------
 # Maps short host aliases (e.g. `edge-node`) to their SSH connection details. Every
 # ecosystem surface reads THIS file: the HostManager Python API, the

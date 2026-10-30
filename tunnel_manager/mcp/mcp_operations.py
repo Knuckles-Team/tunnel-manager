@@ -5,11 +5,11 @@ Auto-generated from mcp_server.py during ecosystem standardization.
 
 import logging
 
-from agent_connector_sdk.mcp.concurrency import run_blocking
-from agent_connector_sdk.mcp.context import ctx_confirm_destructive, ctx_log
-from agent_connector_sdk.progress import ctx_progress
 from fastmcp import Context, FastMCP
 from pydantic import Field
+from scion_sdk.mcp.concurrency import run_blocking
+from scion_sdk.mcp.context import ctx_confirm_destructive, ctx_log
+from scion_sdk.progress import ctx_progress
 
 from tunnel_manager.mcp_server import ResponseBuilder
 from tunnel_manager.operation_manager import operation_manager

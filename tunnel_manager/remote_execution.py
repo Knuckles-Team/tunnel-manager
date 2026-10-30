@@ -25,9 +25,6 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from agent_connector_sdk.config import setting
-from agent_connector_sdk.entitlements import identity_scoped_resources
-from agent_connector_sdk.identity import ActorContext, use_actor
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -39,6 +36,9 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from scion_sdk.config import setting
+from scion_sdk.entitlements import identity_scoped_resources
+from scion_sdk.identity import ActorContext, use_actor
 
 from .connection_security import (
     ConnectionPolicyError,

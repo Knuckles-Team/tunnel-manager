@@ -38,7 +38,7 @@ Use `SPECIFIED/NOT_AUDITED` for a complete build spec with open implementation. 
 | `TM-INVENTORY-001` | [One operator inventory authority](inventory-authority/spec.md) | XDG inventory selection, tunnel-manager consumers, and read-only runtime projection contract | `SPECIFIED / NOT_AUDITED` |
 | `CONN-TUNNEL-MANAGER-SDK` | [Shared SDK capabilities in tunnel-manager](sdk/spec.md) | Credential resolution and the SDK floor | `SPECIFIED` |
 
-Related public owner specs: [agent-connector-sdk](https://github.com/Knuckles-Team/agent-connector-sdk/tree/main/specs) owns shared application services; [arbora](https://github.com/Knuckles-Team/arbora/tree/main/specs) owns serving composition; [repository-manager](https://github.com/Knuckles-Team/repository-manager/tree/main/specs) owns repository/workspace discovery. [container-manager-mcp](https://github.com/Knuckles-Team/container-manager-mcp) consumes the inventory projection. Tunnel-manager remains the owner of its reader and write behavior.
+Related public owner specs: [scion-sdk](https://github.com/Knuckles-Team/scion-sdk/tree/main/specs) owns shared application services; [arbora](https://github.com/Knuckles-Team/arbora/tree/main/specs) owns serving composition; [repository-manager](https://github.com/Knuckles-Team/repository-manager/tree/main/specs) owns repository/workspace discovery. [container-manager-mcp](https://github.com/Knuckles-Team/container-manager-mcp) consumes the inventory projection. Tunnel-manager remains the owner of its reader and write behavior.
 
 ## Contributions
 

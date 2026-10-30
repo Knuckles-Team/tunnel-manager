@@ -5,10 +5,10 @@ Auto-generated from mcp_server.py during ecosystem standardization.
 
 import logging
 
-from agent_connector_sdk.mcp.concurrency import run_blocking
-from agent_connector_sdk.mcp.context import ctx_log
 from fastmcp import Context, FastMCP
 from pydantic import Field
+from scion_sdk.mcp.concurrency import run_blocking
+from scion_sdk.mcp.context import ctx_log
 
 from tunnel_manager.advanced_file_manager import AdvancedFileManager
 from tunnel_manager.connection_security import resolve_secret_ref

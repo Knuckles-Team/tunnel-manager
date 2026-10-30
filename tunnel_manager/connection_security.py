@@ -14,7 +14,7 @@ import shlex
 import stat
 from pathlib import Path
 
-from agent_connector_sdk.config import setting
+from scion_sdk.config import setting
 
 _HOST_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]{0,251}[A-Za-z0-9])?\Z")
 _USER_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}\Z")
@@ -182,9 +182,9 @@ def resolve_secret_ref(value: str | None) -> str | None:
     reference = validate_secret_ref(value)
     if reference is None:
         return None
-    from agent_connector_sdk.credentials.references import SecretReferenceError
-    from agent_connector_sdk.credentials.resolution import resolve_secret_reference
-    from agent_connector_sdk.credentials.resolver import CredentialUnavailableError
+    from scion_sdk.credentials.references import SecretReferenceError
+    from scion_sdk.credentials.resolution import resolve_secret_reference
+    from scion_sdk.credentials.resolver import CredentialUnavailableError
 
     try:
         resolved = resolve_secret_reference(reference)

@@ -18,7 +18,7 @@
 ## Functional Requirements
 
 - **FR-001**: Minor update: pytest-xdist 3.6.0 (constraint — not installed) -> 3.8.0
-- **FR-002**: Minor update: agent-connector-sdk 0.2.40 (installed) -> 0.16.0
+- **FR-002**: Minor update: scion-sdk 0.2.40 (installed) -> 0.16.0
 - **FR-003**: Minor update: asyncssh 2.14.0 (constraint — not installed) -> 2.23.0
 - **FR-004**: MAJOR update: paramiko 4.0.0 (constraint — not installed) -> 5.0.0
 - **FR-005**: Moderate avg cyclomatic complexity: 8.3
@@ -61,7 +61,7 @@
 - **FR-042**: Only 25% of env vars documented in README.md
 - **FR-043**: Undocumented env vars: AUTH_TYPE, EUNOMIA_POLICY_FILE, EUNOMIA_TYPE, LLM_API_KEY, LLM_BASE_URL, OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_PROTOCOL, OTEL_EXPORTER_OTLP_PUBLIC_KEY, OTEL_EXPORTER_OTLP_SECRET_KEY, TM_FILES_TOOL
 - **FR-044**: 15 Python env vars not in .env.example: LLM_API_KEY, LLM_BASE_URL, MCP_URL, MODEL_ID, TUNNEL_CERTIFICATE
-- **FR-045**: Analysis error: No module named 'agent_connector_sdk.knowledge_graph'
+- **FR-045**: Analysis error: No module named 'scion_sdk.knowledge_graph'
 
 ## Success Criteria
 
