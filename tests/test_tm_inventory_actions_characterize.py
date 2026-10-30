@@ -96,12 +96,9 @@ class TestConfigureKeyAuth:
 
         assert result["status_code"] == 200
         assert result["details"]["host_results"][0]["status"] == "success"
-        # Not asserting the exact hostname string: sanitize_for_persistence's
-        # NER pass non-deterministically (context-dependent) also tags a bare
-        # dotted-quad as [REDACTED_LOCATION] in this action's message shape.
         assert len(result["details"]["host_results"]) == 1
-        # sanitize_for_persistence redacts local absolute paths.
-        assert result["files_copied"] == ["[REDACTED_POSIX_LOCAL_PATH]"]
+        # Tool output keeps local paths (sanitize_tool_response redacts secrets only).
+        assert result["files_copied"] == [f"{key}.pub"]
 
     @pytest.mark.asyncio
     async def test_invalid_key_type_rejected(self):
@@ -158,7 +155,7 @@ class TestCopySshConfig:
             result = await _call(fn, action="copy_ssh_config", cfg=str(cfg))
 
         assert result["status_code"] == 200
-        assert result["files_copied"] == ["[REDACTED_POSIX_LOCAL_PATH]"]
+        assert result["files_copied"] == [str(cfg)]
         assert result["details"]["host_results"][0]["status"] == "success"
 
     @pytest.mark.asyncio
@@ -193,7 +190,7 @@ class TestRotateKey:
 
         assert result["status_code"] == 200
         assert result["details"]["host_results"][0]["status"] == "success"
-        assert result["files_copied"] == ["[REDACTED_POSIX_LOCAL_PATH]"]
+        assert result["files_copied"] == [str(tmp_path / "id_192.0.2.17.pub")]
         # The new key path is `key_pfx + hostname`, expanded.
         mock_tunnel.rotate_ssh_key.assert_called_once_with(
             str(tmp_path / "id_192.0.2.17"), key_type="ed25519"
@@ -233,10 +230,9 @@ class TestSendFile:
 
         assert result["status_code"] == 200
         host_results = result["details"]["host_results"]
-        # BUG, pinned as-is: index 0 is the seeded local-path string (redacted
-        # by sanitize_for_persistence), not a per-host result dict; the real
-        # per-host dict is pushed to index 1.
-        assert host_results[0] == "[REDACTED_POSIX_LOCAL_PATH]"
+        # BUG, pinned as-is: index 0 is the seeded local-path string, not a
+        # per-host result dict; the real per-host dict is pushed to index 1.
+        assert host_results[0] == str(local)
         assert len(host_results) == 2
         assert host_results[1]["status"] == "success"
         # BUG, pinned as-is: files_copied is empty; `files` is never

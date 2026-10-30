@@ -359,8 +359,8 @@ def security_posture() -> dict[str, bool | int]:
 def describe_error(exc: BaseException) -> str:
     """``Type: message`` for a failure, so a caller sees the cause.
 
-    Every tool response passes through ``sanitize_for_persistence``, which
-    redacts secrets and local paths from this text before it leaves the server.
+    Every tool response passes through ``sanitize_tool_response``, which
+    redacts secrets from this text but keeps local paths, since they are the cause.
     """
     detail = str(exc).strip()
     return f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
