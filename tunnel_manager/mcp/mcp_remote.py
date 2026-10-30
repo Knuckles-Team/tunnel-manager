@@ -7,13 +7,13 @@ import logging
 import os
 import subprocess
 
-from agent_connector_sdk.config import setting
-from agent_connector_sdk.mcp.concurrency import run_blocking
-from agent_connector_sdk.mcp.context import ctx_confirm_destructive, ctx_log
-from agent_connector_sdk.progress import ctx_progress
-from agent_connector_sdk.utilities import to_integer
 from fastmcp import Context, FastMCP
 from pydantic import Field
+from scion_sdk.config import setting
+from scion_sdk.mcp.concurrency import run_blocking
+from scion_sdk.mcp.context import ctx_confirm_destructive, ctx_log
+from scion_sdk.progress import ctx_progress
+from scion_sdk.utilities import to_integer
 
 from tunnel_manager.connection_security import (
     ConnectionPolicyError,

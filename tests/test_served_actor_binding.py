@@ -18,12 +18,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 import uvicorn
-from agent_connector_sdk.connector import build_server
-from agent_connector_sdk.mcp import server as sdk_server
-from agent_connector_sdk.mcp.served_security import ServedSecurityOverride
 from fastmcp import Client
 from fastmcp.server.auth.providers.jwt import RSAKeyPair
 from mcp.shared.exceptions import MCPError
+from scion_sdk.connector import build_server
+from scion_sdk.mcp import server as sdk_server
+from scion_sdk.mcp.served_security import ServedSecurityOverride
 
 from tunnel_manager.mcp_server import host_manager
 

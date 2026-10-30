@@ -12,7 +12,7 @@ import check_env_var_drift  # noqa: E402
 
 
 def test_resource_limit_family_is_visible_to_env_drift_scanner() -> None:
-    from agent_connector_sdk.mcp import env_drift as drift
+    from scion_sdk.mcp import env_drift as drift
 
     root = REPOSITORY_ROOT
     families = drift._scan_dynamic_families(root)

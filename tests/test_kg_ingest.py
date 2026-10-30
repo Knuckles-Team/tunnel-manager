@@ -1,7 +1,7 @@
 """Native epistemic-graph typed-node ingestion — Wire-First coverage.
 
 Exercises the real ``ingest_entities`` / ``ingest_documents`` / ``ingest_hosts`` seam
-with a fake transport one level below ``agent_connector_sdk.ingest.KnowledgeIngest``
+with a fake transport one level below ``scion_sdk.ingest.KnowledgeIngest``
 (no engine required), so the SDK's own request-building/validation/privacy-guard
 contract runs unfaked, asserting the HostManager inventory →
 :Host/:HostGroup/:SshKey mapping.
@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from agent_connector_sdk.ingest import IngestError, KnowledgeIngest
+from scion_sdk.ingest import IngestError, KnowledgeIngest
 
 from tunnel_manager.kg_ingest import (
     ingest_documents,

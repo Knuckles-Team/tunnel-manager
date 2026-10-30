@@ -21,7 +21,7 @@ FORBIDDEN_PASSWORD_ENV = "TUNNEL_PASSWORD"
 
 
 def _shared_checker() -> Any:
-    from agent_connector_sdk.mcp import env_drift as check_env_var_drift
+    from scion_sdk.mcp import env_drift as check_env_var_drift
 
     return check_env_var_drift
 

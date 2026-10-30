@@ -1,6 +1,6 @@
 """Action-discovery standardization checks for tunnel-manager MCP tools.
 
-Verifies the shared agent_connector_sdk.mcp.action_dispatch.resolve_action wiring:
+Verifies the shared scion_sdk.mcp.action_dispatch.resolve_action wiring:
 list_actions discovery payloads and rich did-you-mean errors on bad actions.
 """
 

@@ -1,6 +1,6 @@
 # tunnel-manager
 
-An **SSH tunnel, remote-execution and MCP/agent server** for the agent-connector-sdk
+An **SSH tunnel, remote-execution and MCP/agent server** for the scion-sdk
 ecosystem — the agentless execution arm that lets agents run commands, transfer
 files and audit fleets of remote hosts over plain SSH.
 

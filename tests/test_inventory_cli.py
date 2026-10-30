@@ -12,7 +12,7 @@ from tunnel_manager.tunnel_manager import (
 
 
 def _config_dir(tmp_path, monkeypatch):
-    """Point XDG_CONFIG_HOME at a temp dir and return the agent-connector-sdk dir."""
+    """Point XDG_CONFIG_HOME at a temp dir and return the scion-sdk dir."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     config_dir = tmp_path / "agent-connectors"
     config_dir.mkdir(parents=True, exist_ok=True)

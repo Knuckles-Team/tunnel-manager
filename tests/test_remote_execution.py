@@ -9,8 +9,8 @@ from unittest.mock import Mock
 
 import pytest
 import yaml
-from agent_connector_sdk.identity import ActorContext, ActorType
 from pydantic import ValidationError
+from scion_sdk.identity import ActorContext, ActorType
 
 from tunnel_manager.models import CommandResult, HostConfig
 from tunnel_manager.remote_execution import (
