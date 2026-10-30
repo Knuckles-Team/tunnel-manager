@@ -235,8 +235,6 @@ async def test_rotate_key_success(mock_hosts):
 
         mock_tunnel.rotate_ssh_key.assert_called_once()
         assert result["status_code"] == 200
-        # sanitize_for_persistence (inside ResponseBuilder.build) redacts the
-        # IPv4-looking hostname out of the persisted payload -- expected.
         assert result["details"]["host_results"][0]["new_key_path"].startswith(
             "/fake/id_"
         )

@@ -32,7 +32,7 @@ from scion_sdk.config import setting
 from scion_sdk.mcp.action_dispatch import resolve_action
 from scion_sdk.mcp.concurrency import run_blocking
 from scion_sdk.mcp.context import ctx_confirm_destructive, ctx_log
-from scion_sdk.privacy import sanitize_for_persistence
+from scion_sdk.privacy import sanitize_tool_response
 from scion_sdk.progress import ctx_progress
 
 from tunnel_manager.advanced_file_manager import AdvancedFileManager
@@ -105,7 +105,7 @@ class ResponseBuilder:
         locations: list | None = None,
         errors: list | None = None,
     ) -> dict:
-        safe_payload, _ = sanitize_for_persistence(
+        return sanitize_tool_response(
             {
                 "status_code": status,
                 "message": msg,
@@ -117,7 +117,6 @@ class ResponseBuilder:
                 "errors": errors or ([error] if error else []),
             }
         )
-        return safe_payload
 
 
 def _inventory_password_ref(*sources: dict) -> str | None:

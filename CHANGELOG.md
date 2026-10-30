@@ -5,6 +5,12 @@ All notable changes to `tunnel-manager` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.3] - 2026-10-30
+
+### Fixed
+- Tool errors keep the local file paths that name their cause. Responses pass through `scion_sdk.privacy.sanitize_tool_response`, which redacts only secrets.
+- Requires scion-sdk 0.6.3: the trusted local caller (stdio, or HTTP with `--auth-type none`) is no longer rate limited, and the rate limiter keys on the same bound actor as entitlements.
+
 ## [3.4.2] - 2026-10-30
 
 ### Fixed
