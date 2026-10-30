@@ -5,7 +5,8 @@
   "delivery_state": "SPECIFIED",
   "requirement_ids": [
     "TM-INVENTORY-R001",
-    "TM-INVENTORY-R002"
+    "TM-INVENTORY-R002",
+    "TM-INVENTORY-R003"
   ],
   "requirements": [
     {
@@ -24,6 +25,15 @@
       ],
       "verified_by": [
         "tests/test_fleet_name.py:34"
+      ]
+    },
+    {
+      "id": "TM-INVENTORY-R003",
+      "title": "SSH runs without a local username",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "tests/test_no_local_username.py:1"
       ]
     }
   ]

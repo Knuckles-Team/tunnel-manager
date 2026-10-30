@@ -12,7 +12,7 @@ description: >-
 license: MIT
 tags: [tunnel-manager, ssh, remote, exec, scp, mcp]
 metadata:
-  author: Genius
+  author: Knuckles-Team
   version: '0.1.0'
 ---
 # Tunnel Manager — Remote Execution
@@ -58,15 +58,15 @@ Connect via the `mcp-client` skill against the **`tunnel-manager`** MCP server.
 ## Recipes
 Run a command on one host:
 ```json
-{"action": "run_command", "host": "rw710", "user": "genius", "id_file": "~/.ssh/id_shared", "cmd": "uptime"}
+{"action": "run_command", "host": "host-a", "user": "admin", "id_file": "~/.ssh/id_shared", "cmd": "uptime"}
 ```
 Copy a file up to a host:
 ```json
-{"action": "send_file", "host": "rw710", "user": "genius", "lpath": "./deploy.sh", "rpath": "/tmp/deploy.sh"}
+{"action": "send_file", "host": "host-a", "user": "admin", "lpath": "./deploy.sh", "rpath": "/tmp/deploy.sh"}
 ```
 Verify a host is reachable before using it:
 ```json
-{"action": "check_ssh", "host": "rw710", "user": "genius", "id_file": "~/.ssh/id_shared"}
+{"action": "check_ssh", "host": "host-a", "user": "admin", "id_file": "~/.ssh/id_shared"}
 ```
 Fan a command across a whole group (`tm_inventory`), in parallel:
 ```json

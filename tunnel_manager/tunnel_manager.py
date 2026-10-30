@@ -910,8 +910,33 @@ class Tunnel:
             self.logger.warning("Configured SSH client settings were not found")
         return ssh_config
 
+    def _lookup_ssh_config(self) -> dict:
+        """SSH config lookup that survives a process with no local username.
+
+        paramiko calls getpass.getuser() on every lookup. A container running
+        as a uid with no passwd entry and no USER/LOGNAME raises OSError there,
+        although the explicit inventory user makes the local name irrelevant.
+        """
+        try:
+            return self.ssh_config.lookup(self.remote_host)
+        except OSError as exc:
+            self.logger.warning(
+                "SSH config lookup needs a local username (%s); retrying with a uid-derived name",
+                exc,
+            )
+        os.environ.setdefault("LOGNAME", f"uid{os.getuid()}")
+        try:
+            return self.ssh_config.lookup(self.remote_host)
+        except OSError as exc:
+            if not self.username:
+                raise
+            self.logger.warning(
+                "SSH config lookup skipped, using the explicit username only: %s", exc
+            )
+            return {}
+
     def _apply_ssh_config_lookup_and_validate(self) -> None:
-        host_config_ssh = self.ssh_config.lookup(self.remote_host) or {}
+        host_config_ssh = self._lookup_ssh_config() or {}
 
         self.username = self.username or host_config_ssh.get("user")
         self.identity_file = self.identity_file or (

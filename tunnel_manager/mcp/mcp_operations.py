@@ -67,6 +67,7 @@ def register_operations_tools(mcp: FastMCP):
                     {"operation_id": op_id, "operation_type": operation_type},
                 )
             except Exception as e:
+                logger.exception("tool failed: %s: %s", type(e).__name__, e)
                 await ctx_log(
                     ctx, "Failed to start operation", logger=logger, level="error"
                 )
@@ -102,6 +103,7 @@ def register_operations_tools(mcp: FastMCP):
                     {"operation_id": operation_id, "status": status},
                 )
             except Exception as e:
+                logger.exception("tool failed: %s: %s", type(e).__name__, e)
                 await ctx_log(
                     ctx,
                     "Failed to get operation progress",
@@ -144,6 +146,7 @@ def register_operations_tools(mcp: FastMCP):
                         errors=["Operation not found or already completed"],
                     )
             except Exception as e:
+                logger.exception("tool failed: %s: %s", type(e).__name__, e)
                 await ctx_log(
                     ctx, "Failed to cancel operation", logger=logger, level="error"
                 )
@@ -176,6 +179,7 @@ def register_operations_tools(mcp: FastMCP):
                     },
                 )
             except Exception as e:
+                logger.exception("tool failed: %s: %s", type(e).__name__, e)
                 await ctx_log(
                     ctx, "Failed to get resource metrics", logger=logger, level="error"
                 )
@@ -198,6 +202,7 @@ def register_operations_tools(mcp: FastMCP):
                     },
                 )
             except Exception as e:
+                logger.exception("tool failed: %s: %s", type(e).__name__, e)
                 await ctx_log(
                     ctx, "Failed to list active sessions", logger=logger, level="error"
                 )

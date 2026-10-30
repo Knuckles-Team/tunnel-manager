@@ -76,4 +76,5 @@ override-dependencies = [
 exempt = ["specs/*", "specs/**/*"]
 
 [tool.pipelines.container]
+uid = 1000
 debug_apt = ["default-jre", "ripgrep", "tree", "fd-find", "curl", "nano", "build-essential", "cmake", "libssl-dev", "libcurl4-openssl-dev", "pkg-config", "cargo", "rustc"]

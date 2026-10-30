@@ -12,7 +12,7 @@ description: >-
 license: MIT
 tags: [tunnel-manager, ssh, hardening, keys, security-audit, mcp]
 metadata:
-  author: Genius
+  author: Knuckles-Team
   version: '0.1.0'
 ---
 # Tunnel Manager — SSH Hardening & Audit
@@ -73,7 +73,7 @@ Rotate the fleet key:
 ```
 CIS compliance check against one host:
 ```json
-{"action": "compliance_check", "remote_host": "rw710", "username": "genius", "identity_file": "~/.ssh/id_shared", "standard": "cis_benchmark"}
+{"action": "compliance_check", "remote_host": "host-a", "username": "admin", "identity_file": "~/.ssh/id_shared", "standard": "cis_benchmark"}
 ```
 
 ## Gotchas

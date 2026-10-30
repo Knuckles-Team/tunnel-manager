@@ -118,7 +118,11 @@ def validate_host(value: str) -> str:
 
 def validate_username(value: str) -> str:
     if not isinstance(value, str) or not _USER_RE.fullmatch(value):
-        raise ConnectionPolicyError("Invalid SSH username")
+        raise ConnectionPolicyError(
+            "Invalid SSH username: must be a non-empty string matching "
+            f"{_USER_RE.pattern} (got {type(value).__name__} of length "
+            f"{len(value) if isinstance(value, str) else 0})"
+        )
     return value
 
 
@@ -185,11 +189,20 @@ def resolve_secret_ref(value: str | None) -> str | None:
     try:
         resolved = resolve_secret_reference(reference)
     except (SecretReferenceError, CredentialUnavailableError) as exc:
-        raise ConnectionPolicyError("SSH credential resolution failed") from exc
+        raise ConnectionPolicyError(
+            f"SSH credential resolution failed: reference {reference!r} could not "
+            f"be resolved ({type(exc).__name__})"
+        ) from exc
     if resolved is None or not isinstance(resolved, str) or not resolved:
-        raise ConnectionPolicyError("SSH credential resolution failed")
+        raise ConnectionPolicyError(
+            f"SSH credential resolution failed: reference {reference!r} resolved "
+            "to an empty or non-string value"
+        )
     if len(resolved) > 65_536 or "\x00" in resolved:
-        raise ConnectionPolicyError("SSH credential resolution failed")
+        raise ConnectionPolicyError(
+            f"SSH credential resolution failed: reference {reference!r} resolved "
+            "to a value that is too long or contains NUL"
+        )
     return resolved
 
 
@@ -271,16 +284,22 @@ def validated_known_hosts_path(value: str | None = None) -> str:
         info = path.stat()
     except OSError as exc:
         raise ConnectionPolicyError(
-            "A trusted SSH known-hosts file is required"
+            f"A trusted SSH known-hosts file is required: cannot stat {candidate} "
+            f"(TUNNEL_KNOWN_HOSTS): {type(exc).__name__}"
         ) from exc
     if not path.is_file() or stat.S_ISLNK(candidate.lstat().st_mode):
-        raise ConnectionPolicyError("A trusted SSH known-hosts file is required")
+        raise ConnectionPolicyError(
+            f"A trusted SSH known-hosts file is required: {candidate} "
+            "(TUNNEL_KNOWN_HOSTS) is not a regular non-symlink file"
+        )
     if os.name != "nt":
         if info.st_uid not in {0, os.getuid()} or info.st_mode & (
             stat.S_IWGRP | stat.S_IWOTH
         ):
             raise ConnectionPolicyError(
-                "The SSH known-hosts file is not securely owned"
+                f"The SSH known-hosts file is not securely owned: {path} has uid "
+                f"{info.st_uid} (expected 0 or {os.getuid()}) and mode "
+                f"{stat.S_IMODE(info.st_mode):04o} (group/other must not write)"
             )
     return str(path)
 
@@ -293,11 +312,20 @@ def validate_identity_path(value: str | None) -> str | None:
         path = candidate.resolve(strict=True)
         info = path.stat()
     except OSError as exc:
-        raise ConnectionPolicyError("Configured SSH identity is unavailable") from exc
+        raise ConnectionPolicyError(
+            f"Configured SSH identity is unavailable: cannot stat {candidate} "
+            f"(TUNNEL_IDENTITY_FILE): {type(exc).__name__}"
+        ) from exc
     if not path.is_file() or stat.S_ISLNK(candidate.lstat().st_mode):
-        raise ConnectionPolicyError("Configured SSH identity is unavailable")
+        raise ConnectionPolicyError(
+            f"Configured SSH identity is unavailable: {candidate} is not a "
+            "regular non-symlink file"
+        )
     if os.name != "nt" and info.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-        raise ConnectionPolicyError("Configured SSH identity permissions are unsafe")
+        raise ConnectionPolicyError(
+            f"Configured SSH identity permissions are unsafe: {path} has mode "
+            f"{stat.S_IMODE(info.st_mode):04o} (must be 0600 or stricter)"
+        )
     return str(path)
 
 

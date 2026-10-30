@@ -16,6 +16,7 @@ from fastmcp import Context, FastMCP
 from pydantic import Field
 
 from tunnel_manager.connection_security import (
+    ConnectionPolicyError,
     max_transfer_bytes,
     resolve_secret_ref,
     validate_timeout,
@@ -85,11 +86,11 @@ async def _tm_remote_run_command(
             errors=[],
         )
     except Exception as e:
+        logger.exception("tool failed: %s: %s", type(e).__name__, e)
         await ctx_log(ctx, "Cmd fail", logger=logger, level="error")
         await ctx_progress(ctx, 100, 100)
-        return ResponseBuilder.build(
-            500, "Cmd fail", {"host": host, "cmd": cmd}, type(e).__name__
-        )
+        cause = str(e) if isinstance(e, ConnectionPolicyError) else type(e).__name__
+        return ResponseBuilder.build(500, "Cmd fail", {"host": host, "cmd": cmd}, cause)
     finally:
         if "t" in locals():
             await run_blocking(t.close)
@@ -168,6 +169,7 @@ async def _tm_remote_send_file(
             errors=[],
         )
     except Exception as e:
+        logger.exception("tool failed: %s: %s", type(e).__name__, e)
         await ctx_log(ctx, "Upload fail", logger=_logger, level="error")
         return ResponseBuilder.build(
             500,
@@ -237,6 +239,7 @@ async def _tm_remote_receive_file(
             errors=[],
         )
     except Exception as e:
+        logger.exception("tool failed: %s: %s", type(e).__name__, e)
         await ctx_log(ctx, "Download fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
@@ -300,6 +303,7 @@ async def _tm_remote_check_ssh(
             errors=[] if success else [msg],
         )
     except Exception as e:
+        logger.exception("tool failed: %s: %s", type(e).__name__, e)
         await ctx_log(ctx, "Check fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500, "Check fail", {"host": host}, type(e).__name__
@@ -350,6 +354,7 @@ async def _tm_remote_test_key_auth(
             errors=[] if success else [msg],
         )
     except Exception as e:
+        logger.exception("tool failed: %s: %s", type(e).__name__, e)
         await ctx_log(ctx, "Key test fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500, "Key test fail", {"host": host, "key": _key}, type(e).__name__
@@ -454,6 +459,7 @@ async def _tm_remote_setup_passwordless(
             errors=[],
         )
     except Exception as e:
+        logger.exception("tool failed: %s: %s", type(e).__name__, e)
         await ctx_log(ctx, "SSH setup fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
@@ -522,6 +528,7 @@ async def _tm_remote_copy_ssh_config(
             errors=[],
         )
     except Exception as e:
+        logger.exception("tool failed: %s: %s", type(e).__name__, e)
         await ctx_log(ctx, "Copy cfg fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
@@ -643,6 +650,7 @@ async def _tm_remote_rotate_key(
             errors=[],
         )
     except Exception as e:
+        logger.exception("tool failed: %s: %s", type(e).__name__, e)
         await ctx_log(ctx, "Rotate fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
@@ -684,6 +692,7 @@ async def _tm_remote_remove_host_key(
             errors=[] if "Removed" in msg else [msg],
         )
     except Exception as e:
+        logger.exception("tool failed: %s: %s", type(e).__name__, e)
         await ctx_log(ctx, "Remove fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,

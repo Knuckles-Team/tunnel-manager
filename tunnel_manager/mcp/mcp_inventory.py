@@ -36,6 +36,13 @@ from tunnel_manager.tunnel_manager import Tunnel
 logger = logging.getLogger("tunnel-manager-mcp")
 
 
+def cause_of(exc: Exception) -> str:
+    """Specific, secret-free cause for policy errors; the type name otherwise."""
+    from tunnel_manager.connection_security import ConnectionPolicyError
+
+    return str(exc) if isinstance(exc, ConnectionPolicyError) else type(exc).__name__
+
+
 async def _tm_inventory_configure_key_auth(
     action: str,
     inventory,
@@ -136,6 +143,7 @@ async def _tm_inventory_configure_key_auth(
                     "errors": [] if res else [msg],
                 }
             except Exception as e:
+                logger.exception("tool failed: %s: %s", type(e).__name__, e)
                 return {
                     "hostname": host,
                     "status": "failed",
@@ -167,6 +175,7 @@ async def _tm_inventory_configure_key_auth(
                         if ctx:
                             await ctx.report_progress(progress=i, total=total)
                     except Exception as e:
+                        logger.exception("tool failed: %s: %s", type(e).__name__, e)
                         results.append(
                             {
                                 "hostname": "unknown",
@@ -207,6 +216,7 @@ async def _tm_inventory_configure_key_auth(
             errors=errors,
         )
     except Exception as e:
+        logger.exception("tool failed: %s: %s", type(e).__name__, e)
         await ctx_log(ctx, "Setup all fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
@@ -264,6 +274,7 @@ async def _tm_inventory_mesh_bootstrap(
             errors=res["errors"],
         )
     except Exception as e:
+        logger.exception("tool failed: %s: %s", type(e).__name__, e)
         await ctx_log(ctx, "Mesh bootstrap fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
@@ -340,13 +351,14 @@ async def _tm_inventory_run_command(
                     "errors": [],
                 }
             except Exception as e:
+                logger.exception("tool failed: %s: %s", type(e).__name__, e)
                 return {
                     "hostname": host,
                     "status": "failed",
                     "message": "Cmd fail",
                     "stdout": "",
-                    "stderr": type(e).__name__,
-                    "errors": [type(e).__name__],
+                    "stderr": cause_of(e),
+                    "errors": [cause_of(e)],
                 }
             finally:
                 if "t" in locals():
@@ -366,6 +378,7 @@ async def _tm_inventory_run_command(
                         if ctx:
                             await ctx.report_progress(progress=i, total=total)
                     except Exception as e:
+                        logger.exception("tool failed: %s: %s", type(e).__name__, e)
                         results.append(
                             {
                                 "hostname": "unknown",
@@ -407,6 +420,7 @@ async def _tm_inventory_run_command(
             errors=errors,
         )
     except Exception as e:
+        logger.exception("tool failed: %s: %s", type(e).__name__, e)
         await ctx_log(ctx, "Cmd all fail", logger=logger, level="error")
         await ctx_progress(ctx, 100, 100)
         return ResponseBuilder.build(
@@ -467,6 +481,7 @@ async def _tm_inventory_copy_ssh_config(
                     "errors": [],
                 }
             except Exception as e:
+                logger.exception("tool failed: %s: %s", type(e).__name__, e)
                 return {
                     "hostname": h["hostname"],
                     "status": "failed",
@@ -494,6 +509,7 @@ async def _tm_inventory_copy_ssh_config(
                         if ctx:
                             await ctx.report_progress(progress=i, total=total)
                     except Exception as e:
+                        logger.exception("tool failed: %s: %s", type(e).__name__, e)
                         results.append(
                             {
                                 "hostname": "unknown",
@@ -535,6 +551,7 @@ async def _tm_inventory_copy_ssh_config(
             errors=errors,
         )
     except Exception as e:
+        logger.exception("tool failed: %s: %s", type(e).__name__, e)
         await ctx_log(ctx, "Copy all fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
@@ -598,6 +615,7 @@ async def _tm_inventory_rotate_key(
                     "new_key_path": _key,
                 }
             except Exception as e:
+                logger.exception("tool failed: %s: %s", type(e).__name__, e)
                 return {
                     "hostname": h["hostname"],
                     "status": "failed",
@@ -628,6 +646,7 @@ async def _tm_inventory_rotate_key(
                         if ctx:
                             await ctx.report_progress(progress=i, total=total)
                     except Exception as e:
+                        logger.exception("tool failed: %s: %s", type(e).__name__, e)
                         results.append(
                             {
                                 "hostname": "unknown",
@@ -670,6 +689,7 @@ async def _tm_inventory_rotate_key(
             errors=errors,
         )
     except Exception as e:
+        logger.exception("tool failed: %s: %s", type(e).__name__, e)
         await ctx_log(ctx, "Rotate all fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
@@ -746,6 +766,7 @@ async def _tm_inventory_send_file(
                     "errors": [],
                 }
             except Exception as e:
+                logger.exception("tool failed: %s: %s", type(e).__name__, e)
                 return {
                     "hostname": host,
                     "status": "failed",
@@ -773,6 +794,7 @@ async def _tm_inventory_send_file(
                         if ctx:
                             await ctx.report_progress(progress=i, total=total)
                     except Exception as e:
+                        logger.exception("tool failed: %s: %s", type(e).__name__, e)
                         results.append(
                             {
                                 "hostname": "unknown",
@@ -813,6 +835,7 @@ async def _tm_inventory_send_file(
             errors=errors,
         )
     except Exception as e:
+        logger.exception("tool failed: %s: %s", type(e).__name__, e)
         await ctx_log(ctx, "Upload all fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,
@@ -877,6 +900,7 @@ async def _tm_inventory_receive_file(
                     "local_path": _lpath,
                 }
             except Exception as e:
+                logger.exception("tool failed: %s: %s", type(e).__name__, e)
                 return {
                     "hostname": host,
                     "status": "failed",
@@ -906,6 +930,7 @@ async def _tm_inventory_receive_file(
                         if ctx:
                             await ctx.report_progress(progress=i, total=total)
                     except Exception as e:
+                        logger.exception("tool failed: %s: %s", type(e).__name__, e)
                         results.append(
                             {
                                 "hostname": "unknown",
@@ -948,6 +973,7 @@ async def _tm_inventory_receive_file(
             errors=errors,
         )
     except Exception as e:
+        logger.exception("tool failed: %s: %s", type(e).__name__, e)
         await ctx_log(ctx, "Download all fail", logger=logger, level="error")
         return ResponseBuilder.build(
             500,

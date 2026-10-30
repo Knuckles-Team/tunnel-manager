@@ -109,6 +109,7 @@ def register_system_tools(mcp: FastMCP):
                     ],
                 )
         except Exception as e:
+            logger.exception("tool failed: %s: %s", type(e).__name__, e)
             await ctx_log(
                 ctx, "System intelligence fail ({action})", logger=logger, level="error"
             )
