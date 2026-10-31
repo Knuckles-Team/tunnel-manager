@@ -316,17 +316,22 @@ def _executable() -> str:
 class _HttpServer:
     def __init__(self, argv: list[str], env: dict[str, str], port: int) -> None:
         self.url = f"http://127.0.0.1:{port}/mcp"
+        # The server logs every request to stderr. An undrained PIPE fills (a few
+        # KB on Windows) and blocks the server mid-request, so the client times
+        # out. A file never blocks and keeps the log to show on failure.
+        self.log_path = Path(env["HOME"]).parent / f"server-{port}.log"
+        self.log = self.log_path.open("w+", encoding="utf-8", errors="replace")
         self.proc = subprocess.Popen(
             [_executable(), *argv, "--port", str(port)],
             env=env,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            stderr=self.log,
             text=True,
         )
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
             if self.proc.poll() is not None:
-                raise AssertionError(f"server exited: {self.proc.stderr.read()}")
+                raise AssertionError(f"server exited: {self._read_log()}")
             try:
                 httpx.get(f"http://127.0.0.1:{port}/health", timeout=1)
                 return
@@ -334,14 +339,22 @@ class _HttpServer:
                 time.sleep(0.2)
         raise AssertionError("server did not start")
 
+    def _read_log(self) -> str:
+        self.log.flush()
+        return self.log_path.read_text(encoding="utf-8", errors="replace")
+
     def stop(self) -> str:
         self.proc.terminate()
         try:
-            _out, err = self.proc.communicate(timeout=10)
+            self.proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             self.proc.kill()
-            _out, err = self.proc.communicate()
-        return err or ""
+            self.proc.wait()
+        self.log.close()
+        err = self._read_log()
+        # pytest shows captured output for a failing test: the server's cause.
+        print(f"--- server stderr ({self.log_path.name}) ---\n{err[-6000:]}")
+        return err
 
 
 # ------------------------------------------------------------------ the sweep
