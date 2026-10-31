@@ -15,8 +15,8 @@ from scion_sdk.progress import ctx_progress
 from scion_sdk.utilities import to_integer
 
 from tunnel_manager.connection_security import (
-    generate_key_pair,
     ConnectionPolicyError,
+    generate_key_pair,
     max_transfer_bytes,
     resolve_secret_ref,
     validate_timeout,

@@ -57,9 +57,15 @@ def _trusted_directories() -> tuple[Path, ...]:
         return tuple(Path(item).expanduser().resolve() for item in configured)
     if os.name == "nt":
         system_root = Path(setting("SYSTEMROOT", r"C:\Windows"))
-        return (
-            (system_root / "System32" / "OpenSSH").resolve(),
-            (system_root / "System32").resolve(),
+        program_files = Path(setting("PROGRAMFILES", r"C:\Program Files"))
+        return tuple(
+            path.resolve()
+            for path in (
+                system_root / "System32" / "OpenSSH",
+                system_root / "System32",
+                program_files / "OpenSSH",
+                program_files / "Git" / "usr" / "bin",
+            )
         )
     return tuple(
         Path(item)
@@ -68,9 +74,11 @@ def _trusted_directories() -> tuple[Path, ...]:
 
 
 def _contained_in(path: Path, roots: tuple[Path, ...]) -> bool:
+    # Windows paths are case-insensitive; normcase is a no-op on POSIX.
+    target = Path(os.path.normcase(path))
     for root in roots:
         try:
-            path.relative_to(root)
+            target.relative_to(os.path.normcase(root))
             return True
         except ValueError:
             continue

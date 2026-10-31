@@ -109,14 +109,14 @@ async def test_async_tunnel_fails_before_connect_without_trust_file(
     mock_connect.assert_not_called()
 
 
-def test_known_hosts_rejects_symlinks_and_writable_files(tmp_path):
+def test_known_hosts_rejects_symlinks_and_writable_files(tmp_path, grant_broad_access):
     target = _known_hosts(tmp_path)
     link = tmp_path / "linked-known-hosts"
     link.symlink_to(target)
     with pytest.raises(ConnectionPolicyError, match="trusted SSH known-hosts"):
         validated_known_hosts_path(str(link))
 
-    target.chmod(0o622)
+    grant_broad_access(target, write=True)
     with pytest.raises(ConnectionPolicyError, match="securely owned"):
         validated_known_hosts_path(str(target))
 

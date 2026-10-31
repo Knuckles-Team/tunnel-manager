@@ -261,11 +261,116 @@ def secure_path(path: str | os.PathLike, *, directory: bool = False) -> None:
     and write, never read-only) and a directory is left to its inherited ACL.
     """
 
-    if os.name == "nt":
+    if _is_windows():
         if not directory:
             os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
         return
     os.chmod(path, 0o700 if directory else 0o600)
+
+
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
+# Principals every local account belongs to: Everyone, Authenticated Users and
+# BUILTIN\Users. A key or trust file that grants them access is not private.
+_BROAD_SIDS = frozenset({"S-1-1-0", "S-1-5-11", "S-1-5-32-545"})
+_ACE_READ = 0x1 | 0x80000000 | 0x10000000 | 0x20000000
+_ACE_WRITE = 0x2 | 0x4 | 0x10000 | 0x40000 | 0x80000 | 0x40000000 | 0x10000000
+
+
+def windows_allowed_aces(path: str | os.PathLike) -> list[tuple[str, int]]:
+    """Return ``(sid, access mask)`` for every allow entry in a file's DACL.
+
+    Windows file modes carry no group/other bits, so the access-control list is
+    the permission state. A missing (NULL) DACL grants Everyone full access.
+    """
+
+    import ctypes
+    from ctypes import wintypes
+
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    void_p = ctypes.c_void_p
+    advapi.GetNamedSecurityInfoW.argtypes = [
+        wintypes.LPCWSTR,
+        ctypes.c_int,
+        wintypes.DWORD,
+        void_p,
+        void_p,
+        ctypes.POINTER(void_p),
+        void_p,
+        ctypes.POINTER(void_p),
+    ]
+    advapi.GetNamedSecurityInfoW.restype = wintypes.DWORD
+    advapi.GetAclInformation.argtypes = [
+        void_p,
+        void_p,
+        wintypes.DWORD,
+        ctypes.c_int,
+    ]
+    advapi.GetAclInformation.restype = wintypes.BOOL
+    advapi.GetAce.argtypes = [void_p, wintypes.DWORD, ctypes.POINTER(void_p)]
+    advapi.GetAce.restype = wintypes.BOOL
+    advapi.ConvertSidToStringSidW.argtypes = [void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    advapi.ConvertSidToStringSidW.restype = wintypes.BOOL
+    kernel.LocalFree.argtypes = [void_p]
+    kernel.LocalFree.restype = void_p
+
+    class AclSizeInformation(ctypes.Structure):
+        _fields_ = [
+            ("AceCount", wintypes.DWORD),
+            ("AclBytesInUse", wintypes.DWORD),
+            ("AclBytesFree", wintypes.DWORD),
+        ]
+
+    dacl, descriptor = void_p(), void_p()
+    status = advapi.GetNamedSecurityInfoW(
+        str(path), 1, 4, None, None, ctypes.byref(dacl), None, ctypes.byref(descriptor)
+    )
+    if status:
+        raise OSError(status, "cannot read the file's access-control list")
+    try:
+        if not dacl.value:
+            return [("S-1-1-0", 0x1FFFFF)]
+        info = AclSizeInformation()
+        if not advapi.GetAclInformation(
+            dacl, ctypes.byref(info), ctypes.sizeof(info), 2
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+        entries: list[tuple[str, int]] = []
+        for index in range(info.AceCount):
+            ace = void_p()
+            if not advapi.GetAce(dacl, index, ctypes.byref(ace)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            if ctypes.c_ubyte.from_address(ace.value).value != 0:  # not ALLOWED
+                continue
+            mask = ctypes.c_uint32.from_address(ace.value + 4).value
+            text = wintypes.LPWSTR()
+            if not advapi.ConvertSidToStringSidW(
+                void_p(ace.value + 8), ctypes.byref(text)
+            ):
+                raise ctypes.WinError(ctypes.get_last_error())
+            try:
+                entries.append((str(text.value), mask))
+            finally:
+                kernel.LocalFree(ctypes.cast(text, void_p))
+        return entries
+    finally:
+        kernel.LocalFree(descriptor)
+
+
+def windows_broad_access(path: str | os.PathLike, *, write_only: bool) -> list[str]:
+    """SIDs of Everyone-class principals with access (write, if ``write_only``)."""
+
+    wanted = _ACE_WRITE if write_only else _ACE_READ | _ACE_WRITE
+    return sorted(
+        {
+            sid
+            for sid, mask in windows_allowed_aces(path)
+            if sid in _BROAD_SIDS and mask & wanted
+        }
+    )
 
 
 def validate_remote_path(value: str) -> str:
@@ -324,7 +429,14 @@ def validated_known_hosts_path(value: str | None = None) -> str:
             f"A trusted SSH known-hosts file is required: {candidate} "
             "(TUNNEL_KNOWN_HOSTS) is not a regular non-symlink file"
         )
-    if os.name != "nt":
+    if _is_windows():
+        broad = windows_broad_access(path, write_only=True)
+        if broad:
+            raise ConnectionPolicyError(
+                f"The SSH known-hosts file is not securely owned: {path} grants "
+                f"write access to {', '.join(broad)} (Everyone/Users must not write)"
+            )
+    else:
         if info.st_uid not in {0, current_uid()} or info.st_mode & (
             stat.S_IWGRP | stat.S_IWOTH
         ):
@@ -353,7 +465,14 @@ def validate_identity_path(value: str | None) -> str | None:
             f"Configured SSH identity is unavailable: {candidate} is not a "
             "regular non-symlink file"
         )
-    if os.name != "nt" and info.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+    if _is_windows():
+        broad = windows_broad_access(path, write_only=False)
+        if broad:
+            raise ConnectionPolicyError(
+                f"Configured SSH identity permissions are unsafe: {path} grants "
+                f"access to {', '.join(broad)} (must be owner-only)"
+            )
+    elif info.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
         raise ConnectionPolicyError(
             f"Configured SSH identity permissions are unsafe: {path} has mode "
             f"{stat.S_IMODE(info.st_mode):04o} (must be 0600 or stricter)"

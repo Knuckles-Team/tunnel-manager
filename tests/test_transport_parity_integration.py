@@ -48,6 +48,18 @@ AUDIENCE = "agent-services"
 ALIAS = "simhost"
 SPEC = "CONN-TUNNEL-MANAGER-SDK-R005"
 CALL_TIMEOUT = 90
+# The server limits each non-local actor to 10 requests/s (burst 20). A sweep of
+# ~45 fast calls would exceed that and be refused, so calls start at least this
+# far apart: half the sustained limit, whatever the machine's speed.
+MIN_CALL_SPACING = 0.2
+_last_call = [0.0]
+
+
+async def _pace() -> None:
+    wait = _last_call[0] + MIN_CALL_SPACING - time.monotonic()
+    if wait > 0:
+        await asyncio.sleep(wait)
+    _last_call[0] = time.monotonic()
 
 
 def _free_port() -> int:
@@ -72,12 +84,21 @@ class _SSHHost:
         self._thread = threading.Thread(target=self._run, daemon=True)
 
     async def _process(self, process: asyncssh.SSHServerProcess) -> None:
+        # The simulated host is POSIX: run its commands with a real sh (Git's on
+        # Windows), not cmd.exe, and keep the variables Windows needs to spawn it.
+        sh = shutil.which("sh")
+        assert sh, "the simulated POSIX host needs an sh executable"
         env = {
-            "HOME": str(self.remote_home),
-            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": self.remote_home.as_posix(),
+            "PATH": os.pathsep.join([str(Path(sh).parent), os.environ.get("PATH", "")]),
             "LANG": "C",
         }
-        proc = await asyncio.create_subprocess_shell(
+        for name in ("SYSTEMROOT", "TEMP", "TMP"):
+            if name in os.environ:
+                env[name] = os.environ[name]
+        proc = await asyncio.create_subprocess_exec(
+            sh,
+            "-c",
             process.command or "true",
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
@@ -99,7 +120,7 @@ class _SSHHost:
         authorized = asyncssh.import_authorized_keys(
             self.client_key.export_public_key().decode()
         )
-        home = str(self.remote_home)
+        home = self.remote_home.as_posix()
 
         class _HomeSFTP(asyncssh.SFTPServer):
             """Real paths; ``~`` and relative paths land in the remote home."""
@@ -108,7 +129,7 @@ class _SSHHost:
                 text = path.decode()
                 if text.startswith("~"):
                     text = home + text[1:]
-                elif not text.startswith("/"):
+                elif not (text.startswith("/") or Path(text).is_absolute()):
                     text = f"{home}/{text}"
                 return text.encode()
 
@@ -326,7 +347,7 @@ class _HttpServer:
 # ------------------------------------------------------------------ the sweep
 def _arguments(paths: dict[str, str]) -> dict[str, dict[str, Any]]:
     """Arguments per tool. Destructive inventory tools come last."""
-    work = paths["WORK"]
+    work = Path(paths["WORK"]).as_posix()
     remote = {"host": ALIAS, "timeout": 30}
     inventory = {"inventory": paths["INVENTORY"], "group": "sim", "timeout": 30}
     system = {"remote_host": ALIAS}
@@ -454,6 +475,7 @@ async def _sweep(client: Client[Any], paths: dict[str, str]) -> dict[str, str]:
     assert listed == set(arguments), listed ^ set(arguments)
     outcomes: dict[str, str] = {}
     for name, args in arguments.items():
+        await _pace()
         try:
             result = await asyncio.wait_for(
                 client.call_tool(name, args, raise_on_error=False), CALL_TIMEOUT

@@ -25,3 +25,23 @@ def _bound_system_actor():
     )
     with use_actor(actor):
         yield actor
+
+
+@pytest.fixture
+def grant_broad_access():
+    """Make a file readable (and optionally writable) by group/other or Everyone."""
+    import os
+    import subprocess
+
+    def grant(path, write=False):
+        if os.name == "nt":
+            right = "(R,W)" if write else "(R)"
+            subprocess.run(
+                ["icacls", str(path), "/grant", f"*S-1-1-0:{right}"],
+                check=True,
+                capture_output=True,
+            )
+        else:
+            os.chmod(path, 0o622 if write else 0o644)
+
+    return grant
