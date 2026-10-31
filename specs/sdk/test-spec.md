@@ -12,3 +12,4 @@ Tests use synthetic credentials and mock transports. They need no network.
 | One connection resolver | `CONN-TUNNEL-MANAGER-SDK-R005.1` | inventory group port is used, not 22; unknown alias is a 400 from both tools |
 | Every tool on three transports | `CONN-TUNNEL-MANAGER-SDK-R005.2` | the 41 tool outcomes match across stdio, HTTP none and HTTP JWT against a real SSH host |
 | Causes, native keys, confirm | `CONN-TUNNEL-MANAGER-SDK-R005.3` | failures carry `Type: message`; key generation needs no binary; `confirm=true` works without elicitation |
+| Windows portability | `CONN-TUNNEL-MANAGER-SDK-R006` | with `os.fchmod`/`os.getuid` removed and `os.name` set to `nt`, files are hardened with `S_IREAD\|S_IWRITE`, inventory and key writes succeed, and no source calls `/usr/bin/ssh-keygen` |

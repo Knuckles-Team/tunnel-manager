@@ -35,6 +35,9 @@ from .connection_security import (
     validate_secret_ref,
     validate_timeout,
     validate_username,
+    current_uid,
+    secure_descriptor,
+    secure_path,
     validated_known_hosts_path,
 )
 from .models import CommandResult, HostConfig
@@ -362,10 +365,10 @@ def _atomic_private_yaml(path: str, value: object) -> None:
         # legitimate users of a shared path. The inventory FILE below is
         # always hardened to 0o600 regardless, which is what actually
         # protects the persisted secret references.
-        os.chmod(directory, 0o700)
+        secure_path(directory, directory=True)
     descriptor, temp_path = tempfile.mkstemp(prefix=".inventory.", dir=directory)
     try:
-        os.fchmod(descriptor, 0o600)
+        secure_descriptor(descriptor)
         payload = yaml.safe_dump(value, default_flow_style=False).encode("utf-8")
         offset = 0
         while offset < len(payload):
@@ -374,7 +377,7 @@ def _atomic_private_yaml(path: str, value: object) -> None:
         os.close(descriptor)
         descriptor = -1
         os.replace(temp_path, path)
-        os.chmod(path, 0o600)
+        secure_path(path)
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -954,7 +957,9 @@ class Tunnel:
                 "SSH config lookup needs a local username (%s); retrying with a uid-derived name",
                 exc,
             )
-        os.environ.setdefault("LOGNAME", f"uid{os.getuid()}")
+        os.environ.setdefault(
+            "LOGNAME", f"uid{current_uid()}" if current_uid() is not None else "tunnel"
+        )
         try:
             return self.ssh_config.lookup(self.remote_host)
         except OSError as exc:
@@ -1312,13 +1317,13 @@ class Tunnel:
             descriptor, temp_path = tempfile.mkstemp(
                 prefix=".managed-download.", dir=destination_dir
             )
-            os.fchmod(descriptor, 0o600)
+            secure_descriptor(descriptor)
             with os.fdopen(descriptor, "wb") as stream:
                 descriptor = -1
                 self.sftp.getfo(remote_path, stream)
             os.replace(temp_path, local_path)
             temp_path = ""
-            os.chmod(local_path, 0o600)
+            secure_path(local_path)
             self.logger.info("SFTP file transfer completed")
         except Exception as e:
             self.logger.error(
@@ -1541,7 +1546,7 @@ class Tunnel:
     ) -> None:
         descriptor, local_temp = tempfile.mkstemp(prefix=".authorized_keys.")
         try:
-            os.fchmod(descriptor, 0o600)
+            secure_descriptor(descriptor)
             with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                 descriptor = -1
                 stream.write(new_auth_joined)

@@ -5,7 +5,6 @@ Auto-generated from mcp_server.py during ecosystem standardization.
 
 import logging
 import os
-import subprocess
 
 from fastmcp import Context, FastMCP
 from pydantic import Field
@@ -16,6 +15,7 @@ from scion_sdk.progress import ctx_progress
 from scion_sdk.utilities import to_integer
 
 from tunnel_manager.connection_security import (
+    generate_key_pair,
     ConnectionPolicyError,
     max_transfer_bytes,
     resolve_secret_ref,
@@ -407,44 +407,7 @@ async def _tm_remote_setup_passwordless(
         _key = os.path.expanduser(_key)
         pub_key = _key + ".pub"
         if not os.path.exists(pub_key):
-            if key_type == "rsa":
-                await run_blocking(
-                    subprocess.run,
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "rsa",
-                        "-b",
-                        "4096",
-                        "-f",
-                        _key,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                await run_blocking(
-                    subprocess.run,
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "ed25519",
-                        "-f",
-                        _key,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+            await run_blocking(generate_key_pair, _key, key_type)
         await run_blocking(
             t.setup_passwordless_ssh, local_key_path=_key, key_type=key_type
         )
@@ -595,44 +558,7 @@ async def _tm_remote_rotate_key(
         _new_key = os.path.expanduser(new_key)
         new_public_key = _new_key + ".pub"
         if not os.path.exists(_new_key):
-            if key_type == "rsa":
-                await run_blocking(
-                    subprocess.run,
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "rsa",
-                        "-b",
-                        "4096",
-                        "-f",
-                        _new_key,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                await run_blocking(
-                    subprocess.run,
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "ed25519",
-                        "-f",
-                        _new_key,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+            await run_blocking(generate_key_pair, _new_key, key_type)
         await run_blocking(t.rotate_ssh_key, _new_key, key_type=key_type)
         if ctx:
             await ctx.report_progress(progress=100, total=100)
