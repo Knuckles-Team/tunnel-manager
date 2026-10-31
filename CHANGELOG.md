@@ -5,6 +5,14 @@ All notable changes to `tunnel-manager` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.4] - 2026-10-30
+
+### Fixed
+- Windows: inventory writes, downloads, key generation and authorized_keys rotation no longer call `os.fchmod`, which Windows lacks. Private files are hardened by `secure_descriptor` and `secure_path` (`S_IREAD | S_IWRITE` on Windows, 0o600 on POSIX).
+- `os.getuid` is no longer required: the known-hosts owner check and the SSH-config lookup fallback use `current_uid`.
+- `tm_remote` and `tm_inventory` key setup and rotation generate key pairs natively instead of running `/usr/bin/ssh-keygen`.
+- The test suite now runs in a Windows CI job.
+
 ## [3.4.3] - 2026-10-30
 
 ### Fixed

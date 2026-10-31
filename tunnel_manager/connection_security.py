@@ -236,6 +236,38 @@ def validate_command(command: str) -> str:
     return command
 
 
+def current_uid() -> int | None:
+    """Return the POSIX uid, or ``None`` on platforms without one (Windows)."""
+
+    return os.getuid() if hasattr(os, "getuid") else None
+
+
+def secure_descriptor(descriptor: int) -> None:
+    """Make an open file owner-only: ``fchmod 0o600`` on POSIX.
+
+    Windows has no ``os.fchmod``; its files are hardened by path afterwards
+    through :func:`secure_path` once the descriptor is closed.
+    """
+
+    if hasattr(os, "fchmod"):
+        os.fchmod(descriptor, 0o600)
+
+
+def secure_path(path: str | os.PathLike, *, directory: bool = False) -> None:
+    """Make ``path`` owner-only in the way the platform supports.
+
+    POSIX: mode 0o600 (0o700 for a directory). Windows: only the read-only bit
+    exists in ``os.chmod``, so a file gets ``S_IREAD | S_IWRITE`` (owner read
+    and write, never read-only) and a directory is left to its inherited ACL.
+    """
+
+    if os.name == "nt":
+        if not directory:
+            os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
+        return
+    os.chmod(path, 0o700 if directory else 0o600)
+
+
 def validate_remote_path(value: str) -> str:
     """Validate one bounded remote path without applying shell semantics."""
 
@@ -293,12 +325,12 @@ def validated_known_hosts_path(value: str | None = None) -> str:
             "(TUNNEL_KNOWN_HOSTS) is not a regular non-symlink file"
         )
     if os.name != "nt":
-        if info.st_uid not in {0, os.getuid()} or info.st_mode & (
+        if info.st_uid not in {0, current_uid()} or info.st_mode & (
             stat.S_IWGRP | stat.S_IWOTH
         ):
             raise ConnectionPolicyError(
                 f"The SSH known-hosts file is not securely owned: {path} has uid "
-                f"{info.st_uid} (expected 0 or {os.getuid()}) and mode "
+                f"{info.st_uid} (expected 0 or {current_uid()}) and mode "
                 f"{stat.S_IMODE(info.st_mode):04o} (group/other must not write)"
             )
     return str(path)
@@ -394,6 +426,8 @@ def generate_key_pair(key_path: str, key_type: str = "ed25519") -> None:
     os.makedirs(os.path.dirname(path) or ".", mode=0o700, exist_ok=True)
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "wb") as handle:
+        secure_descriptor(handle.fileno())
         handle.write(private)
+    secure_path(path)
     with open(path + ".pub", "wb") as handle:
         handle.write(public + b"\n")

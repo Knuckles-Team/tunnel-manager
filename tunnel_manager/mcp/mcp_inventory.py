@@ -8,7 +8,6 @@ import concurrent.futures
 import logging
 import os
 import shlex
-import subprocess
 
 from fastmcp import Context, FastMCP
 from pydantic import Field
@@ -19,6 +18,7 @@ from scion_sdk.progress import ctx_progress
 from scion_sdk.utilities import to_boolean, to_integer
 
 from tunnel_manager.connection_security import (
+    generate_key_pair,
     max_concurrency,
     max_transfer_bytes,
     validate_public_key,
@@ -64,44 +64,7 @@ async def _tm_inventory_configure_key_auth(
         _key = os.path.expanduser(key)
         pub_key = _key + ".pub"
         if not os.path.exists(_key):
-            if key_type == "rsa":
-                await run_blocking(
-                    subprocess.run,
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "rsa",
-                        "-b",
-                        "4096",
-                        "-f",
-                        _key,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                await run_blocking(
-                    subprocess.run,
-                    [
-                        "/usr/bin/ssh-keygen",
-                        "-t",
-                        "ed25519",
-                        "-f",
-                        _key,
-                        "-N",
-                        "",
-                    ],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+            await run_blocking(generate_key_pair, _key, key_type)
         with open(pub_key) as f:
             pub = validate_public_key(f.read())
         hosts, error = load_inventory(inventory, group, logger)

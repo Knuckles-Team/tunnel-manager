@@ -2,7 +2,7 @@
   "schema_version": 2,
   "spec_id": "CONN-TUNNEL-MANAGER-SDK",
   "owner_repo": "tunnel-manager",
-  "delivery_state": "LANDED",
+  "delivery_state": "SPECIFIED",
   "requirement_ids": [
     "CONN-TUNNEL-MANAGER-SDK-R001",
     "CONN-TUNNEL-MANAGER-SDK-R002",
@@ -11,7 +11,8 @@
     "CONN-TUNNEL-MANAGER-SDK-R005",
     "CONN-TUNNEL-MANAGER-SDK-R005.1",
     "CONN-TUNNEL-MANAGER-SDK-R005.2",
-    "CONN-TUNNEL-MANAGER-SDK-R005.3"
+    "CONN-TUNNEL-MANAGER-SDK-R005.3",
+    "CONN-TUNNEL-MANAGER-SDK-R006"
   ],
   "requirements": [
     {
@@ -64,9 +65,10 @@
       "title": "One wiring for every transport",
       "delivery_state": "LANDED",
       "landed_in": [
+        "2d825f294f0a",
         "48f70b0ad8e4",
         "a91d2bdcce2b",
-        "b807e6eb738f"
+        "c698cefba2fc"
       ],
       "verified_by": [
         "tests/test_served_actor_binding.py:103",
@@ -86,7 +88,7 @@
       "title": "One connection resolver",
       "delivery_state": "LANDED",
       "landed_in": [
-        "b807e6eb738f"
+        "2d825f294f0a"
       ],
       "verified_by": []
     },
@@ -95,7 +97,7 @@
       "title": "Every tool behaves the same on every transport",
       "delivery_state": "LANDED",
       "landed_in": [
-        "b807e6eb738f"
+        "2d825f294f0a"
       ],
       "verified_by": []
     },
@@ -104,8 +106,15 @@
       "title": "Failures name their cause; no host binaries",
       "delivery_state": "LANDED",
       "landed_in": [
-        "b807e6eb738f"
+        "2d825f294f0a"
       ],
+      "verified_by": []
+    },
+    {
+      "id": "CONN-TUNNEL-MANAGER-SDK-R006",
+      "title": "Windows portability",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
       "verified_by": []
     }
   ]
