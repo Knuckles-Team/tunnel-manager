@@ -1,6 +1,7 @@
 """Tests for tunnel_manager.py - HostManager and Tunnel classes."""
 
 import os
+import shlex
 import tempfile
 from importlib import import_module
 from unittest.mock import Mock, mock_open, patch
@@ -1004,9 +1005,11 @@ class TestTunnel:
             with patch("shutil.which", return_value=_TSH):
                 t.connect()
                 # Verify that token expansion replaced placeholders and shutil.which resolved executable
-                mock_proxy_command.assert_called_once_with(
-                    f"{_TSH} proxy ssh testuser@example.com:22"
-                )
+                # Paramiko splits the string with POSIX shlex on every OS, so the
+                # executable is quoted; it must round-trip to the exact path.
+                expected = shlex.join([_TSH, "proxy", "ssh", "testuser@example.com:22"])
+                mock_proxy_command.assert_called_once_with(expected)
+                assert shlex.split(expected)[0] == _TSH
 
 
 class TestTunnelStaticMethods:

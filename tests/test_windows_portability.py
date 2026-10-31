@@ -117,3 +117,18 @@ def test_proxy_trusted_dirs_match_case_insensitively():
     assert ntpath.normcase(r"C:\WINDOWS\System32") == ntpath.normcase(
         r"c:\windows\system32"
     )
+
+
+def test_windows_backslash_executable_survives_paramiko_split(monkeypatch):
+    """paramiko splits ProxyCommand with POSIX shlex; the quoted path must survive."""
+    from unittest.mock import patch
+
+    import paramiko
+
+    from tunnel_manager.proxy_security import proxy_command_string
+
+    exe = "C:\\Windows\\System32\\OpenSSH\\tsh.exe"
+    command = proxy_command_string((exe, "proxy", "ssh", "u@h:22"))
+    with patch("paramiko.proxy.subprocess.Popen") as popen:
+        paramiko.ProxyCommand(command)
+    assert popen.call_args.args[0] == [exe, "proxy", "ssh", "u@h:22"]
