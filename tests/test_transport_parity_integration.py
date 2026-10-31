@@ -340,7 +340,8 @@ class _HttpServer:
         raise AssertionError("server did not start")
 
     def _read_log(self) -> str:
-        self.log.flush()
+        if not self.log.closed:
+            self.log.flush()
         return self.log_path.read_text(encoding="utf-8", errors="replace")
 
     def stop(self) -> str:
