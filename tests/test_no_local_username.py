@@ -55,14 +55,16 @@ def test_tool_error_path_logs_cause(monkeypatch, caplog):
     assert "No username set in the environment" in caplog.text
 
 
-def test_run_command_returns_specific_policy_cause(monkeypatch, tmp_path):
+def test_run_command_returns_specific_policy_cause(
+    monkeypatch, tmp_path, grant_broad_access
+):
     import asyncio
 
     from tunnel_manager.mcp import mcp_remote
 
     key = tmp_path / "id_rsa"
     key.write_text("x")
-    key.chmod(0o644)
+    grant_broad_access(key)
     monkeypatch.setenv("TUNNEL_IDENTITY_FILE", str(key))
     result = asyncio.run(
         mcp_remote._tm_remote_run_command(
@@ -81,4 +83,4 @@ def test_run_command_returns_specific_policy_cause(monkeypatch, tmp_path):
     )
     text = str(result)
     assert "permissions are unsafe" in text
-    assert "0644" in text
+    assert "0644" in text or "S-1-1-0" in text

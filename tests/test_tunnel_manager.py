@@ -27,6 +27,17 @@ def _unit_identity_path(monkeypatch):
     )
 
 
+def _trusted_tsh() -> str:
+    """A proxy executable path inside the platform's trusted directories."""
+    from tunnel_manager.proxy_security import _trusted_directories
+
+    name = "tsh.exe" if os.name == "nt" else "tsh"
+    return str(_trusted_directories()[0] / name)
+
+
+_TSH = _trusted_tsh()
+
+
 class TestHostManager:
     """Test HostManager class."""
 
@@ -132,7 +143,7 @@ class TestHostManager:
             config_path = f.name
         try:
             hm = HostManager(config_file=config_path)
-            with patch("shutil.which", return_value="/usr/bin/tsh"):
+            with patch("shutil.which", return_value=_TSH):
                 hm.add_host(
                     alias="test",
                     hostname="example.com",
@@ -353,7 +364,7 @@ class TestTunnel:
 
         with (
             patch("os.path.exists", return_value=False),
-            patch("shutil.which", return_value="/usr/bin/tsh"),
+            patch("shutil.which", return_value=_TSH),
         ):
             t = Tunnel(
                 remote_host="example.com",
@@ -393,7 +404,7 @@ class TestTunnel:
                     t.connect()
                     # Verify certificate was loaded
                     mock_key.return_value.load_certificate.assert_called_once_with(
-                        "/test/cert"
+                        os.path.abspath("/test/cert")
                     )
         finally:
             os.unlink(key_path)
@@ -990,11 +1001,11 @@ class TestTunnel:
                 proxy_command="tsh proxy ssh %r@%h:%p",
             )
 
-            with patch("shutil.which", return_value="/usr/bin/tsh"):
+            with patch("shutil.which", return_value=_TSH):
                 t.connect()
                 # Verify that token expansion replaced placeholders and shutil.which resolved executable
                 mock_proxy_command.assert_called_once_with(
-                    "/usr/bin/tsh proxy ssh testuser@example.com:22"
+                    f"{_TSH} proxy ssh testuser@example.com:22"
                 )
 
 
@@ -1566,7 +1577,7 @@ class TestAsyncTunnelManager:
         with patch(
             "os.path.expanduser", side_effect=lambda x: x.replace("~", fake_home)
         ):
-            with patch("shutil.which", return_value="/usr/bin/tsh"):
+            with patch("shutil.which", return_value=_TSH):
                 res = await AsyncTunnelManager.async_run_command_on_host(
                     host_config, "ls"
                 )
@@ -1582,7 +1593,7 @@ class TestAsyncTunnelManager:
                 expected_cert = os.path.abspath(
                     os.path.join(fake_home, "relative", "cert")
                 )
-                expected_proxy = "/usr/bin/tsh proxy ssh testuser@example.com:2222"
+                expected_proxy = f"{_TSH} proxy ssh testuser@example.com:2222"
 
                 call_kwargs = mock_connect.call_args[1]
                 assert call_kwargs["host"] == "example.com"

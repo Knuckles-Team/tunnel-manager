@@ -5,6 +5,13 @@ All notable changes to `tunnel-manager` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.5] - 2026-10-31
+
+### Fixed
+- Windows: SSH identity and known-hosts files are checked against their access-control list. A file that grants Everyone, Authenticated Users or BUILTIN\Users access (write, for known-hosts) is refused, as the POSIX mode check does. Before, the check was skipped on Windows.
+- Windows: proxy executables are trusted in the system, OpenSSH and Git directories, and the containment check ignores case.
+- The test suite no longer assumes POSIX paths, `chmod` modes or `cmd.exe`: proxy and certificate tests use platform paths, and the simulated SSH host runs commands with `sh` and maps Windows absolute paths.
+
 ## [3.4.4] - 2026-10-30
 
 ### Fixed

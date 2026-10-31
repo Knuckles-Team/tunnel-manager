@@ -19,6 +19,7 @@ from scion_sdk.config import setting
 
 from .connection_security import (
     ConnectionPolicyError,
+    current_uid,
     describe_error,
     generate_key_pair,
     max_concurrency,
@@ -26,6 +27,8 @@ from .connection_security import (
     max_output_bytes,
     max_transfer_bytes,
     quote_remote_path,
+    secure_descriptor,
+    secure_path,
     validate_command,
     validate_host,
     validate_identity_path,
@@ -35,9 +38,6 @@ from .connection_security import (
     validate_secret_ref,
     validate_timeout,
     validate_username,
-    current_uid,
-    secure_descriptor,
-    secure_path,
     validated_known_hosts_path,
 )
 from .models import CommandResult, HostConfig
