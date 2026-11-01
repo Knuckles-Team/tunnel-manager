@@ -46,13 +46,13 @@ class TestHostManager:
     def test_init_default_config(self, mock_exists):
         """Test HostManager initialization with default config.
 
-        With neither file present, the resolver falls through to the new
-        ``inventory.yml`` standard.
+        With no file present, the resolver returns the canonical
+        ``inventory.yml`` path.
         """
         mock_exists.return_value = False
         hm = HostManager()
         xdg_config = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-        expected = os.path.join(xdg_config, "agent-connectors", "inventory.yml")
+        expected = os.path.join(xdg_config, "scion-sdk", "inventory.yml")
         assert hm.config_file == expected
         assert hm.hosts == {}
 

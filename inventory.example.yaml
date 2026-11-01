@@ -3,16 +3,16 @@
 # Copy this to the default location and edit:
 #
 #     mkdir -p ~/.config/scion-sdk
-#     cp inventory.example.yaml ~/.config/scion-sdk/inventory.yaml
+#     cp inventory.example.yaml ~/.config/scion-sdk/inventory.yml
 #
 # Default search path (library, CLI, MCP server, container-manager-mcp, and the
 # ssh-bootstrap skill all read the SAME file):
-#     $XDG_CONFIG_HOME/scion-sdk/inventory.yaml   (== ~/.config/scion-sdk/inventory.yaml)
+#     $XDG_CONFIG_HOME/scion-sdk/inventory.yml   (== ~/.config/scion-sdk/inventory.yml)
 #
 # Override the path with:
-#     CLI:  tunnel-manager --inventory /path/to/inventory.yaml ...
-#     MCP:  export TUNNEL_INVENTORY=/path/to/inventory.yaml     (or the tool's `inventory` arg)
-#     API:  HostManager(config_file="/path/to/inventory.yaml")
+#     CLI:  tunnel-manager --inventory /path/to/inventory.yml ...
+#     MCP:  export TUNNEL_INVENTORY=/path/to/inventory.yml     (or the tool's `inventory` arg)
+#     API:  HostManager(config_file="/path/to/inventory.yml")
 #
 # Two formats are accepted. This file shows the RECOMMENDED Ansible-style layout;
 # the flat layout is shown (commented) at the bottom.

@@ -228,7 +228,7 @@ class _World:
         known.chmod(0o600)
         (ssh_dir / "config").write_text("# empty\n")
         config = self.root / name / "config"
-        inventory = config / "agent-connectors" / "inventory.yml"
+        inventory = config / "scion-sdk" / "inventory.yml"
         inventory.parent.mkdir(parents=True)
         inventory.write_text(
             yaml.safe_dump(

@@ -1,4 +1,4 @@
-# TM-INVENTORY — Requirements quality checklist
+# CONN-TUNNEL-MANAGER-INVENTORY — Requirements quality checklist
 
 Filled before landing from the checklist template.
 

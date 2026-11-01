@@ -297,14 +297,13 @@ the **same file** — the `HostManager` API, the `tunnel-manager` CLI, the MCP s
 **container-manager-mcp** (its `cm_*` host aliases), and the `ssh-bootstrap` skill — so
 the operator define the operator's fleet once.
 
-- **Location** — `~/.config/scion-sdk/inventory.yml` (`.yml` preferred). A legacy
-  `inventory.yaml` at the same path is still read when no `.yml` exists, so existing
-  installs keep working. Override with `TUNNEL_INVENTORY`.
+- **Location** — `~/.config/scion-sdk/inventory.yml` (the only
+  location). Override with `TUNNEL_INVENTORY`.
 - **Manage it** with the `inventory` subcommand:
 
   ```bash
   tunnel-manager inventory init     # write a commented inventory.yml template (--force to overwrite)
-  tunnel-manager inventory doctor   # validate hosts/groups; --fix migrates legacy .yaml -> .yml
+  tunnel-manager inventory doctor   # validate hosts/groups
   tunnel-manager inventory show     # print the resolved path + host/group summary
   ```
 

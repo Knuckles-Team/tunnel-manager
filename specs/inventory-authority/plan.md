@@ -1,10 +1,10 @@
-# TM-INVENTORY — Implementation plan
+# CONN-TUNNEL-MANAGER-INVENTORY — Implementation plan
 
 Governing spec: [spec.md](spec.md). Rows: [requirements.md](requirements.md).
 
 ## Summary
 
-This plan states how `tunnel-manager` delivers the rows of `TM-INVENTORY`. The live caller is the `tunnel-manager` console script. The owner is the `tunnel_manager` package. The rows reuse the `scion-sdk` helpers and add no second authority. The plan changes no runtime code.
+This plan states how `tunnel-manager` delivers the rows of `CONN-TUNNEL-MANAGER-INVENTORY`. The live caller is the `tunnel-manager` console script. The owner is the `tunnel_manager` package. The rows reuse the `scion-sdk` helpers and add no second authority. The plan changes no runtime code.
 
 ## Technical Context
 
@@ -31,7 +31,7 @@ This plan states how `tunnel-manager` delivers the rows of `TM-INVENTORY`. The l
 - `tests/test_fleet_name.py` (existing)
 - `tunnel_manager/mcp_server.py` (existing)
 - `tests/test_no_local_username.py` (existing)
-- `tests/test_inventory_path.py` (new, planned)
+- `tests/test_inventory_path.py` (new)
 
 ## Phase 0: Research
 
@@ -41,7 +41,7 @@ No unknowns. Every row names its code and test; the caller chain of each row was
 
 ### Summary
 
-This plan states how `tunnel-manager` delivers the rows of `TM-INVENTORY`. The live caller is the `tunnel-manager` console script. The owner is the `tunnel_manager` package. The rows reuse the `scion-sdk` helpers and add no second authority. The plan changes no runtime code.
+This plan states how `tunnel-manager` delivers the rows of `CONN-TUNNEL-MANAGER-INVENTORY`. The live caller is the `tunnel-manager` console script. The owner is the `tunnel_manager` package. The rows reuse the `scion-sdk` helpers and add no second authority. The plan changes no runtime code.
 
 ### Technical Context
 
@@ -68,7 +68,7 @@ This plan states how `tunnel-manager` delivers the rows of `TM-INVENTORY`. The l
 - `tests/test_fleet_name.py` (existing)
 - `tunnel_manager/mcp_server.py` (existing)
 - `tests/test_no_local_username.py` (existing)
-- `tests/test_inventory_path.py` (new, planned)
+- `tests/test_inventory_path.py` (new)
 
 ### Phase 0: Research
 
@@ -78,7 +78,7 @@ No unknowns. Every row names its code and test; the caller chain of each row was
 
 ### Summary
 
-This plan states how `tunnel-manager` delivers the rows of `TM-INVENTORY`. The live caller is the `tunnel-manager` console script. The owner is the `tunnel_manager` package. The rows reuse the `scion-sdk` helpers and add no second authority. The plan changes no runtime code.
+This plan states how `tunnel-manager` delivers the rows of `CONN-TUNNEL-MANAGER-INVENTORY`. The live caller is the `tunnel-manager` console script. The owner is the `tunnel_manager` package. The rows reuse the `scion-sdk` helpers and add no second authority. The plan changes no runtime code.
 
 ### Technical Context
 
@@ -112,7 +112,7 @@ No unknowns. Every row names its code and test; the caller chain of each row was
 
 ### Summary
 
-This plan states how `tunnel-manager` delivers the rows of `TM-INVENTORY`. The live caller is the `tunnel-manager` console script. The owner is the `tunnel_manager` package. The rows reuse the `scion-sdk` helpers and add no second authority. The plan changes no runtime code.
+This plan states how `tunnel-manager` delivers the rows of `CONN-TUNNEL-MANAGER-INVENTORY`. The live caller is the `tunnel-manager` console script. The owner is the `tunnel_manager` package. The rows reuse the `scion-sdk` helpers and add no second authority. The plan changes no runtime code.
 
 ### Technical Context
 
@@ -199,7 +199,7 @@ None. The constitution check passed.
 
 ### Production caller chain
 
-- `TM-INVENTORY-R002`: `tunnel-manager` in `pyproject.toml` runs `tunnel_manager.tunnel_manager:main`, which builds the server from the `scion_sdk.connector` entry point `tunnel_manager:connector` (`tunnel_manager/__init__.py:129`); `connector_name("tunnel_manager")` in the SDK resolves the same entry point name for the content pack, the manifest and the ingest binding.
+- `CONN-TUNNEL-MANAGER-INVENTORY-R002`: `tunnel-manager` in `pyproject.toml` runs `tunnel_manager.tunnel_manager:main`, which builds the server from the `scion_sdk.connector` entry point `tunnel_manager:connector` (`tunnel_manager/__init__.py:129`); `connector_name("tunnel_manager")` in the SDK resolves the same entry point name for the content pack, the manifest and the ingest binding.
 
 ### Cross-repo seams
 
@@ -221,7 +221,7 @@ None. The constitution check passed.
 
 ### Production caller chain
 
-- `TM-INVENTORY-R002`: `tunnel-manager` in `pyproject.toml` runs `tunnel_manager.tunnel_manager:main`, which builds the server from the `scion_sdk.connector` entry point `tunnel_manager:connector` (`tunnel_manager/__init__.py:129`); `connector_name("tunnel_manager")` in the SDK resolves the same entry point name for the content pack, the manifest and the ingest binding.
+- `CONN-TUNNEL-MANAGER-INVENTORY-R002`: `tunnel-manager` in `pyproject.toml` runs `tunnel_manager.tunnel_manager:main`, which builds the server from the `scion_sdk.connector` entry point `tunnel_manager:connector` (`tunnel_manager/__init__.py:129`); `connector_name("tunnel_manager")` in the SDK resolves the same entry point name for the content pack, the manifest and the ingest binding.
 
 ### Cross-repo seams
 
@@ -243,9 +243,9 @@ None. The constitution check passed.
 
 ### Production caller chain
 
-- `TM-INVENTORY-R001`: every surface (CLI, library, MCP tools, container) calls `default_inventory_path` (tunnel_manager/tunnel_manager.py:388) to find the inventory file.
-- `TM-INVENTORY-R002`: `tunnel-manager` in `pyproject.toml` runs `tunnel_manager.tunnel_manager:main`, which builds the server from the `scion_sdk.connector` entry point `tunnel_manager:connector` (`tunnel_manager/__init__.py:129`); `connector_name("tunnel_manager")` in the SDK resolves the same entry point name for the content pack, the manifest and the ingest binding.
-- `TM-INVENTORY-R003`: an MCP tool of `tunnel_manager/mcp_server.py` builds a `Tunnel` from the inventory entry (`tunnel_manager/mcp_server.py:397`), whose `user` is passed to paramiko explicitly.
+- `CONN-TUNNEL-MANAGER-INVENTORY-R001`: every surface (CLI, library, MCP tools, container) calls `default_inventory_path` (tunnel_manager/tunnel_manager.py:388) to find the inventory file.
+- `CONN-TUNNEL-MANAGER-INVENTORY-R002`: `tunnel-manager` in `pyproject.toml` runs `tunnel_manager.tunnel_manager:main`, which builds the server from the `scion_sdk.connector` entry point `tunnel_manager:connector` (`tunnel_manager/__init__.py:129`); `connector_name("tunnel_manager")` in the SDK resolves the same entry point name for the content pack, the manifest and the ingest binding.
+- `CONN-TUNNEL-MANAGER-INVENTORY-R003`: an MCP tool of `tunnel_manager/mcp_server.py` builds a `Tunnel` from the inventory entry (`tunnel_manager/mcp_server.py:397`), whose `user` is passed to paramiko explicitly.
 
 ### Cross-repo seams
 
@@ -267,10 +267,10 @@ None. The constitution check passed.
 
 ## Production caller chain
 
-- `TM-INVENTORY-R001`: every surface (CLI, library, MCP tools, container) calls `default_inventory_path` (tunnel_manager/tunnel_manager.py:388) to find the inventory file.
-- `TM-INVENTORY-R002`: `tunnel-manager` in `pyproject.toml` runs `tunnel_manager.tunnel_manager:main`, which builds the server from the `scion_sdk.connector` entry point `tunnel_manager:connector` (`tunnel_manager/__init__.py:129`); `connector_name("tunnel_manager")` in the SDK resolves the same entry point name for the content pack, the manifest and the ingest binding.
-- `TM-INVENTORY-R003`: an MCP tool of `tunnel_manager/mcp_server.py` builds a `Tunnel` from the inventory entry (`tunnel_manager/mcp_server.py:397`), whose `user` is passed to paramiko explicitly.
+- `CONN-TUNNEL-MANAGER-INVENTORY-R001`: every surface (CLI, library, MCP tools, container) calls `default_inventory_path` (tunnel_manager/tunnel_manager.py:388) to find the inventory file.
+- `CONN-TUNNEL-MANAGER-INVENTORY-R002`: `tunnel-manager` in `pyproject.toml` runs `tunnel_manager.tunnel_manager:main`, which builds the server from the `scion_sdk.connector` entry point `tunnel_manager:connector` (`tunnel_manager/__init__.py:129`); `connector_name("tunnel_manager")` in the SDK resolves the same entry point name for the content pack, the manifest and the ingest binding.
+- `CONN-TUNNEL-MANAGER-INVENTORY-R003`: an MCP tool of `tunnel_manager/mcp_server.py` builds a `Tunnel` from the inventory entry (`tunnel_manager/mcp_server.py:397`), whose `user` is passed to paramiko explicitly.
 
 ## Cross-repo seams
 
-- `TM-INVENTORY-R001` with `CONN-CONTAINER-MANAGER-MCP-R004`: `contracts/inventory-volume.md`.
+- `CONN-TUNNEL-MANAGER-INVENTORY-R001` with `CONN-CONTAINER-MANAGER-MCP-R004`: `contracts/inventory-volume.md`.

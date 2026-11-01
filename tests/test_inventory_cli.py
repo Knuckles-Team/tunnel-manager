@@ -1,4 +1,4 @@
-"""Tests for the inventory path resolver and the `inventory` CLI actions."""
+"""Tests for the `inventory` CLI actions."""
 
 import os
 
@@ -7,33 +7,15 @@ import yaml
 from tunnel_manager.tunnel_manager import (
     _inventory_doctor,
     _inventory_init,
-    default_inventory_path,
 )
 
 
 def _config_dir(tmp_path, monkeypatch):
     """Point XDG_CONFIG_HOME at a temp dir and return the scion-sdk dir."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    config_dir = tmp_path / "agent-connectors"
+    config_dir = tmp_path / "scion-sdk"
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir
-
-
-class TestDefaultInventoryPath:
-    def test_prefers_yml_when_present(self, tmp_path, monkeypatch):
-        config_dir = _config_dir(tmp_path, monkeypatch)
-        (config_dir / "inventory.yml").write_text("all: {}\n")
-        (config_dir / "inventory.yaml").write_text("all: {}\n")
-        assert default_inventory_path() == str(config_dir / "inventory.yml")
-
-    def test_falls_back_to_yaml_legacy(self, tmp_path, monkeypatch):
-        config_dir = _config_dir(tmp_path, monkeypatch)
-        (config_dir / "inventory.yaml").write_text("all: {}\n")
-        assert default_inventory_path() == str(config_dir / "inventory.yaml")
-
-    def test_defaults_to_yml_when_neither_exists(self, tmp_path, monkeypatch):
-        config_dir = _config_dir(tmp_path, monkeypatch)
-        assert default_inventory_path() == str(config_dir / "inventory.yml")
 
 
 class TestInventoryInit:
@@ -64,7 +46,7 @@ class TestInventoryInit:
 class TestInventoryDoctor:
     def test_doctor_missing_file_is_error(self, tmp_path, monkeypatch):
         config_dir = _config_dir(tmp_path, monkeypatch)
-        assert _inventory_doctor(str(config_dir / "inventory.yml"), fix=False) == 1
+        assert _inventory_doctor(str(config_dir / "inventory.yml")) == 1
 
     def test_doctor_valid_inventory_ok(self, tmp_path, monkeypatch):
         config_dir = _config_dir(tmp_path, monkeypatch)
@@ -79,7 +61,7 @@ class TestInventoryDoctor:
                 }
             )
         )
-        assert _inventory_doctor(str(dest), fix=False) == 0
+        assert _inventory_doctor(str(dest)) == 0
 
     def test_doctor_flags_missing_required_field(self, tmp_path, monkeypatch):
         config_dir = _config_dir(tmp_path, monkeypatch)
@@ -88,29 +70,10 @@ class TestInventoryDoctor:
         dest.write_text(
             yaml.dump({"all": {"hosts": {"edge-node": {"ansible_host": "192.0.2.13"}}}})
         )
-        assert _inventory_doctor(str(dest), fix=False) == 1
+        assert _inventory_doctor(str(dest)) == 1
 
     def test_doctor_invalid_yaml_is_error(self, tmp_path, monkeypatch):
         config_dir = _config_dir(tmp_path, monkeypatch)
         dest = config_dir / "inventory.yml"
         dest.write_text("all: [unclosed\n")
-        assert _inventory_doctor(str(dest), fix=False) == 1
-
-    def test_doctor_fix_migrates_legacy_yaml(self, tmp_path, monkeypatch):
-        config_dir = _config_dir(tmp_path, monkeypatch)
-        legacy = config_dir / "inventory.yaml"
-        legacy.write_text(
-            yaml.dump(
-                {
-                    "all": {
-                        "vars": {"ansible_user": "operator"},
-                        "hosts": {"edge-node": {"ansible_host": "192.0.2.13"}},
-                    }
-                }
-            )
-        )
-        # Pass the legacy path; --fix should migrate it to .yml and validate that.
-        rc = _inventory_doctor(str(legacy), fix=True)
-        assert rc == 0
-        assert (config_dir / "inventory.yml").exists()
-        assert not legacy.exists()
+        assert _inventory_doctor(str(dest)) == 1

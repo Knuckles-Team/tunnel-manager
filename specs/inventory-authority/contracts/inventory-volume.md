@@ -1,6 +1,6 @@
 # Inventory source and volume contract
 
-Provider: tunnel-manager TM-INVENTORY-R001
+Provider: tunnel-manager CONN-TUNNEL-MANAGER-INVENTORY-R001
 Consumer: container-manager-mcp CONN-CONTAINER-MANAGER-MCP-R004
 
 ## Source identity
