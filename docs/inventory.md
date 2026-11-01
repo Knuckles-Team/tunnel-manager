@@ -9,19 +9,12 @@ point — the `HostManager` Python API, the `tunnel-manager` CLI, the
 ## Default location
 
 ```
-$XDG_CONFIG_HOME/scion-sdk/inventory.yml      # preferred
-$XDG_CONFIG_HOME/scion-sdk/inventory.yaml     # legacy fallback
+$XDG_CONFIG_HOME/scion-sdk/inventory.yml
 ```
 
 which is `~/.config/scion-sdk/inventory.yml` on a typical Linux/macOS host
-(`XDG_CONFIG_HOME` defaults to `~/.config`). The path is **resolved** in this order:
-
-1. `inventory.yml` if it exists — the standard for fresh installs, **else**
-2. `inventory.yaml` if it exists — the legacy filename, still fully supported, **else**
-3. `inventory.yml` — the path a fresh `init` writes to.
-
-So existing `.yaml` users keep working untouched, while new installs standardize on
-`.yml`. If neither file exists, tunnel-manager starts with an empty inventory (no error)
+(`XDG_CONFIG_HOME` defaults to `~/.config`). The path is fixed: there is no other location and no fallback filename.
+If the file does not exist, tunnel-manager starts with an empty inventory (no error)
 and the operator can add hosts via the API/CLI.
 
 > **Note:** this is the `scion-sdk` config directory on purpose — the inventory
@@ -48,7 +41,7 @@ example hosts and group structure (reproduced under [Template](#template) below)
 | Command | What it does |
 |---|---|
 | `tunnel-manager inventory init [--inventory PATH] [--force]` | Write the commented `inventory.yml` template to the resolved path (or `--inventory`). Refuses to overwrite without `--force`. |
-| `tunnel-manager inventory doctor [--inventory PATH] [--fix]` | Validate: file exists + parses, each host has required fields, groups reference real hosts. Exits non-zero on hard errors. With `--fix`, migrate a legacy `inventory.yaml` to `inventory.yml`. |
+| `tunnel-manager inventory doctor [--inventory PATH]` | Validate: file exists + parses, each host has required fields, groups reference real hosts. Exits non-zero on hard errors. |
 | `tunnel-manager inventory show [--inventory PATH]` | Print the resolved inventory path plus a host/group summary. |
 
 ### Template

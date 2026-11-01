@@ -161,7 +161,7 @@ def test_inventory_uses_canonical_default_resolver_when_no_override(monkeypatch)
     )
     monkeypatch.setattr(
         "tunnel_manager.remote_execution.default_inventory_path",
-        lambda: "/xdg/agent-connectors/inventory.yml",
+        lambda: "/xdg/scion-sdk/inventory.yml",
     )
     monkeypatch.setattr(
         "tunnel_manager.remote_execution.require_entitled",
@@ -172,7 +172,7 @@ def test_inventory_uses_canonical_default_resolver_when_no_override(monkeypatch)
         HostInventory().resolve("missing", _actor("ssh:*"))
 
     manager_class.assert_called_once_with(
-        config_file="/xdg/agent-connectors/inventory.yml"
+        config_file="/xdg/scion-sdk/inventory.yml"
     )
 
 

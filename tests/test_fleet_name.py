@@ -1,4 +1,4 @@
-"""TM-INVENTORY-R002: the connector is filed under its fleet name, tunnel-manager-mcp."""
+"""CONN-TUNNEL-MANAGER-INVENTORY-R002: the connector is filed under its fleet name, tunnel-manager-mcp."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def _call_connectors(path: Path) -> list[str]:
     return names
 
 
-@pytest.mark.spec("TM-INVENTORY-R002")
+@pytest.mark.spec("CONN-TUNNEL-MANAGER-INVENTORY-R002")
 def test_connector_name_is_the_fleet_name() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert pyproject["project"]["entry-points"]["scion_sdk.connector"] == {

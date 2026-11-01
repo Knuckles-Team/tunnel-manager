@@ -386,28 +386,15 @@ def _atomic_private_yaml(path: str, value: object) -> None:
 
 
 def default_inventory_path() -> str:
-    """Resolve the shared inventory path.
+    """Resolve the one shared inventory path.
 
     The inventory is shared across the ecosystem (the HostManager library, the
     tunnel-manager CLI/MCP server, container-manager-mcp, and the ssh-bootstrap
-    skill all read the same file). The standard filename is now ``inventory.yml``,
-    but earlier builds wrote ``inventory.yaml``; this resolver keeps both working:
-
-    1. ``$XDG_CONFIG_HOME/agent-connectors/inventory.yml`` if it exists, else
-    2. ``$XDG_CONFIG_HOME/agent-connectors/inventory.yaml`` if it exists (legacy), else
-    3. ``inventory.yml`` (the new standard for a fresh install).
-
-    ``XDG_CONFIG_HOME`` defaults to ``~/.config``.
+    skill all read the same file): ``$XDG_CONFIG_HOME/scion-sdk/inventory.yml``.
+    ``XDG_CONFIG_HOME`` defaults to ``~/.config``. There is no other location.
     """
     xdg_config = setting("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-    config_dir = os.path.join(xdg_config, "agent-connectors")
-    yml = os.path.join(config_dir, "inventory.yml")
-    yaml_legacy = os.path.join(config_dir, "inventory.yaml")
-    if os.path.exists(yml):
-        return yml
-    if os.path.exists(yaml_legacy):
-        return yaml_legacy
-    return yml
+    return os.path.join(xdg_config, "scion-sdk", "inventory.yml")
 
 
 def _ansible_all_host_entry(alias: str, hvars: dict, all_vars: dict) -> dict:
@@ -1945,9 +1932,8 @@ INVENTORY_TEMPLATE = """\
 # `tunnel-manager` CLI, the tunnel-manager-mcp MCP server, container-manager-mcp
 # (cm_* host aliases), and the ssh-bootstrap skill. Define your fleet once here.
 #
-# Preferred path: $XDG_CONFIG_HOME/agent-connectors/inventory.yml
-#   (~/.config/agent-connectors/inventory.yml on a typical Linux/macOS host).
-#   A legacy inventory.yaml at the same location is still read if no .yml exists.
+# Path: $XDG_CONFIG_HOME/scion-sdk/inventory.yml
+#   (~/.config/scion-sdk/inventory.yml on a typical Linux/macOS host).
 #
 # Two layouts are accepted: Ansible-style (recommended, shown below) and flat.
 
@@ -2337,24 +2323,6 @@ def _inventory_init(dest: str, force: bool) -> int:
     return 0
 
 
-def _migrate_legacy_inventory_path(
-    inventory: str, yaml_path: str, yml_path: str, fix: bool
-) -> str:
-    """Migrate a legacy ``inventory.yaml`` to ``inventory.yml`` when ``fix`` is
-    set; otherwise just note it. Returns the inventory path doctor should use."""
-    if not (os.path.exists(yaml_path) and not os.path.exists(yml_path)):
-        return inventory
-    if fix:
-        os.rename(yaml_path, yml_path)
-        print("Migrated legacy inventory configuration")
-        return yml_path
-    print(
-        f"NOTE: legacy {yaml_path} found but no {yml_path}.\n"
-        f"  Fix: re-run `tunnel-manager inventory doctor --fix` to migrate to .yml.",
-    )
-    return inventory
-
-
 def _read_inventory_yaml_for_doctor(inventory: str):
     """Read and shape-check ``inventory`` for doctor.
 
@@ -2434,16 +2402,8 @@ def _check_group_reference_problems(raw: dict, hosts: dict) -> list[str]:
     return problems
 
 
-def _inventory_doctor(inventory: str, fix: bool) -> int:
+def _inventory_doctor(inventory: str) -> int:
     """Validate the inventory; return a non-zero exit code on hard errors."""
-    xdg_config = setting("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-    config_dir = os.path.join(xdg_config, "agent-connectors")
-    yml_path = os.path.join(config_dir, "inventory.yml")
-    yaml_path = os.path.join(config_dir, "inventory.yaml")
-
-    # Legacy-migration check: a .yaml exists but no .yml at the shared location.
-    inventory = _migrate_legacy_inventory_path(inventory, yaml_path, yml_path, fix)
-
     raw, exit_code = _read_inventory_yaml_for_doctor(inventory)
     if exit_code is not None:
         return exit_code
@@ -2646,11 +2606,6 @@ def _build_tunnel_manager_parser(default_inventory: str) -> argparse.ArgumentPar
         default=None,
         help="Inventory path to validate (default: resolved shared inventory path)",
     )
-    inv_doctor.add_argument(
-        "--fix",
-        action="store_true",
-        help="Migrate a legacy inventory.yaml to inventory.yml when applicable",
-    )
 
     inv_show = inventory_sub.add_parser(
         "show", help="Print the resolved inventory path and a host/group summary"
@@ -2698,7 +2653,7 @@ def _dispatch_inventory_command(args) -> None:
     if args.inventory_action == "init":
         sys.exit(_inventory_init(target, args.force))
     elif args.inventory_action == "doctor":
-        sys.exit(_inventory_doctor(target, args.fix))
+        sys.exit(_inventory_doctor(target))
     elif args.inventory_action == "show":
         sys.exit(_inventory_show(target))
 

@@ -61,12 +61,11 @@ from tunnel_manager.tunnel_manager import (
 
 # XDG-compliant default paths. The inventory is shared across the ecosystem
 # (the HostManager library, container-manager-mcp, and the ssh-bootstrap skill all
-# read $XDG_CONFIG_HOME/agent-connectors/inventory.yml), so the MCP server defaults
-# to the SAME file — one inventory, one location. The resolver prefers the new
-# `inventory.yml` and falls back to a legacy `inventory.yaml`. Override with
+# read $XDG_CONFIG_HOME/scion-sdk/inventory.yml), so the MCP server defaults
+# to the SAME file — one inventory, one location. Override with
 # $TUNNEL_INVENTORY.
 _XDG_CONFIG_HOME = setting("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-_TM_CONFIG_DIR = os.path.join(_XDG_CONFIG_HOME, "agent-connectors")
+_TM_CONFIG_DIR = os.path.join(_XDG_CONFIG_HOME, "scion-sdk")
 _DEFAULT_INVENTORY_PATH = default_inventory_path()
 
 # Ensure config directory exists on import
@@ -2522,7 +2521,7 @@ def register_inventory_tools(mcp: FastMCP):
         ),
         inventory: str = Field(
             default=setting("TUNNEL_INVENTORY", _DEFAULT_INVENTORY_PATH),
-            description="YAML inventory path (default: $XDG_CONFIG_HOME/agent-connectors/inventory.yaml).",
+            description="YAML inventory path (default: $XDG_CONFIG_HOME/scion-sdk/inventory.yml).",
         ),
         group: str = Field(
             default=setting("TUNNEL_INVENTORY_GROUP", "all"),

@@ -1,6 +1,6 @@
-# TM-INVENTORY — One operator inventory authority
+# CONN-TUNNEL-MANAGER-INVENTORY — One operator inventory authority
 
-**Owner:** tunnel-manager. **Requirement:** TM-INVENTORY-R001. **Delivery:** SPECIFIED. **Acceptance:** NOT_AUDITED.
+**Owner:** tunnel-manager. **Requirement:** CONN-TUNNEL-MANAGER-INVENTORY-R001. **Delivery:** SPECIFIED. **Acceptance:** NOT_AUDITED.
 
 See [`requirements.md`](requirements.md) for the definition of every requirement ID this spec owns and [`status.json`](status.json) for their current delivery and acceptance state.
 
@@ -90,15 +90,15 @@ The fleet operator and the engine rely on this behaviour of `tunnel-manager`: Ev
 
 ## Requirements
 
-- **FR-001**: One canonical host inventory path across surfaces. Rows: `TM-INVENTORY-R001`.
-- **FR-002**: Fleet name. Rows: `TM-INVENTORY-R002`.
-- **FR-003**: SSH runs without a local username. Rows: `TM-INVENTORY-R003`.
+- **FR-001**: One canonical host inventory path across surfaces. Rows: `CONN-TUNNEL-MANAGER-INVENTORY-R001`.
+- **FR-002**: Fleet name. Rows: `CONN-TUNNEL-MANAGER-INVENTORY-R002`.
+- **FR-003**: SSH runs without a local username. Rows: `CONN-TUNNEL-MANAGER-INVENTORY-R003`.
 
 ## Success Criteria
 
-- **SC-001**: A fixture with only the canonical file present confirms every automatic reader resolves it, while a container-mount test confirms the deployed container reads the identical file read-only. Rows: `TM-INVENTORY-R001`.
-- **SC-002**: Every connector name in the package is `tunnel-manager-mcp`. Rows: `TM-INVENTORY-R002`.
-- **SC-003**: With `getpass.getuser` raising `OSError`, a `Tunnel` built from an inventory entry resolves its username, and a failing tool call logs the underlying exception. Rows: `TM-INVENTORY-R003`.
+- **SC-001**: A fixture with only the canonical file present confirms every automatic reader resolves it, while a container-mount test confirms the deployed container reads the identical file read-only. Rows: `CONN-TUNNEL-MANAGER-INVENTORY-R001`.
+- **SC-002**: Every connector name in the package is `tunnel-manager-mcp`. Rows: `CONN-TUNNEL-MANAGER-INVENTORY-R002`.
+- **SC-003**: With `getpass.getuser` raising `OSError`, a `Tunnel` built from an inventory entry resolves its username, and a failing tool call logs the underlying exception. Rows: `CONN-TUNNEL-MANAGER-INVENTORY-R003`.
 
 ## Assumptions
 
@@ -109,6 +109,6 @@ The fleet operator and the engine rely on this behaviour of `tunnel-manager`: Ev
 
 | Label | Rows | Design section | Test ID | Evidence |
 |---|---|---|---|---|
-| FR-001 | `TM-INVENTORY-R001` | plan.md Production caller chain | T-001 | tests/test_inventory_path.py::test_single_canonical_inventory_path |
-| FR-002 | `TM-INVENTORY-R002` | plan.md Production caller chain | T-002 | tests/test_fleet_name.py::test_connector_name_is_the_fleet_name |
-| FR-003 | `TM-INVENTORY-R003` | plan.md Production caller chain | T-003 | tests/test_no_local_username.py::test_tunnel_uses_explicit_user_without_local_username |
+| FR-001 | `CONN-TUNNEL-MANAGER-INVENTORY-R001` | plan.md Production caller chain | T-001 | tests/test_inventory_path.py::test_single_canonical_inventory_path |
+| FR-002 | `CONN-TUNNEL-MANAGER-INVENTORY-R002` | plan.md Production caller chain | T-002 | tests/test_fleet_name.py::test_connector_name_is_the_fleet_name |
+| FR-003 | `CONN-TUNNEL-MANAGER-INVENTORY-R003` | plan.md Production caller chain | T-003 | tests/test_no_local_username.py::test_tunnel_uses_explicit_user_without_local_username |

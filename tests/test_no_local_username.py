@@ -1,4 +1,4 @@
-"""TM-INVENTORY-R003: SSH works with no local username (uid without passwd entry)."""
+"""CONN-TUNNEL-MANAGER-INVENTORY-R003: SSH works with no local username (uid without passwd entry)."""
 
 from __future__ import annotations
 
