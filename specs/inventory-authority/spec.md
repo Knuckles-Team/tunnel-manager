@@ -46,3 +46,69 @@ The stable inter-repository contract is [contracts/inventory-volume.md](contract
 `tunnel_manager/tunnel_manager.py::default_inventory_path`, `HostManager`, the `inventory` CLI, `tunnel_manager/mcp_server.py`'s process-wide manager, `mcp/mcp_inventory.py`, and `remote_execution.py` are the existing execution path. Reuse them; do not add an independent inventory store or a second path resolver. Current `default_inventory_path()` prefers `.yml` but reads `.yaml` when `.yml` is absent; `inventory doctor --fix` migrates that legacy file; `HostManager.save_inventory()` chooses serialization by suffix. The design in [plan.md](plan.md) closes those gaps and separates offline selection from a serving authority.
 
 Out of scope: owning a workspace repository manifest, discovering a particular organization's hosts, modifying another package's credentials, or treating a graph projection as an inventory source. The quality and test obligations are in [test-spec.md](test-spec.md); implementation units are in [tasks.md](tasks.md).
+
+## Delivery mapping
+
+Component: tunnel-manager connector
+
+Code: ../../tunnel_manager/__init__.py
+
+## Why a new spec
+
+Searched `specs/` of `tunnel-manager` with `git grep` for the terms of this spec. No other spec of this repository owns the capability, so this spec owns it.
+
+## User Scenarios & Testing
+
+### User Story 1 - One canonical host inventory path across surfaces (Priority: P1)
+
+The fleet operator and the engine rely on this behaviour of `tunnel-manager`: tunnel-manager resolves the shared host inventory from exactly one path, `$XDG_CONFIG_HOME/scion-sdk/inventory.yml` (using the XDG platform default when unset), with no working-directory, packaged-resource, legacy `.yaml`, or per-service fallback, and every CLI, library, MCP, and container surface reads that same file. It is proven independently of the other stories.
+
+**Acceptance Scenarios**:
+
+1. **Given** the `tunnel-manager` connector built from the default branch, **When** `tests/test_inventory_path.py::test_single_canonical_inventory_path` runs, **Then** a fixture with only the canonical file present confirms every automatic reader resolves it, while a container-mount test confirms the deployed container reads the identical file read-only.
+
+### User Story 2 - Fleet name (Priority: P1)
+
+The fleet operator and the engine rely on this behaviour of `tunnel-manager`: `pyproject.toml` declares `tunnel-manager-mcp` as the single `scion_sdk.connector` entry point. It is proven independently of the other stories.
+
+**Acceptance Scenarios**:
+
+1. **Given** the `tunnel-manager` connector built from the default branch, **When** `tests/test_fleet_name.py::test_connector_name_is_the_fleet_name` runs, **Then** every connector name in the package is `tunnel-manager-mcp`.
+
+### User Story 3 - SSH runs without a local username (Priority: P1)
+
+The fleet operator and the engine rely on this behaviour of `tunnel-manager`: Every SSH connection uses the inventory entry's `user` explicitly and never depends on the local process username, so a container uid with no passwd entry and no `USER`/`LOGNAME` still connects. It is proven independently of the other stories.
+
+**Acceptance Scenarios**:
+
+1. **Given** the `tunnel-manager` connector built from the default branch, **When** `tests/test_no_local_username.py::test_tunnel_uses_explicit_user_without_local_username` runs, **Then** with `getpass.getuser` raising `OSError`, a `Tunnel` built from an inventory entry resolves its username, and a failing tool call logs the underlying exception.
+
+### Edge Cases
+
+- The vendor service is unreachable or rejects the credential: the connector returns the SDK typed error and never a partial result.
+- An argument outside the documented inputs is refused with the SDK typed refusal and causes no effect on the vendor service.
+
+## Requirements
+
+- **FR-001**: One canonical host inventory path across surfaces. Rows: `TM-INVENTORY-R001`.
+- **FR-002**: Fleet name. Rows: `TM-INVENTORY-R002`.
+- **FR-003**: SSH runs without a local username. Rows: `TM-INVENTORY-R003`.
+
+## Success Criteria
+
+- **SC-001**: A fixture with only the canonical file present confirms every automatic reader resolves it, while a container-mount test confirms the deployed container reads the identical file read-only. Rows: `TM-INVENTORY-R001`.
+- **SC-002**: Every connector name in the package is `tunnel-manager-mcp`. Rows: `TM-INVENTORY-R002`.
+- **SC-003**: With `getpass.getuser` raising `OSError`, a `Tunnel` built from an inventory entry resolves its username, and a failing tool call logs the underlying exception. Rows: `TM-INVENTORY-R003`.
+
+## Assumptions
+
+- The `tunnel-manager` package keeps the entry point and module layout named in the rows.
+- The shared SDK supplies the transport, authentication, retry and certification helpers the rows reuse.
+
+## Traceability
+
+| Label | Rows | Design section | Test ID | Evidence |
+|---|---|---|---|---|
+| FR-001 | `TM-INVENTORY-R001` | plan.md Production caller chain | T-001 | tests/test_inventory_path.py::test_single_canonical_inventory_path |
+| FR-002 | `TM-INVENTORY-R002` | plan.md Production caller chain | T-002 | tests/test_fleet_name.py::test_connector_name_is_the_fleet_name |
+| FR-003 | `TM-INVENTORY-R003` | plan.md Production caller chain | T-003 | tests/test_no_local_username.py::test_tunnel_uses_explicit_user_without_local_username |

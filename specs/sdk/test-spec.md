@@ -1,15 +1,23 @@
-# CONN-TUNNEL-MANAGER-SDK test specification
+# CONN-TUNNEL-MANAGER-SDK — Test specification
 
-Tests use synthetic credentials and mock transports. They need no network.
+Governing spec: [spec.md](spec.md).
 
-| Scenario | Requirements | Expected result |
-|---|---|---|
-| Secret references resolve through the SDK | `CONN-TUNNEL-MANAGER-SDK-R001` | A unit test resolves env:// and openbao:// references and rejects malformed ones |
-| SDK floor and dependency set | `CONN-TUNNEL-MANAGER-SDK-R002` | pyproject.toml shows the floor and no requests pin |
-| Production wiring | `CONN-TUNNEL-MANAGER-SDK-R003` | A test enters at the production entry point and reaches the wired call site. |
-| Hot-path proof | `CONN-TUNNEL-MANAGER-SDK-R004` | The named integration test passes. |
-| One wiring for every transport | `CONN-TUNNEL-MANAGER-SDK-R005` | stdio, no-auth HTTP and JWT HTTP use one actor path; 401 without a token; not-entitled refusal is the same 403 from both tools |
-| One connection resolver | `CONN-TUNNEL-MANAGER-SDK-R005.1` | inventory group port is used, not 22; unknown alias is a 400 from both tools |
-| Every tool on three transports | `CONN-TUNNEL-MANAGER-SDK-R005.2` | the 41 tool outcomes match across stdio, HTTP none and HTTP JWT against a real SSH host |
-| Causes, native keys, confirm | `CONN-TUNNEL-MANAGER-SDK-R005.3` | failures carry `Type: message`; key generation needs no binary; `confirm=true` works without elicitation on stdio, no-auth HTTP and JWT HTTP; an unconfirmed call from a client that cannot elicit is a named refusal |
-| Windows portability | `CONN-TUNNEL-MANAGER-SDK-R006` | with `os.fchmod`/`os.getuid` removed and `os.name` set to `nt`, files are hardened with `S_IREAD\|S_IWRITE`, inventory and key writes succeed, and no source calls `/usr/bin/ssh-keygen` |
+| Test ID | Requirement | Proving test | Expected observation |
+|---|---|---|---|
+| T-001 | `CONN-TUNNEL-MANAGER-SDK-R001` | `tests/test_connection_security.py::test_secret_ref_resolves_through_sdk_resolver` | A unit test resolves env:// and openbao:// references and rejects malformed ones |
+| T-002 | `CONN-TUNNEL-MANAGER-SDK-R002` | `tests/test_connection_security.py::test_dependencies_carry_sdk_floor_and_no_requests_pin` | pyproject.toml shows the floor and no requests pin |
+| T-003 | `CONN-TUNNEL-MANAGER-SDK-R003` | `tests/test_connection_security.py::test_secret_ref_resolves_through_sdk_resolver` | A test enters at the production entry point and reaches the wired call site. |
+| T-004 | `CONN-TUNNEL-MANAGER-SDK-R004` | `tests/test_connection_security.py::test_secret_ref_resolves_through_sdk_resolver` | The named integration test passes. |
+| T-005 | `CONN-TUNNEL-MANAGER-SDK-R005` | covered by the child rows | `tests/test_served_actor_binding.py`; `tests/test_transport_parity_integration.py::test_jwt_refusals_name_their_cause`. |
+| T-006 | `CONN-TUNNEL-MANAGER-SDK-R005.1` | `tests/test_transport_parity_integration.py::test_stdio_serves_every_tool` | `tests/test_transport_parity_integration.py` asserts that the listed port is the inventory group's port, not 22, and that both tools refuse an unknown alias identically. |
+| T-007 | `CONN-TUNNEL-MANAGER-SDK-R005.2` | `tests/test_transport_parity_integration.py::test_http_with_jwt_serves_every_tool_identically` | `tests/test_transport_parity_integration.py::test_stdio_serves_every_tool`, `::test_http_without_auth_serves_every_tool_identically` and `::test_http_with_jwt_serves_every_tool_identically`, run in CI. |
+| T-008 | `CONN-TUNNEL-MANAGER-SDK-R005.3` | `tests/test_transport_parity_integration.py::test_stdio_no_auth_destructive_call` | `tests/test_transport_parity_integration.py` (per-tool outcomes carry the cause). `tests/test_tm_remote_actions_characterize.py::TestRemoveHostKey::test_explicit_confirm_skips_elicitation`. `tests/test_transport_parity_integration.py::test_stdio_no_auth_destructive_call`, `::test_http_no_auth_localhost_destructive_call` and `::test_http_jwt_destructive_call` (real stdio, no-auth HTTP and JWT HTTP, with and without client elicitation). `tests/test_tunnel_manager.py::TestTunnel::test_check_ssh_server` and `::test_rotate_ssh_key`. |
+| T-009 | `CONN-TUNNEL-MANAGER-SDK-R006` | `tests/test_windows_portability.py::test_package_imports_no_posix_only_modules` (planned) | `tests/test_windows_portability.py`; `tests/test_host_key_security.py::test_known_hosts_rejects_symlinks_and_writable_files`; `tests/test_no_local_username.py::test_run_command_returns_specific_policy_cause`; the `Windows` job in `.github/workflows/windows-ci.yml`. |
+
+## Negative and boundary cases
+
+Each proving test above includes the refusal or error case that its row names. A vendor outage or an unauthorised call must return the SDK typed error.
+
+## Quality and release proof
+
+Run `uv run pytest tests` and `pre-commit run --all-files` from the repository root. A planned test is added by the code change that lands the row.
