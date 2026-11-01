@@ -644,9 +644,14 @@ def register_host_tools(mcp: FastMCP):
             default="", description="Verified SSH server-key trust store path."
         ),
         proxy_command: str = Field(default="", description="Proxy command."),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (remove) without elicitation.",
+        ),
         ctx: Context = Field(description="MCP context.", default=None),
     ) -> dict:
         """Manage the local host alias inventory."""
+        _EXPLICIT_CONFIRM.set(bool(confirm))
         resolved = resolve_action(
             action, ["list", "add", "remove"], service="tunnel-manager"
         )
@@ -2743,7 +2748,7 @@ async def _tm_operations_cancel(
             {"action": action},
             errors=["Need operation_id"],
         )
-    if not await ctx_confirm_destructive(ctx, "cancel operation"):
+    if not await confirmed(ctx, "cancel operation"):
         return {
             "status": "cancelled",
             "message": "Not confirmed: pass confirm=true or confirm when asked",
@@ -2880,9 +2885,14 @@ def register_operations_tools(mcp: FastMCP):
         details: dict = Field(
             description="Additional details (start).", default_factory=dict
         ),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (cancel) without elicitation.",
+        ),
         ctx: Context = Field(description="MCP context.", default=None),
     ) -> dict:
         """Operation lifecycle and session management."""
+        _EXPLICIT_CONFIRM.set(bool(confirm))
         resolved = resolve_action(
             action,
             ["start", "get_progress", "cancel", "get_metrics", "list_sessions"],

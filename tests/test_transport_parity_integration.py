@@ -702,3 +702,151 @@ async def test_jwt_refusals_name_their_cause(world: _World) -> None:
     assert remote.structured_content["message"] == refusal
     assert inventory.structured_content["status_code"] == 403
     assert inventory.structured_content["message"] == refusal
+
+
+# ------------------------------------------------- destructive confirmation (R005.3)
+async def _accept(message: str, response_type: Any, params: Any, context: Any) -> Any:
+    return response_type(confirmed=True) if response_type else None
+
+
+async def _destructive_flow(
+    open_client: Any, alias: str, *, elicits: bool, label: str
+) -> None:
+    """remove_host over a real transport: refused cleanly, then confirmed.
+
+    A client that cannot elicit gets a named, non-error refusal and the host
+    stays; ``confirm=true`` removes it. A client that can elicit is asked and
+    removes it on acceptance.
+    """
+    kwargs: dict[str, Any] = {"timeout": CALL_TIMEOUT}
+    if elicits:
+        kwargs["elicitation_handler"] = _accept
+    async with open_client(**kwargs) as client:
+        await _pace()
+        added = await client.call_tool(
+            "tunnel_manager_add_host",
+            {"alias": alias, "hostname": "127.0.0.1", "user": "operator"},
+        )
+        assert not added.is_error, f"{label}: {added.content}"
+
+        async def present() -> bool:
+            await _pace()
+            hosts = (await client.call_tool("tunnel_manager_list_hosts", {})).data
+            return alias in json.dumps(hosts)
+
+        assert await present()
+        await _pace()
+        if elicits:
+            removed = await client.call_tool(
+                "tunnel_manager_remove_host", {"alias": alias}, raise_on_error=False
+            )
+            assert not removed.is_error, f"{label}: {removed.content}"
+            assert not await present()
+            return
+        refused = await client.call_tool(
+            "tunnel_manager_remove_host", {"alias": alias}, raise_on_error=False
+        )
+        assert not refused.is_error, f"{label}: {refused.content}"
+        assert refused.structured_content["cancelled"] is True
+        assert "confirm=true" in refused.structured_content["reason"]
+        assert await present(), "an unconfirmed destructive call must not remove"
+        await _pace()
+        confirmed_call = await client.call_tool(
+            "tunnel_manager_remove_host",
+            {"alias": alias, "confirm": True},
+            raise_on_error=False,
+        )
+        assert not confirmed_call.is_error, f"{label}: {confirmed_call.content}"
+        assert not await present()
+
+
+@pytest.mark.spec("CONN-TUNNEL-MANAGER-SDK-R005.3")
+@pytest.mark.timeout(300)
+@pytest.mark.parametrize("elicits", [False, True])
+async def test_stdio_no_auth_destructive_call(world: _World, elicits: bool) -> None:
+    paths = world.client_home(f"stdio-destructive-{elicits}")
+
+    def open_client(**kwargs: Any) -> Client[Any]:
+        transport = StdioTransport(
+            command=_executable(), args=["--transport", "stdio"], env=_server_env(paths)
+        )
+        return Client(transport, **kwargs)
+
+    await _destructive_flow(open_client, "gone", elicits=elicits, label="stdio")
+
+
+@pytest.mark.spec("CONN-TUNNEL-MANAGER-SDK-R005.3")
+@pytest.mark.timeout(300)
+@pytest.mark.parametrize("elicits", [False, True])
+async def test_http_no_auth_localhost_destructive_call(
+    world: _World, elicits: bool
+) -> None:
+    paths = world.client_home(f"http-destructive-{elicits}")
+    port = _free_port()
+    server = _HttpServer(
+        [
+            "--transport",
+            "streamable-http",
+            "--auth-type",
+            "none",
+            "--host",
+            "127.0.0.1",
+            "--allowed-hosts",
+            f"127.0.0.1:{port},localhost:{port}",
+        ],
+        _server_env(paths),
+        port,
+    )
+    try:
+
+        def open_client(**kwargs: Any) -> Client[Any]:
+            return Client(StreamableHttpTransport(server.url), **kwargs)
+
+        await _destructive_flow(open_client, "gone", elicits=elicits, label="http")
+    finally:
+        server.stop()
+
+
+@pytest.mark.spec("CONN-TUNNEL-MANAGER-SDK-R005.3")
+@pytest.mark.timeout(300)
+@pytest.mark.parametrize("elicits", [False, True])
+async def test_http_jwt_destructive_call(world: _World, elicits: bool) -> None:
+    paths = world.client_home(f"jwt-destructive-{elicits}")
+    port = _free_port()
+    server = _HttpServer(_jwt_argv(world, port), _server_env(paths), port)
+    try:
+
+        def open_client(**kwargs: Any) -> Client[Any]:
+            return Client(
+                StreamableHttpTransport(server.url, auth=world.token()), **kwargs
+            )
+
+        await _destructive_flow(open_client, "gone", elicits=elicits, label="jwt")
+    finally:
+        server.stop()
+
+
+@pytest.mark.spec("CONN-TUNNEL-MANAGER-SDK-R005.3")
+@pytest.mark.timeout(300)
+async def test_stdio_operation_cancel_is_refused_then_confirmed(
+    world: _World,
+) -> None:
+    paths = world.client_home("stdio-cancel")
+    transport = StdioTransport(
+        command=_executable(), args=["--transport", "stdio"], env=_server_env(paths)
+    )
+    async with Client(transport, timeout=CALL_TIMEOUT) as client:
+        refused = await client.call_tool(
+            "tm_operation_cancel", {"operation_id": "none"}, raise_on_error=False
+        )
+        assert not refused.is_error
+        assert refused.structured_content["status"] == "cancelled"
+        assert "confirm=true" in refused.structured_content["message"]
+        await _pace()
+        confirmed_call = await client.call_tool(
+            "tm_operation_cancel",
+            {"operation_id": "none", "confirm": True},
+            raise_on_error=False,
+        )
+        assert not confirmed_call.is_error
+        assert confirmed_call.structured_content.get("status") != "cancelled"
