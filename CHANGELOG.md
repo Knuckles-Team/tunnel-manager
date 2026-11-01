@@ -5,6 +5,14 @@ All notable changes to `tunnel-manager` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.7] - 2026-11-01
+
+### Fixed
+- Destructive tools such as `tunnel_manager_remove_host` no longer fail with
+  "Elicitation not supported" when the client cannot elicit (stdio or HTTP, with or
+  without auth). Pass `confirm=true`; without it the call is refused with a message
+  naming `confirm=true`. Requires `scion-sdk>=0.6.5` (CONN-TUNNEL-MANAGER-SDK-R005.3).
+
 ## [3.4.6] - 2026-10-30
 
 ### Changed
