@@ -1,5 +1,8 @@
 # Inventory source and volume contract
 
+Provider: tunnel-manager TM-INVENTORY-R001
+Consumer: container-manager-mcp CONN-CONTAINER-MANAGER-MCP-R004
+
 ## Source identity
 
 The sole automatic source is the operator-selected XDG configuration file:
@@ -10,7 +13,7 @@ $XDG_CONFIG_HOME/scion-sdk/inventory.yml
 
 `XDG_CONFIG_HOME` is resolved for the executing operator or supplied as an explicit deployment input. The relative path and `.yml` basename are fixed. `inventory.yaml`, a checkout file, image seed, service-local document, and runtime cache are not alternative sources. A source receipt includes the normalized path, content digest, file type, selection mode, and validation result; it excludes contents and secret values.
 
-## Runtime projection
+## Wire shape
 
 | Field | Contract |
 | --- | --- |
@@ -21,6 +24,10 @@ $XDG_CONFIG_HOME/scion-sdk/inventory.yml
 | Failure | Missing/mismatched source, wrong basename, writable projection, or unreadable target prevents inventory-dependent service readiness. Do not use a package seed or another path. |
 
 Container runtimes may use different host mount syntax, but they must preserve the logical source, target, digest, and write-denial behavior. The deployment owner supplies `HOST_XDG_CONFIG_HOME` or an equivalent typed XDG root. No repository stores an operator-specific absolute host path in a public manifest.
+
+## Refusal codes
+
+A missing or mismatched source, a wrong basename, a writable projection or an unreadable target refuses inventory readiness. A stale cache with no matching source digest is refused as the current inventory.
 
 ## Consumer contract
 
