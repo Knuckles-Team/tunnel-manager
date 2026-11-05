@@ -34,7 +34,7 @@ This plan states how `tunnel-manager` delivers the rows of `CONN-TUNNEL-MANAGER-
 - `tests/test_windows_portability.py` (existing)
 - `tests/test_host_key_security.py` (existing)
 - `tests/test_no_local_username.py` (existing)
-- `.github/workflows/windows-ci.yml` (existing)
+- `.github/workflows/connector.yml` (existing)
 - `tests/test_tm_remote_actions_characterize.py` (existing)
 - `tests/test_tunnel_manager.py` (existing)
 
@@ -76,7 +76,7 @@ This plan states how `tunnel-manager` delivers the rows of `CONN-TUNNEL-MANAGER-
 - `tests/test_windows_portability.py` (existing)
 - `tests/test_host_key_security.py` (existing)
 - `tests/test_no_local_username.py` (existing)
-- `.github/workflows/windows-ci.yml` (existing)
+- `.github/workflows/connector.yml` (existing)
 - `tests/test_tm_remote_actions_characterize.py` (existing)
 - `tests/test_tunnel_manager.py` (existing)
 
