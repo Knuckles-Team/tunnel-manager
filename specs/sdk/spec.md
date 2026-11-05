@@ -90,7 +90,7 @@ The fleet operator and the engine rely on this behaviour of `tunnel-manager`: Th
 
 **Acceptance Scenarios**:
 
-1. **Given** the `tunnel-manager` connector built from the default branch, **When** `tests/test_windows_portability.py::test_package_imports_no_posix_only_modules` runs, **Then** `tests/test_windows_portability.py`; `tests/test_host_key_security.py::test_known_hosts_rejects_symlinks_and_writable_files`; `tests/test_no_local_username.py::test_run_command_returns_specific_policy_cause`; the `Windows` job in `.github/workflows/windows-ci.yml`.
+1. **Given** the `tunnel-manager` connector built from the default branch, **When** `tests/test_windows_portability.py::test_package_imports_no_posix_only_modules` runs, **Then** `tests/test_windows_portability.py`; `tests/test_host_key_security.py::test_known_hosts_rejects_symlinks_and_writable_files`; `tests/test_no_local_username.py::test_run_command_returns_specific_policy_cause`; the `Windows tests` job in `.github/workflows/connector.yml`.
 
 ### Edge Cases
 
@@ -119,7 +119,7 @@ The fleet operator and the engine rely on this behaviour of `tunnel-manager`: Th
 - **SC-006**: `tests/test_transport_parity_integration.py` asserts that the listed port is the inventory group's port, not 22, and that both tools refuse an unknown alias identically. Rows: `CONN-TUNNEL-MANAGER-SDK-R005.1`.
 - **SC-007**: `tests/test_transport_parity_integration.py::test_stdio_serves_every_tool`, `::test_http_without_auth_serves_every_tool_identically` and `::test_http_with_jwt_serves_every_tool_identically`, run in CI. Rows: `CONN-TUNNEL-MANAGER-SDK-R005.2`.
 - **SC-008**: `tests/test_transport_parity_integration.py` (per-tool outcomes carry the cause). `tests/test_tm_remote_actions_characterize.py::TestRemoveHostKey::test_explicit_confirm_skips_elicitation`. `tests/test_transport_parity_integration.py::test_stdio_no_auth_destructive_call`, `::test_http_no_auth_localhost_destructive_call` and `::test_http_jwt_destructive_call` (real stdio, no-auth HTTP and JWT HTTP, with and without client elicitation). `tests/test_tunnel_manager.py::TestTunnel::test_check_ssh_server` and `::test_rotate_ssh_key`. Rows: `CONN-TUNNEL-MANAGER-SDK-R005.3`.
-- **SC-009**: `tests/test_windows_portability.py`; `tests/test_host_key_security.py::test_known_hosts_rejects_symlinks_and_writable_files`; `tests/test_no_local_username.py::test_run_command_returns_specific_policy_cause`; the `Windows` job in `.github/workflows/windows-ci.yml`. Rows: `CONN-TUNNEL-MANAGER-SDK-R006`.
+- **SC-009**: `tests/test_windows_portability.py`; `tests/test_host_key_security.py::test_known_hosts_rejects_symlinks_and_writable_files`; `tests/test_no_local_username.py::test_run_command_returns_specific_policy_cause`; the `Windows tests` job in `.github/workflows/connector.yml`. Rows: `CONN-TUNNEL-MANAGER-SDK-R006`.
 
 ## Assumptions
 
