@@ -1,55 +1,33 @@
-"""Action-discovery standardization checks for tunnel-manager MCP tools.
-
-Verifies the shared scion_sdk.mcp.action_dispatch.resolve_action wiring:
-list_actions discovery payloads and rich did-you-mean errors on bad actions.
-"""
+"""No tunnel-manager tool routes an action: every operation is its own tool."""
 
 import asyncio
 
-import pytest
-from fastmcp import FastMCP
+from scion_sdk._connector_serve import build_server
 
-from tunnel_manager.mcp_server import (
-    register_file_tools,
-    register_host_tools,
-    register_inventory_tools,
-    register_operations_tools,
-    register_remote_tools,
-    register_security_tools,
-    register_system_tools,
-)
-
-REGISTRARS = {
-    "tm_hosts": register_host_tools,
-    "tm_remote": register_remote_tools,
-    "tm_inventory": register_inventory_tools,
-    "tm_operations": register_operations_tools,
-    "tm_system": register_system_tools,
-    "tm_files": register_file_tools,
-    "tm_security": register_security_tools,
-}
+OPERATIONS = {
+    "tm_remote": (
+        "run_command", "send_file", "receive_file", "check_ssh", "test_key_auth",
+        "setup_passwordless", "copy_ssh_config", "rotate_key", "remove_host_key",
+    ),
+    "tm_inventory": (
+        "run_command", "configure_key_auth", "mesh_bootstrap", "copy_ssh_config",
+        "rotate_key", "send_file", "receive_file",
+    ),
+}  # fmt: skip
 
 
-async def _get_fn(tool_name):
-    mcp = FastMCP("test")
-    REGISTRARS[tool_name](mcp)
-    tool = await mcp.get_tool(tool_name)
-    return tool.fn
+def _served():
+    mcp = build_server("tunnel_manager", command_args=[])[1]
+    return {t.name: t for t in asyncio.run(mcp.list_tools())}
 
 
-@pytest.mark.parametrize("tool_name", list(REGISTRARS))
-def test_list_actions_returns_names(tool_name):
-    fn = asyncio.run(_get_fn(tool_name))
-    result = asyncio.run(fn(action="list_actions"))
-    assert isinstance(result, dict)
-    assert result["service"] == "tunnel-manager"
-    assert isinstance(result["actions"], list)
-    assert len(result["actions"]) >= 1
+def test_no_served_tool_takes_an_action():
+    for name, tool in _served().items():
+        assert "action" not in tool.parameters.get("properties", {}), name
 
 
-@pytest.mark.parametrize("tool_name", list(REGISTRARS))
-def test_bogus_action_raises_with_list_actions_hint(tool_name):
-    fn = asyncio.run(_get_fn(tool_name))
-    with pytest.raises(ValueError) as exc:
-        asyncio.run(fn(action="definitely_not_a_real_action"))
-    assert "list_actions" in str(exc.value)
+def test_each_remote_and_inventory_operation_is_a_tool():
+    served = set(_served())
+    for prefix, actions in OPERATIONS.items():
+        for action in actions:
+            assert f"{prefix}_{action}" in served

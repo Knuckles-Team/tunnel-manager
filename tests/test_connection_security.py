@@ -95,16 +95,10 @@ def test_active_mcp_tool_schemas_do_not_accept_literal_passwords():
     mcp_server = import_module("tunnel_manager.mcp_server")
 
     registrars = (
-        mcp_server.register_host_tools,
         mcp_server.register_remote_tools,
         mcp_server.register_system_tools,
         mcp_server.register_file_tools,
         mcp_server.register_security_tools,
-        import_module("tunnel_manager.mcp.mcp_host").register_host_tools,
-        import_module("tunnel_manager.mcp.mcp_remote").register_remote_tools,
-        import_module("tunnel_manager.mcp.mcp_system").register_system_tools,
-        import_module("tunnel_manager.mcp.mcp_file").register_file_tools,
-        import_module("tunnel_manager.mcp.mcp_security").register_security_tools,
     )
     for registrar in registrars:
         captured = []
@@ -113,7 +107,7 @@ def test_active_mcp_tool_schemas_do_not_accept_literal_passwords():
             def __init__(self, sink):
                 self.sink = sink
 
-            def tool(self, **_kwargs):
+            def tool(self, *_args, **_kwargs):
                 def decorator(function):
                     self.sink.append(function)
                     return function
@@ -121,9 +115,10 @@ def test_active_mcp_tool_schemas_do_not_accept_literal_passwords():
                 return decorator
 
         registrar(FakeMcp(captured))
-        signature = inspect.signature(captured[0])
-        assert "password" not in signature.parameters
-        assert "password_ref" in signature.parameters
+        signatures = [inspect.signature(function) for function in captured]
+        assert captured
+        assert all("password" not in sig.parameters for sig in signatures)
+        assert any("password_ref" in sig.parameters for sig in signatures)
 
 
 # spec: CONN-TUNNEL-MANAGER-SDK-R001, CONN-TUNNEL-MANAGER-SDK-R003, CONN-TUNNEL-MANAGER-SDK-R004

@@ -49,6 +49,7 @@ from tunnel_manager.connection_security import (
 )
 from tunnel_manager.models import HostConfig
 from tunnel_manager.operation_manager import operation_manager
+from tunnel_manager.routed import call_routed
 from tunnel_manager.security_auditor import SecurityAuditor
 from tunnel_manager.system_intelligence import SystemIntelligence
 from tunnel_manager.tunnel_manager import (
@@ -555,132 +556,6 @@ def _resolve_host(
         ssh_config_file=ssh_config_file,
     )
     return target, target["ssh_config_file"]
-
-
-async def _tm_hosts_list() -> dict:
-    """``tm_hosts`` ``list``: return the alias inventory, best-effort KG ingest."""
-    hosts = await run_blocking(host_manager.list_hosts)
-    # Native KG ingestion — default-on, best-effort, never fatal.
-    if setting("TUNNEL_KG_INGEST", "true").lower() not in ("false", "0", "no"):
-        try:
-            from tunnel_manager.kg_ingest import ingest_hosts
-
-            await ingest_hosts(hosts, group="all")
-        except Exception as e:  # noqa: BLE001 — ingestion must not break list
-            logger.debug("Operation failed: error_type=%s", type(e).__name__)
-    return {"hosts": hosts}
-
-
-async def _tm_hosts_add(
-    action: str,
-    alias: str,
-    hostname: str,
-    user: str,
-    port: int,
-    optional: dict,
-) -> dict:
-    """``tm_hosts`` ``add``. ``optional`` carries the blank-means-unset fields."""
-    if not alias or not hostname or not user:
-        return ResponseBuilder.build(
-            400,
-            "Need alias, hostname, user",
-            {"action": action},
-            errors=["Need alias, hostname, user"],
-        )
-    await run_blocking(
-        host_manager.add_host,
-        alias=alias,
-        hostname=hostname,
-        user=user,
-        port=port,
-        identity_file=optional.get("identity_file") or None,
-        password_ref=optional.get("password_ref") or None,
-        known_hosts_file=optional.get("known_hosts_file") or None,
-        proxy_command=optional.get("proxy_command") or None,
-    )
-    return {"status": "success", "message": "Host added."}
-
-
-async def _tm_hosts_remove(action: str, alias: str, ctx) -> dict:
-    """``tm_hosts`` ``remove``, with the destructive-operation confirmation."""
-    if not alias:
-        return ResponseBuilder.build(
-            400, "Need alias", {"action": action}, errors=["Need alias"]
-        )
-    if not await confirmed(ctx, "remove host"):
-        return {
-            "status": "cancelled",
-            "message": "Not confirmed: pass confirm=true or confirm when asked",
-        }
-    await ctx_progress(ctx, 0, 100)
-    await run_blocking(host_manager.remove_host, alias)
-    return {"status": "success", "message": "Host removed."}
-
-
-def register_host_tools(mcp: FastMCP):
-    """Register host inventory management tool."""
-
-    @mcp.tool(
-        annotations={
-            "title": "Host Management",
-            "readOnlyHint": False,
-            "destructiveHint": True,
-            "idempotentHint": False,
-        },
-        tags={"host_management"},
-    )
-    async def tm_hosts(
-        action: str = Field(description="Action: 'list', 'add', 'remove'"),
-        alias: str = Field(default="", description="Host alias."),
-        hostname: str = Field(default="", description="Real hostname or IP."),
-        user: str = Field(default="", description="Username."),
-        port: int = Field(default=22, description="SSH port."),
-        identity_file: str = Field(default="", description="Path to private key."),
-        password_ref: str = Field(
-            default="", description="Secret-manager reference for an SSH password."
-        ),
-        known_hosts_file: str = Field(
-            default="", description="Verified SSH server-key trust store path."
-        ),
-        proxy_command: str = Field(default="", description="Proxy command."),
-        confirm: bool = Field(
-            default=False,
-            description="Confirm a destructive action (remove) without elicitation.",
-        ),
-        ctx: Context = Field(description="MCP context.", default=None),
-    ) -> dict:
-        """Manage the local host alias inventory."""
-        _EXPLICIT_CONFIRM.set(bool(confirm))
-        resolved = resolve_action(
-            action, ["list", "add", "remove"], service="tunnel-manager"
-        )
-        if isinstance(resolved, dict):
-            return resolved
-        action = resolved
-        if action == "list":
-            return await _tm_hosts_list()
-        if action == "add":
-            return await _tm_hosts_add(
-                action,
-                alias,
-                hostname,
-                user,
-                port,
-                {
-                    "identity_file": identity_file,
-                    "password_ref": password_ref,
-                    "known_hosts_file": known_hosts_file,
-                    "proxy_command": proxy_command,
-                },
-            )
-        if action == "remove":
-            return await _tm_hosts_remove(action, alias, ctx)
-        return ResponseBuilder.build(
-            400,
-            f"Unknown action: {action}",
-            {"action": action},
-            errors=["Valid: list, add, remove"],
-        )
 
 
 async def _tm_remote_run_command(
@@ -1401,16 +1276,7 @@ _TM_REMOTE_ACTIONS = {
 def register_remote_tools(mcp: FastMCP):
     """Register single-host SSH operations tool."""
 
-    @mcp.tool(
-        annotations={
-            "title": "Remote SSH Operations",
-            "readOnlyHint": False,
-            "destructiveHint": True,
-            "idempotentHint": False,
-        },
-        tags={"remote_access"},
-    )
-    async def tm_remote(
+    async def _tm_remote_routed(
         action: str = Field(
             description="Action: 'run_command', 'send_file', 'receive_file', 'check_ssh', 'test_key_auth', 'setup_passwordless', 'copy_ssh_config', 'rotate_key', 'remove_host_key'"
         ),
@@ -1541,6 +1407,924 @@ def register_remote_tools(mcp: FastMCP):
             known_hosts,
             timeout,
             ctx,
+        )
+
+    @mcp.tool(
+        name="tm_remote_run_command",
+        description="Run command (tm_remote). Single-host SSH operations with shared connection params.",
+        tags={"remote_access", "remote", "granular", "gated", "split-action"},
+        annotations={
+            "title": "Run Command",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_remote_run_command(
+        host: str = Field(
+            default=setting("TUNNEL_REMOTE_HOST", ""),
+            description="Inventory alias, or a raw hostname with an explicit user.",
+        ),
+        user: str | None = Field(
+            default=None, description="Username; unset uses the inventory alias."
+        ),
+        password_ref: str | None = Field(
+            default=None,
+            description="Runtime secret reference for the SSH password; unset uses the alias.",
+        ),
+        port: int | None = Field(
+            default=None, description="Port; unset uses the inventory alias, else 22."
+        ),
+        id_file: str | None = Field(
+            default=None, description="Private key path; unset uses the alias."
+        ),
+        certificate: str | None = Field(
+            default=None, description="Teleport certificate; unset uses the alias."
+        ),
+        proxy: str | None = Field(
+            default=None, description="Teleport proxy; unset uses the alias."
+        ),
+        cfg: str | None = Field(
+            default=None, description="SSH config path; unset uses ~/.ssh/config."
+        ),
+        cmd: str = Field(default="", description="Shell command (run_command)."),
+        lpath: str = Field(
+            default="", description="Local file path (send_file/receive_file)."
+        ),
+        rpath: str = Field(
+            default="", description="Remote file path (send_file/receive_file)."
+        ),
+        key: str = Field(
+            default="", description="Key path (test_key_auth/setup_passwordless)."
+        ),
+        key_type: str = Field(
+            default="ed25519",
+            description="Key type: rsa or ed25519 (setup_passwordless/rotate_key).",
+        ),
+        new_key: str = Field(
+            default="", description="New private key path (rotate_key)."
+        ),
+        lcfg: str = Field(
+            default="", description="Local SSH config (copy_ssh_config)."
+        ),
+        rcfg: str = Field(
+            default=os.path.expanduser("~/.ssh/config"),
+            description="Remote SSH config (copy_ssh_config).",
+        ),
+        known_hosts: str = Field(
+            default=os.path.expanduser("~/.ssh/known_hosts"),
+            description="Known hosts path (remove_host_key).",
+        ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (remove_host_key) without elicitation.",
+        ),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
+        """Run command (one operation of tm_remote)."""
+        return await call_routed(
+            _tm_remote_routed,
+            "run_command",
+            {
+                "host": host,
+                "user": user,
+                "password_ref": password_ref,
+                "port": port,
+                "id_file": id_file,
+                "certificate": certificate,
+                "proxy": proxy,
+                "cfg": cfg,
+                "cmd": cmd,
+                "lpath": lpath,
+                "rpath": rpath,
+                "key": key,
+                "key_type": key_type,
+                "new_key": new_key,
+                "lcfg": lcfg,
+                "rcfg": rcfg,
+                "known_hosts": known_hosts,
+                "timeout": timeout,
+                "confirm": confirm,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_remote_send_file",
+        description="Send file (tm_remote). Single-host SSH operations with shared connection params.",
+        tags={"remote_access", "remote", "granular", "gated", "split-action"},
+        annotations={
+            "title": "Send File",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_remote_send_file(
+        host: str = Field(
+            default=setting("TUNNEL_REMOTE_HOST", ""),
+            description="Inventory alias, or a raw hostname with an explicit user.",
+        ),
+        user: str | None = Field(
+            default=None, description="Username; unset uses the inventory alias."
+        ),
+        password_ref: str | None = Field(
+            default=None,
+            description="Runtime secret reference for the SSH password; unset uses the alias.",
+        ),
+        port: int | None = Field(
+            default=None, description="Port; unset uses the inventory alias, else 22."
+        ),
+        id_file: str | None = Field(
+            default=None, description="Private key path; unset uses the alias."
+        ),
+        certificate: str | None = Field(
+            default=None, description="Teleport certificate; unset uses the alias."
+        ),
+        proxy: str | None = Field(
+            default=None, description="Teleport proxy; unset uses the alias."
+        ),
+        cfg: str | None = Field(
+            default=None, description="SSH config path; unset uses ~/.ssh/config."
+        ),
+        cmd: str = Field(default="", description="Shell command (run_command)."),
+        lpath: str = Field(
+            default="", description="Local file path (send_file/receive_file)."
+        ),
+        rpath: str = Field(
+            default="", description="Remote file path (send_file/receive_file)."
+        ),
+        key: str = Field(
+            default="", description="Key path (test_key_auth/setup_passwordless)."
+        ),
+        key_type: str = Field(
+            default="ed25519",
+            description="Key type: rsa or ed25519 (setup_passwordless/rotate_key).",
+        ),
+        new_key: str = Field(
+            default="", description="New private key path (rotate_key)."
+        ),
+        lcfg: str = Field(
+            default="", description="Local SSH config (copy_ssh_config)."
+        ),
+        rcfg: str = Field(
+            default=os.path.expanduser("~/.ssh/config"),
+            description="Remote SSH config (copy_ssh_config).",
+        ),
+        known_hosts: str = Field(
+            default=os.path.expanduser("~/.ssh/known_hosts"),
+            description="Known hosts path (remove_host_key).",
+        ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (remove_host_key) without elicitation.",
+        ),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
+        """Send file (one operation of tm_remote)."""
+        return await call_routed(
+            _tm_remote_routed,
+            "send_file",
+            {
+                "host": host,
+                "user": user,
+                "password_ref": password_ref,
+                "port": port,
+                "id_file": id_file,
+                "certificate": certificate,
+                "proxy": proxy,
+                "cfg": cfg,
+                "cmd": cmd,
+                "lpath": lpath,
+                "rpath": rpath,
+                "key": key,
+                "key_type": key_type,
+                "new_key": new_key,
+                "lcfg": lcfg,
+                "rcfg": rcfg,
+                "known_hosts": known_hosts,
+                "timeout": timeout,
+                "confirm": confirm,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_remote_receive_file",
+        description="Receive file (tm_remote). Single-host SSH operations with shared connection params.",
+        tags={"remote_access", "remote", "granular", "gated", "split-action"},
+        annotations={
+            "title": "Receive File",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_remote_receive_file(
+        host: str = Field(
+            default=setting("TUNNEL_REMOTE_HOST", ""),
+            description="Inventory alias, or a raw hostname with an explicit user.",
+        ),
+        user: str | None = Field(
+            default=None, description="Username; unset uses the inventory alias."
+        ),
+        password_ref: str | None = Field(
+            default=None,
+            description="Runtime secret reference for the SSH password; unset uses the alias.",
+        ),
+        port: int | None = Field(
+            default=None, description="Port; unset uses the inventory alias, else 22."
+        ),
+        id_file: str | None = Field(
+            default=None, description="Private key path; unset uses the alias."
+        ),
+        certificate: str | None = Field(
+            default=None, description="Teleport certificate; unset uses the alias."
+        ),
+        proxy: str | None = Field(
+            default=None, description="Teleport proxy; unset uses the alias."
+        ),
+        cfg: str | None = Field(
+            default=None, description="SSH config path; unset uses ~/.ssh/config."
+        ),
+        cmd: str = Field(default="", description="Shell command (run_command)."),
+        lpath: str = Field(
+            default="", description="Local file path (send_file/receive_file)."
+        ),
+        rpath: str = Field(
+            default="", description="Remote file path (send_file/receive_file)."
+        ),
+        key: str = Field(
+            default="", description="Key path (test_key_auth/setup_passwordless)."
+        ),
+        key_type: str = Field(
+            default="ed25519",
+            description="Key type: rsa or ed25519 (setup_passwordless/rotate_key).",
+        ),
+        new_key: str = Field(
+            default="", description="New private key path (rotate_key)."
+        ),
+        lcfg: str = Field(
+            default="", description="Local SSH config (copy_ssh_config)."
+        ),
+        rcfg: str = Field(
+            default=os.path.expanduser("~/.ssh/config"),
+            description="Remote SSH config (copy_ssh_config).",
+        ),
+        known_hosts: str = Field(
+            default=os.path.expanduser("~/.ssh/known_hosts"),
+            description="Known hosts path (remove_host_key).",
+        ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (remove_host_key) without elicitation.",
+        ),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
+        """Receive file (one operation of tm_remote)."""
+        return await call_routed(
+            _tm_remote_routed,
+            "receive_file",
+            {
+                "host": host,
+                "user": user,
+                "password_ref": password_ref,
+                "port": port,
+                "id_file": id_file,
+                "certificate": certificate,
+                "proxy": proxy,
+                "cfg": cfg,
+                "cmd": cmd,
+                "lpath": lpath,
+                "rpath": rpath,
+                "key": key,
+                "key_type": key_type,
+                "new_key": new_key,
+                "lcfg": lcfg,
+                "rcfg": rcfg,
+                "known_hosts": known_hosts,
+                "timeout": timeout,
+                "confirm": confirm,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_remote_check_ssh",
+        description="Check ssh (tm_remote). Single-host SSH operations with shared connection params.",
+        tags={"remote_access", "remote", "granular", "gated", "split-action"},
+        annotations={
+            "title": "Check Ssh",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_remote_check_ssh(
+        host: str = Field(
+            default=setting("TUNNEL_REMOTE_HOST", ""),
+            description="Inventory alias, or a raw hostname with an explicit user.",
+        ),
+        user: str | None = Field(
+            default=None, description="Username; unset uses the inventory alias."
+        ),
+        password_ref: str | None = Field(
+            default=None,
+            description="Runtime secret reference for the SSH password; unset uses the alias.",
+        ),
+        port: int | None = Field(
+            default=None, description="Port; unset uses the inventory alias, else 22."
+        ),
+        id_file: str | None = Field(
+            default=None, description="Private key path; unset uses the alias."
+        ),
+        certificate: str | None = Field(
+            default=None, description="Teleport certificate; unset uses the alias."
+        ),
+        proxy: str | None = Field(
+            default=None, description="Teleport proxy; unset uses the alias."
+        ),
+        cfg: str | None = Field(
+            default=None, description="SSH config path; unset uses ~/.ssh/config."
+        ),
+        cmd: str = Field(default="", description="Shell command (run_command)."),
+        lpath: str = Field(
+            default="", description="Local file path (send_file/receive_file)."
+        ),
+        rpath: str = Field(
+            default="", description="Remote file path (send_file/receive_file)."
+        ),
+        key: str = Field(
+            default="", description="Key path (test_key_auth/setup_passwordless)."
+        ),
+        key_type: str = Field(
+            default="ed25519",
+            description="Key type: rsa or ed25519 (setup_passwordless/rotate_key).",
+        ),
+        new_key: str = Field(
+            default="", description="New private key path (rotate_key)."
+        ),
+        lcfg: str = Field(
+            default="", description="Local SSH config (copy_ssh_config)."
+        ),
+        rcfg: str = Field(
+            default=os.path.expanduser("~/.ssh/config"),
+            description="Remote SSH config (copy_ssh_config).",
+        ),
+        known_hosts: str = Field(
+            default=os.path.expanduser("~/.ssh/known_hosts"),
+            description="Known hosts path (remove_host_key).",
+        ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (remove_host_key) without elicitation.",
+        ),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
+        """Check ssh (one operation of tm_remote)."""
+        return await call_routed(
+            _tm_remote_routed,
+            "check_ssh",
+            {
+                "host": host,
+                "user": user,
+                "password_ref": password_ref,
+                "port": port,
+                "id_file": id_file,
+                "certificate": certificate,
+                "proxy": proxy,
+                "cfg": cfg,
+                "cmd": cmd,
+                "lpath": lpath,
+                "rpath": rpath,
+                "key": key,
+                "key_type": key_type,
+                "new_key": new_key,
+                "lcfg": lcfg,
+                "rcfg": rcfg,
+                "known_hosts": known_hosts,
+                "timeout": timeout,
+                "confirm": confirm,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_remote_test_key_auth",
+        description="Test key auth (tm_remote). Single-host SSH operations with shared connection params.",
+        tags={"remote_access", "remote", "granular", "gated", "split-action"},
+        annotations={
+            "title": "Test Key Auth",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_remote_test_key_auth(
+        host: str = Field(
+            default=setting("TUNNEL_REMOTE_HOST", ""),
+            description="Inventory alias, or a raw hostname with an explicit user.",
+        ),
+        user: str | None = Field(
+            default=None, description="Username; unset uses the inventory alias."
+        ),
+        password_ref: str | None = Field(
+            default=None,
+            description="Runtime secret reference for the SSH password; unset uses the alias.",
+        ),
+        port: int | None = Field(
+            default=None, description="Port; unset uses the inventory alias, else 22."
+        ),
+        id_file: str | None = Field(
+            default=None, description="Private key path; unset uses the alias."
+        ),
+        certificate: str | None = Field(
+            default=None, description="Teleport certificate; unset uses the alias."
+        ),
+        proxy: str | None = Field(
+            default=None, description="Teleport proxy; unset uses the alias."
+        ),
+        cfg: str | None = Field(
+            default=None, description="SSH config path; unset uses ~/.ssh/config."
+        ),
+        cmd: str = Field(default="", description="Shell command (run_command)."),
+        lpath: str = Field(
+            default="", description="Local file path (send_file/receive_file)."
+        ),
+        rpath: str = Field(
+            default="", description="Remote file path (send_file/receive_file)."
+        ),
+        key: str = Field(
+            default="", description="Key path (test_key_auth/setup_passwordless)."
+        ),
+        key_type: str = Field(
+            default="ed25519",
+            description="Key type: rsa or ed25519 (setup_passwordless/rotate_key).",
+        ),
+        new_key: str = Field(
+            default="", description="New private key path (rotate_key)."
+        ),
+        lcfg: str = Field(
+            default="", description="Local SSH config (copy_ssh_config)."
+        ),
+        rcfg: str = Field(
+            default=os.path.expanduser("~/.ssh/config"),
+            description="Remote SSH config (copy_ssh_config).",
+        ),
+        known_hosts: str = Field(
+            default=os.path.expanduser("~/.ssh/known_hosts"),
+            description="Known hosts path (remove_host_key).",
+        ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (remove_host_key) without elicitation.",
+        ),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
+        """Test key auth (one operation of tm_remote)."""
+        return await call_routed(
+            _tm_remote_routed,
+            "test_key_auth",
+            {
+                "host": host,
+                "user": user,
+                "password_ref": password_ref,
+                "port": port,
+                "id_file": id_file,
+                "certificate": certificate,
+                "proxy": proxy,
+                "cfg": cfg,
+                "cmd": cmd,
+                "lpath": lpath,
+                "rpath": rpath,
+                "key": key,
+                "key_type": key_type,
+                "new_key": new_key,
+                "lcfg": lcfg,
+                "rcfg": rcfg,
+                "known_hosts": known_hosts,
+                "timeout": timeout,
+                "confirm": confirm,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_remote_setup_passwordless",
+        description="Setup passwordless (tm_remote). Single-host SSH operations with shared connection params.",
+        tags={"remote_access", "remote", "granular", "gated", "split-action"},
+        annotations={
+            "title": "Setup Passwordless",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_remote_setup_passwordless(
+        host: str = Field(
+            default=setting("TUNNEL_REMOTE_HOST", ""),
+            description="Inventory alias, or a raw hostname with an explicit user.",
+        ),
+        user: str | None = Field(
+            default=None, description="Username; unset uses the inventory alias."
+        ),
+        password_ref: str | None = Field(
+            default=None,
+            description="Runtime secret reference for the SSH password; unset uses the alias.",
+        ),
+        port: int | None = Field(
+            default=None, description="Port; unset uses the inventory alias, else 22."
+        ),
+        id_file: str | None = Field(
+            default=None, description="Private key path; unset uses the alias."
+        ),
+        certificate: str | None = Field(
+            default=None, description="Teleport certificate; unset uses the alias."
+        ),
+        proxy: str | None = Field(
+            default=None, description="Teleport proxy; unset uses the alias."
+        ),
+        cfg: str | None = Field(
+            default=None, description="SSH config path; unset uses ~/.ssh/config."
+        ),
+        cmd: str = Field(default="", description="Shell command (run_command)."),
+        lpath: str = Field(
+            default="", description="Local file path (send_file/receive_file)."
+        ),
+        rpath: str = Field(
+            default="", description="Remote file path (send_file/receive_file)."
+        ),
+        key: str = Field(
+            default="", description="Key path (test_key_auth/setup_passwordless)."
+        ),
+        key_type: str = Field(
+            default="ed25519",
+            description="Key type: rsa or ed25519 (setup_passwordless/rotate_key).",
+        ),
+        new_key: str = Field(
+            default="", description="New private key path (rotate_key)."
+        ),
+        lcfg: str = Field(
+            default="", description="Local SSH config (copy_ssh_config)."
+        ),
+        rcfg: str = Field(
+            default=os.path.expanduser("~/.ssh/config"),
+            description="Remote SSH config (copy_ssh_config).",
+        ),
+        known_hosts: str = Field(
+            default=os.path.expanduser("~/.ssh/known_hosts"),
+            description="Known hosts path (remove_host_key).",
+        ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (remove_host_key) without elicitation.",
+        ),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
+        """Setup passwordless (one operation of tm_remote)."""
+        return await call_routed(
+            _tm_remote_routed,
+            "setup_passwordless",
+            {
+                "host": host,
+                "user": user,
+                "password_ref": password_ref,
+                "port": port,
+                "id_file": id_file,
+                "certificate": certificate,
+                "proxy": proxy,
+                "cfg": cfg,
+                "cmd": cmd,
+                "lpath": lpath,
+                "rpath": rpath,
+                "key": key,
+                "key_type": key_type,
+                "new_key": new_key,
+                "lcfg": lcfg,
+                "rcfg": rcfg,
+                "known_hosts": known_hosts,
+                "timeout": timeout,
+                "confirm": confirm,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_remote_copy_ssh_config",
+        description="Copy ssh config (tm_remote). Single-host SSH operations with shared connection params.",
+        tags={"remote_access", "remote", "granular", "gated", "split-action"},
+        annotations={
+            "title": "Copy Ssh Config",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_remote_copy_ssh_config(
+        host: str = Field(
+            default=setting("TUNNEL_REMOTE_HOST", ""),
+            description="Inventory alias, or a raw hostname with an explicit user.",
+        ),
+        user: str | None = Field(
+            default=None, description="Username; unset uses the inventory alias."
+        ),
+        password_ref: str | None = Field(
+            default=None,
+            description="Runtime secret reference for the SSH password; unset uses the alias.",
+        ),
+        port: int | None = Field(
+            default=None, description="Port; unset uses the inventory alias, else 22."
+        ),
+        id_file: str | None = Field(
+            default=None, description="Private key path; unset uses the alias."
+        ),
+        certificate: str | None = Field(
+            default=None, description="Teleport certificate; unset uses the alias."
+        ),
+        proxy: str | None = Field(
+            default=None, description="Teleport proxy; unset uses the alias."
+        ),
+        cfg: str | None = Field(
+            default=None, description="SSH config path; unset uses ~/.ssh/config."
+        ),
+        cmd: str = Field(default="", description="Shell command (run_command)."),
+        lpath: str = Field(
+            default="", description="Local file path (send_file/receive_file)."
+        ),
+        rpath: str = Field(
+            default="", description="Remote file path (send_file/receive_file)."
+        ),
+        key: str = Field(
+            default="", description="Key path (test_key_auth/setup_passwordless)."
+        ),
+        key_type: str = Field(
+            default="ed25519",
+            description="Key type: rsa or ed25519 (setup_passwordless/rotate_key).",
+        ),
+        new_key: str = Field(
+            default="", description="New private key path (rotate_key)."
+        ),
+        lcfg: str = Field(
+            default="", description="Local SSH config (copy_ssh_config)."
+        ),
+        rcfg: str = Field(
+            default=os.path.expanduser("~/.ssh/config"),
+            description="Remote SSH config (copy_ssh_config).",
+        ),
+        known_hosts: str = Field(
+            default=os.path.expanduser("~/.ssh/known_hosts"),
+            description="Known hosts path (remove_host_key).",
+        ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (remove_host_key) without elicitation.",
+        ),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
+        """Copy ssh config (one operation of tm_remote)."""
+        return await call_routed(
+            _tm_remote_routed,
+            "copy_ssh_config",
+            {
+                "host": host,
+                "user": user,
+                "password_ref": password_ref,
+                "port": port,
+                "id_file": id_file,
+                "certificate": certificate,
+                "proxy": proxy,
+                "cfg": cfg,
+                "cmd": cmd,
+                "lpath": lpath,
+                "rpath": rpath,
+                "key": key,
+                "key_type": key_type,
+                "new_key": new_key,
+                "lcfg": lcfg,
+                "rcfg": rcfg,
+                "known_hosts": known_hosts,
+                "timeout": timeout,
+                "confirm": confirm,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_remote_rotate_key",
+        description="Rotate key (tm_remote). Single-host SSH operations with shared connection params.",
+        tags={"remote_access", "remote", "granular", "gated", "split-action"},
+        annotations={
+            "title": "Rotate Key",
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_remote_rotate_key(
+        host: str = Field(
+            default=setting("TUNNEL_REMOTE_HOST", ""),
+            description="Inventory alias, or a raw hostname with an explicit user.",
+        ),
+        user: str | None = Field(
+            default=None, description="Username; unset uses the inventory alias."
+        ),
+        password_ref: str | None = Field(
+            default=None,
+            description="Runtime secret reference for the SSH password; unset uses the alias.",
+        ),
+        port: int | None = Field(
+            default=None, description="Port; unset uses the inventory alias, else 22."
+        ),
+        id_file: str | None = Field(
+            default=None, description="Private key path; unset uses the alias."
+        ),
+        certificate: str | None = Field(
+            default=None, description="Teleport certificate; unset uses the alias."
+        ),
+        proxy: str | None = Field(
+            default=None, description="Teleport proxy; unset uses the alias."
+        ),
+        cfg: str | None = Field(
+            default=None, description="SSH config path; unset uses ~/.ssh/config."
+        ),
+        cmd: str = Field(default="", description="Shell command (run_command)."),
+        lpath: str = Field(
+            default="", description="Local file path (send_file/receive_file)."
+        ),
+        rpath: str = Field(
+            default="", description="Remote file path (send_file/receive_file)."
+        ),
+        key: str = Field(
+            default="", description="Key path (test_key_auth/setup_passwordless)."
+        ),
+        key_type: str = Field(
+            default="ed25519",
+            description="Key type: rsa or ed25519 (setup_passwordless/rotate_key).",
+        ),
+        new_key: str = Field(
+            default="", description="New private key path (rotate_key)."
+        ),
+        lcfg: str = Field(
+            default="", description="Local SSH config (copy_ssh_config)."
+        ),
+        rcfg: str = Field(
+            default=os.path.expanduser("~/.ssh/config"),
+            description="Remote SSH config (copy_ssh_config).",
+        ),
+        known_hosts: str = Field(
+            default=os.path.expanduser("~/.ssh/known_hosts"),
+            description="Known hosts path (remove_host_key).",
+        ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (remove_host_key) without elicitation.",
+        ),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
+        """Rotate key (one operation of tm_remote)."""
+        return await call_routed(
+            _tm_remote_routed,
+            "rotate_key",
+            {
+                "host": host,
+                "user": user,
+                "password_ref": password_ref,
+                "port": port,
+                "id_file": id_file,
+                "certificate": certificate,
+                "proxy": proxy,
+                "cfg": cfg,
+                "cmd": cmd,
+                "lpath": lpath,
+                "rpath": rpath,
+                "key": key,
+                "key_type": key_type,
+                "new_key": new_key,
+                "lcfg": lcfg,
+                "rcfg": rcfg,
+                "known_hosts": known_hosts,
+                "timeout": timeout,
+                "confirm": confirm,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_remote_remove_host_key",
+        description="Remove host key (tm_remote). Single-host SSH operations with shared connection params.",
+        tags={"remote_access", "remote", "granular", "gated", "split-action"},
+        annotations={
+            "title": "Remove Host Key",
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_remote_remove_host_key(
+        host: str = Field(
+            default=setting("TUNNEL_REMOTE_HOST", ""),
+            description="Inventory alias, or a raw hostname with an explicit user.",
+        ),
+        user: str | None = Field(
+            default=None, description="Username; unset uses the inventory alias."
+        ),
+        password_ref: str | None = Field(
+            default=None,
+            description="Runtime secret reference for the SSH password; unset uses the alias.",
+        ),
+        port: int | None = Field(
+            default=None, description="Port; unset uses the inventory alias, else 22."
+        ),
+        id_file: str | None = Field(
+            default=None, description="Private key path; unset uses the alias."
+        ),
+        certificate: str | None = Field(
+            default=None, description="Teleport certificate; unset uses the alias."
+        ),
+        proxy: str | None = Field(
+            default=None, description="Teleport proxy; unset uses the alias."
+        ),
+        cfg: str | None = Field(
+            default=None, description="SSH config path; unset uses ~/.ssh/config."
+        ),
+        cmd: str = Field(default="", description="Shell command (run_command)."),
+        lpath: str = Field(
+            default="", description="Local file path (send_file/receive_file)."
+        ),
+        rpath: str = Field(
+            default="", description="Remote file path (send_file/receive_file)."
+        ),
+        key: str = Field(
+            default="", description="Key path (test_key_auth/setup_passwordless)."
+        ),
+        key_type: str = Field(
+            default="ed25519",
+            description="Key type: rsa or ed25519 (setup_passwordless/rotate_key).",
+        ),
+        new_key: str = Field(
+            default="", description="New private key path (rotate_key)."
+        ),
+        lcfg: str = Field(
+            default="", description="Local SSH config (copy_ssh_config)."
+        ),
+        rcfg: str = Field(
+            default=os.path.expanduser("~/.ssh/config"),
+            description="Remote SSH config (copy_ssh_config).",
+        ),
+        known_hosts: str = Field(
+            default=os.path.expanduser("~/.ssh/known_hosts"),
+            description="Known hosts path (remove_host_key).",
+        ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (remove_host_key) without elicitation.",
+        ),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
+        """Remove host key (one operation of tm_remote)."""
+        return await call_routed(
+            _tm_remote_routed,
+            "remove_host_key",
+            {
+                "host": host,
+                "user": user,
+                "password_ref": password_ref,
+                "port": port,
+                "id_file": id_file,
+                "certificate": certificate,
+                "proxy": proxy,
+                "cfg": cfg,
+                "cmd": cmd,
+                "lpath": lpath,
+                "rpath": rpath,
+                "key": key,
+                "key_type": key_type,
+                "new_key": new_key,
+                "lcfg": lcfg,
+                "rcfg": rcfg,
+                "known_hosts": known_hosts,
+                "timeout": timeout,
+                "confirm": confirm,
+                "ctx": ctx,
+            },
         )
 
 
@@ -2506,16 +3290,7 @@ _TM_INVENTORY_ACTIONS = {
 def register_inventory_tools(mcp: FastMCP):
     """Register bulk inventory operations tool."""
 
-    @mcp.tool(
-        annotations={
-            "title": "Inventory Operations",
-            "readOnlyHint": False,
-            "destructiveHint": True,
-            "idempotentHint": False,
-        },
-        tags={"inventory_ops"},
-    )
-    async def tm_inventory(
+    async def _tm_inventory_routed(
         action: str = Field(
             description="Action: 'configure_key_auth', 'mesh_bootstrap', 'run_command', 'copy_ssh_config', 'rotate_key', 'send_file', 'receive_file'"
         ),
@@ -2646,6 +3421,755 @@ def register_inventory_tools(mcp: FastMCP):
             lpath_prefix,
             timeout,
             ctx,
+        )
+
+    @mcp.tool(
+        name="tm_inventory_configure_key_auth",
+        description="Configure key auth (tm_inventory). Bulk inventory operations against YAML host groups.",
+        tags={"inventory_ops", "inventory", "granular", "gated", "split-action"},
+        annotations={
+            "title": "Configure Key Auth",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_inventory_configure_key_auth(
+        inventory: str = Field(
+            default=setting("TUNNEL_INVENTORY", _DEFAULT_INVENTORY_PATH),
+            description="YAML inventory path (default: $XDG_CONFIG_HOME/scion-sdk/inventory.yml).",
+        ),
+        group: str = Field(
+            default=setting("TUNNEL_INVENTORY_GROUP", "all"),
+            description="Target group.",
+        ),
+        host: str = Field(
+            default="",
+            description=(
+                "run_command only. Optional single-host alias to target instead of "
+                "the whole 'group' fan-out — the safe way to reach ONE inventory "
+                "host (e.g. 'gb10') without running against 'homelab'. Resolved and "
+                "authorized through the same alias store tm_remote/tm_hosts use, so "
+                "the two are one source of truth: an unknown or unauthorized alias "
+                "is rejected outright, never silently skipped. Takes precedence over "
+                "'group' when set."
+            ),
+        ),
+        preview: bool = Field(
+            default=False,
+            description=(
+                "run_command only. If true, resolve the exact target host(s) for "
+                "'host'/'group' and return them in 'resolved_hosts' WITHOUT running "
+                "'cmd' — lets a caller verify scope before executing for real (no "
+                "surprise fan-out). The real (non-preview) response also always "
+                "includes 'resolved_hosts' for the same reason."
+            ),
+        ),
+        parallel: bool = Field(
+            default=bool(setting("TUNNEL_PARALLEL", False)),
+            description="Run parallel.",
+        ),
+        max_threads: int = Field(
+            default=int(setting("TUNNEL_MAX_THREADS", 6)),
+            description="Max threads.",
+        ),
+        cmd: str = Field(default="", description="Shell command (run_command)."),
+        key: str = Field(
+            default=setting(
+                "TUNNEL_IDENTITY_FILE", os.path.expanduser("~/.ssh/id_shared")
+            ),
+            description="Shared key path (configure_key_auth).",
+        ),
+        key_type: str = Field(
+            default="ed25519", description="Key type: rsa or ed25519."
+        ),
+        key_pfx: str = Field(
+            default=os.path.expanduser("~/.ssh/id_"),
+            description="Prefix for new keys (rotate_key).",
+        ),
+        cfg: str = Field(
+            default="", description="Local SSH config path (copy_ssh_config)."
+        ),
+        rmt_cfg: str = Field(
+            default=os.path.expanduser("~/.ssh/config"),
+            description="Remote config path (copy_ssh_config).",
+        ),
+        lpath: str = Field(default="", description="Local file path (send_file)."),
+        rpath: str = Field(
+            default="", description="Remote file path (send_file/receive_file)."
+        ),
+        lpath_prefix: str = Field(
+            default="", description="Local dir prefix (receive_file)."
+        ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
+        """Configure key auth (one operation of tm_inventory)."""
+        return await call_routed(
+            _tm_inventory_routed,
+            "configure_key_auth",
+            {
+                "inventory": inventory,
+                "group": group,
+                "host": host,
+                "preview": preview,
+                "parallel": parallel,
+                "max_threads": max_threads,
+                "cmd": cmd,
+                "key": key,
+                "key_type": key_type,
+                "key_pfx": key_pfx,
+                "cfg": cfg,
+                "rmt_cfg": rmt_cfg,
+                "lpath": lpath,
+                "rpath": rpath,
+                "lpath_prefix": lpath_prefix,
+                "timeout": timeout,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_inventory_mesh_bootstrap",
+        description="Mesh bootstrap (tm_inventory). Bulk inventory operations against YAML host groups.",
+        tags={"inventory_ops", "inventory", "granular", "gated", "split-action"},
+        annotations={
+            "title": "Mesh Bootstrap",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_inventory_mesh_bootstrap(
+        inventory: str = Field(
+            default=setting("TUNNEL_INVENTORY", _DEFAULT_INVENTORY_PATH),
+            description="YAML inventory path (default: $XDG_CONFIG_HOME/scion-sdk/inventory.yml).",
+        ),
+        group: str = Field(
+            default=setting("TUNNEL_INVENTORY_GROUP", "all"),
+            description="Target group.",
+        ),
+        host: str = Field(
+            default="",
+            description=(
+                "run_command only. Optional single-host alias to target instead of "
+                "the whole 'group' fan-out — the safe way to reach ONE inventory "
+                "host (e.g. 'gb10') without running against 'homelab'. Resolved and "
+                "authorized through the same alias store tm_remote/tm_hosts use, so "
+                "the two are one source of truth: an unknown or unauthorized alias "
+                "is rejected outright, never silently skipped. Takes precedence over "
+                "'group' when set."
+            ),
+        ),
+        preview: bool = Field(
+            default=False,
+            description=(
+                "run_command only. If true, resolve the exact target host(s) for "
+                "'host'/'group' and return them in 'resolved_hosts' WITHOUT running "
+                "'cmd' — lets a caller verify scope before executing for real (no "
+                "surprise fan-out). The real (non-preview) response also always "
+                "includes 'resolved_hosts' for the same reason."
+            ),
+        ),
+        parallel: bool = Field(
+            default=bool(setting("TUNNEL_PARALLEL", False)),
+            description="Run parallel.",
+        ),
+        max_threads: int = Field(
+            default=int(setting("TUNNEL_MAX_THREADS", 6)),
+            description="Max threads.",
+        ),
+        cmd: str = Field(default="", description="Shell command (run_command)."),
+        key: str = Field(
+            default=setting(
+                "TUNNEL_IDENTITY_FILE", os.path.expanduser("~/.ssh/id_shared")
+            ),
+            description="Shared key path (configure_key_auth).",
+        ),
+        key_type: str = Field(
+            default="ed25519", description="Key type: rsa or ed25519."
+        ),
+        key_pfx: str = Field(
+            default=os.path.expanduser("~/.ssh/id_"),
+            description="Prefix for new keys (rotate_key).",
+        ),
+        cfg: str = Field(
+            default="", description="Local SSH config path (copy_ssh_config)."
+        ),
+        rmt_cfg: str = Field(
+            default=os.path.expanduser("~/.ssh/config"),
+            description="Remote config path (copy_ssh_config).",
+        ),
+        lpath: str = Field(default="", description="Local file path (send_file)."),
+        rpath: str = Field(
+            default="", description="Remote file path (send_file/receive_file)."
+        ),
+        lpath_prefix: str = Field(
+            default="", description="Local dir prefix (receive_file)."
+        ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
+        """Mesh bootstrap (one operation of tm_inventory)."""
+        return await call_routed(
+            _tm_inventory_routed,
+            "mesh_bootstrap",
+            {
+                "inventory": inventory,
+                "group": group,
+                "host": host,
+                "preview": preview,
+                "parallel": parallel,
+                "max_threads": max_threads,
+                "cmd": cmd,
+                "key": key,
+                "key_type": key_type,
+                "key_pfx": key_pfx,
+                "cfg": cfg,
+                "rmt_cfg": rmt_cfg,
+                "lpath": lpath,
+                "rpath": rpath,
+                "lpath_prefix": lpath_prefix,
+                "timeout": timeout,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_inventory_run_command",
+        description="Run command (tm_inventory). Bulk inventory operations against YAML host groups.",
+        tags={"inventory_ops", "inventory", "granular", "gated", "split-action"},
+        annotations={
+            "title": "Run Command",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_inventory_run_command(
+        inventory: str = Field(
+            default=setting("TUNNEL_INVENTORY", _DEFAULT_INVENTORY_PATH),
+            description="YAML inventory path (default: $XDG_CONFIG_HOME/scion-sdk/inventory.yml).",
+        ),
+        group: str = Field(
+            default=setting("TUNNEL_INVENTORY_GROUP", "all"),
+            description="Target group.",
+        ),
+        host: str = Field(
+            default="",
+            description=(
+                "run_command only. Optional single-host alias to target instead of "
+                "the whole 'group' fan-out — the safe way to reach ONE inventory "
+                "host (e.g. 'gb10') without running against 'homelab'. Resolved and "
+                "authorized through the same alias store tm_remote/tm_hosts use, so "
+                "the two are one source of truth: an unknown or unauthorized alias "
+                "is rejected outright, never silently skipped. Takes precedence over "
+                "'group' when set."
+            ),
+        ),
+        preview: bool = Field(
+            default=False,
+            description=(
+                "run_command only. If true, resolve the exact target host(s) for "
+                "'host'/'group' and return them in 'resolved_hosts' WITHOUT running "
+                "'cmd' — lets a caller verify scope before executing for real (no "
+                "surprise fan-out). The real (non-preview) response also always "
+                "includes 'resolved_hosts' for the same reason."
+            ),
+        ),
+        parallel: bool = Field(
+            default=bool(setting("TUNNEL_PARALLEL", False)),
+            description="Run parallel.",
+        ),
+        max_threads: int = Field(
+            default=int(setting("TUNNEL_MAX_THREADS", 6)),
+            description="Max threads.",
+        ),
+        cmd: str = Field(default="", description="Shell command (run_command)."),
+        key: str = Field(
+            default=setting(
+                "TUNNEL_IDENTITY_FILE", os.path.expanduser("~/.ssh/id_shared")
+            ),
+            description="Shared key path (configure_key_auth).",
+        ),
+        key_type: str = Field(
+            default="ed25519", description="Key type: rsa or ed25519."
+        ),
+        key_pfx: str = Field(
+            default=os.path.expanduser("~/.ssh/id_"),
+            description="Prefix for new keys (rotate_key).",
+        ),
+        cfg: str = Field(
+            default="", description="Local SSH config path (copy_ssh_config)."
+        ),
+        rmt_cfg: str = Field(
+            default=os.path.expanduser("~/.ssh/config"),
+            description="Remote config path (copy_ssh_config).",
+        ),
+        lpath: str = Field(default="", description="Local file path (send_file)."),
+        rpath: str = Field(
+            default="", description="Remote file path (send_file/receive_file)."
+        ),
+        lpath_prefix: str = Field(
+            default="", description="Local dir prefix (receive_file)."
+        ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
+        """Run command (one operation of tm_inventory)."""
+        return await call_routed(
+            _tm_inventory_routed,
+            "run_command",
+            {
+                "inventory": inventory,
+                "group": group,
+                "host": host,
+                "preview": preview,
+                "parallel": parallel,
+                "max_threads": max_threads,
+                "cmd": cmd,
+                "key": key,
+                "key_type": key_type,
+                "key_pfx": key_pfx,
+                "cfg": cfg,
+                "rmt_cfg": rmt_cfg,
+                "lpath": lpath,
+                "rpath": rpath,
+                "lpath_prefix": lpath_prefix,
+                "timeout": timeout,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_inventory_copy_ssh_config",
+        description="Copy ssh config (tm_inventory). Bulk inventory operations against YAML host groups.",
+        tags={"inventory_ops", "inventory", "granular", "gated", "split-action"},
+        annotations={
+            "title": "Copy Ssh Config",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_inventory_copy_ssh_config(
+        inventory: str = Field(
+            default=setting("TUNNEL_INVENTORY", _DEFAULT_INVENTORY_PATH),
+            description="YAML inventory path (default: $XDG_CONFIG_HOME/scion-sdk/inventory.yml).",
+        ),
+        group: str = Field(
+            default=setting("TUNNEL_INVENTORY_GROUP", "all"),
+            description="Target group.",
+        ),
+        host: str = Field(
+            default="",
+            description=(
+                "run_command only. Optional single-host alias to target instead of "
+                "the whole 'group' fan-out — the safe way to reach ONE inventory "
+                "host (e.g. 'gb10') without running against 'homelab'. Resolved and "
+                "authorized through the same alias store tm_remote/tm_hosts use, so "
+                "the two are one source of truth: an unknown or unauthorized alias "
+                "is rejected outright, never silently skipped. Takes precedence over "
+                "'group' when set."
+            ),
+        ),
+        preview: bool = Field(
+            default=False,
+            description=(
+                "run_command only. If true, resolve the exact target host(s) for "
+                "'host'/'group' and return them in 'resolved_hosts' WITHOUT running "
+                "'cmd' — lets a caller verify scope before executing for real (no "
+                "surprise fan-out). The real (non-preview) response also always "
+                "includes 'resolved_hosts' for the same reason."
+            ),
+        ),
+        parallel: bool = Field(
+            default=bool(setting("TUNNEL_PARALLEL", False)),
+            description="Run parallel.",
+        ),
+        max_threads: int = Field(
+            default=int(setting("TUNNEL_MAX_THREADS", 6)),
+            description="Max threads.",
+        ),
+        cmd: str = Field(default="", description="Shell command (run_command)."),
+        key: str = Field(
+            default=setting(
+                "TUNNEL_IDENTITY_FILE", os.path.expanduser("~/.ssh/id_shared")
+            ),
+            description="Shared key path (configure_key_auth).",
+        ),
+        key_type: str = Field(
+            default="ed25519", description="Key type: rsa or ed25519."
+        ),
+        key_pfx: str = Field(
+            default=os.path.expanduser("~/.ssh/id_"),
+            description="Prefix for new keys (rotate_key).",
+        ),
+        cfg: str = Field(
+            default="", description="Local SSH config path (copy_ssh_config)."
+        ),
+        rmt_cfg: str = Field(
+            default=os.path.expanduser("~/.ssh/config"),
+            description="Remote config path (copy_ssh_config).",
+        ),
+        lpath: str = Field(default="", description="Local file path (send_file)."),
+        rpath: str = Field(
+            default="", description="Remote file path (send_file/receive_file)."
+        ),
+        lpath_prefix: str = Field(
+            default="", description="Local dir prefix (receive_file)."
+        ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
+        """Copy ssh config (one operation of tm_inventory)."""
+        return await call_routed(
+            _tm_inventory_routed,
+            "copy_ssh_config",
+            {
+                "inventory": inventory,
+                "group": group,
+                "host": host,
+                "preview": preview,
+                "parallel": parallel,
+                "max_threads": max_threads,
+                "cmd": cmd,
+                "key": key,
+                "key_type": key_type,
+                "key_pfx": key_pfx,
+                "cfg": cfg,
+                "rmt_cfg": rmt_cfg,
+                "lpath": lpath,
+                "rpath": rpath,
+                "lpath_prefix": lpath_prefix,
+                "timeout": timeout,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_inventory_rotate_key",
+        description="Rotate key (tm_inventory). Bulk inventory operations against YAML host groups.",
+        tags={"inventory_ops", "inventory", "granular", "gated", "split-action"},
+        annotations={
+            "title": "Rotate Key",
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_inventory_rotate_key(
+        inventory: str = Field(
+            default=setting("TUNNEL_INVENTORY", _DEFAULT_INVENTORY_PATH),
+            description="YAML inventory path (default: $XDG_CONFIG_HOME/scion-sdk/inventory.yml).",
+        ),
+        group: str = Field(
+            default=setting("TUNNEL_INVENTORY_GROUP", "all"),
+            description="Target group.",
+        ),
+        host: str = Field(
+            default="",
+            description=(
+                "run_command only. Optional single-host alias to target instead of "
+                "the whole 'group' fan-out — the safe way to reach ONE inventory "
+                "host (e.g. 'gb10') without running against 'homelab'. Resolved and "
+                "authorized through the same alias store tm_remote/tm_hosts use, so "
+                "the two are one source of truth: an unknown or unauthorized alias "
+                "is rejected outright, never silently skipped. Takes precedence over "
+                "'group' when set."
+            ),
+        ),
+        preview: bool = Field(
+            default=False,
+            description=(
+                "run_command only. If true, resolve the exact target host(s) for "
+                "'host'/'group' and return them in 'resolved_hosts' WITHOUT running "
+                "'cmd' — lets a caller verify scope before executing for real (no "
+                "surprise fan-out). The real (non-preview) response also always "
+                "includes 'resolved_hosts' for the same reason."
+            ),
+        ),
+        parallel: bool = Field(
+            default=bool(setting("TUNNEL_PARALLEL", False)),
+            description="Run parallel.",
+        ),
+        max_threads: int = Field(
+            default=int(setting("TUNNEL_MAX_THREADS", 6)),
+            description="Max threads.",
+        ),
+        cmd: str = Field(default="", description="Shell command (run_command)."),
+        key: str = Field(
+            default=setting(
+                "TUNNEL_IDENTITY_FILE", os.path.expanduser("~/.ssh/id_shared")
+            ),
+            description="Shared key path (configure_key_auth).",
+        ),
+        key_type: str = Field(
+            default="ed25519", description="Key type: rsa or ed25519."
+        ),
+        key_pfx: str = Field(
+            default=os.path.expanduser("~/.ssh/id_"),
+            description="Prefix for new keys (rotate_key).",
+        ),
+        cfg: str = Field(
+            default="", description="Local SSH config path (copy_ssh_config)."
+        ),
+        rmt_cfg: str = Field(
+            default=os.path.expanduser("~/.ssh/config"),
+            description="Remote config path (copy_ssh_config).",
+        ),
+        lpath: str = Field(default="", description="Local file path (send_file)."),
+        rpath: str = Field(
+            default="", description="Remote file path (send_file/receive_file)."
+        ),
+        lpath_prefix: str = Field(
+            default="", description="Local dir prefix (receive_file)."
+        ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
+        """Rotate key (one operation of tm_inventory)."""
+        return await call_routed(
+            _tm_inventory_routed,
+            "rotate_key",
+            {
+                "inventory": inventory,
+                "group": group,
+                "host": host,
+                "preview": preview,
+                "parallel": parallel,
+                "max_threads": max_threads,
+                "cmd": cmd,
+                "key": key,
+                "key_type": key_type,
+                "key_pfx": key_pfx,
+                "cfg": cfg,
+                "rmt_cfg": rmt_cfg,
+                "lpath": lpath,
+                "rpath": rpath,
+                "lpath_prefix": lpath_prefix,
+                "timeout": timeout,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_inventory_send_file",
+        description="Send file (tm_inventory). Bulk inventory operations against YAML host groups.",
+        tags={"inventory_ops", "inventory", "granular", "gated", "split-action"},
+        annotations={
+            "title": "Send File",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_inventory_send_file(
+        inventory: str = Field(
+            default=setting("TUNNEL_INVENTORY", _DEFAULT_INVENTORY_PATH),
+            description="YAML inventory path (default: $XDG_CONFIG_HOME/scion-sdk/inventory.yml).",
+        ),
+        group: str = Field(
+            default=setting("TUNNEL_INVENTORY_GROUP", "all"),
+            description="Target group.",
+        ),
+        host: str = Field(
+            default="",
+            description=(
+                "run_command only. Optional single-host alias to target instead of "
+                "the whole 'group' fan-out — the safe way to reach ONE inventory "
+                "host (e.g. 'gb10') without running against 'homelab'. Resolved and "
+                "authorized through the same alias store tm_remote/tm_hosts use, so "
+                "the two are one source of truth: an unknown or unauthorized alias "
+                "is rejected outright, never silently skipped. Takes precedence over "
+                "'group' when set."
+            ),
+        ),
+        preview: bool = Field(
+            default=False,
+            description=(
+                "run_command only. If true, resolve the exact target host(s) for "
+                "'host'/'group' and return them in 'resolved_hosts' WITHOUT running "
+                "'cmd' — lets a caller verify scope before executing for real (no "
+                "surprise fan-out). The real (non-preview) response also always "
+                "includes 'resolved_hosts' for the same reason."
+            ),
+        ),
+        parallel: bool = Field(
+            default=bool(setting("TUNNEL_PARALLEL", False)),
+            description="Run parallel.",
+        ),
+        max_threads: int = Field(
+            default=int(setting("TUNNEL_MAX_THREADS", 6)),
+            description="Max threads.",
+        ),
+        cmd: str = Field(default="", description="Shell command (run_command)."),
+        key: str = Field(
+            default=setting(
+                "TUNNEL_IDENTITY_FILE", os.path.expanduser("~/.ssh/id_shared")
+            ),
+            description="Shared key path (configure_key_auth).",
+        ),
+        key_type: str = Field(
+            default="ed25519", description="Key type: rsa or ed25519."
+        ),
+        key_pfx: str = Field(
+            default=os.path.expanduser("~/.ssh/id_"),
+            description="Prefix for new keys (rotate_key).",
+        ),
+        cfg: str = Field(
+            default="", description="Local SSH config path (copy_ssh_config)."
+        ),
+        rmt_cfg: str = Field(
+            default=os.path.expanduser("~/.ssh/config"),
+            description="Remote config path (copy_ssh_config).",
+        ),
+        lpath: str = Field(default="", description="Local file path (send_file)."),
+        rpath: str = Field(
+            default="", description="Remote file path (send_file/receive_file)."
+        ),
+        lpath_prefix: str = Field(
+            default="", description="Local dir prefix (receive_file)."
+        ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
+        """Send file (one operation of tm_inventory)."""
+        return await call_routed(
+            _tm_inventory_routed,
+            "send_file",
+            {
+                "inventory": inventory,
+                "group": group,
+                "host": host,
+                "preview": preview,
+                "parallel": parallel,
+                "max_threads": max_threads,
+                "cmd": cmd,
+                "key": key,
+                "key_type": key_type,
+                "key_pfx": key_pfx,
+                "cfg": cfg,
+                "rmt_cfg": rmt_cfg,
+                "lpath": lpath,
+                "rpath": rpath,
+                "lpath_prefix": lpath_prefix,
+                "timeout": timeout,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_inventory_receive_file",
+        description="Receive file (tm_inventory). Bulk inventory operations against YAML host groups.",
+        tags={"inventory_ops", "inventory", "granular", "gated", "split-action"},
+        annotations={
+            "title": "Receive File",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_inventory_receive_file(
+        inventory: str = Field(
+            default=setting("TUNNEL_INVENTORY", _DEFAULT_INVENTORY_PATH),
+            description="YAML inventory path (default: $XDG_CONFIG_HOME/scion-sdk/inventory.yml).",
+        ),
+        group: str = Field(
+            default=setting("TUNNEL_INVENTORY_GROUP", "all"),
+            description="Target group.",
+        ),
+        host: str = Field(
+            default="",
+            description=(
+                "run_command only. Optional single-host alias to target instead of "
+                "the whole 'group' fan-out — the safe way to reach ONE inventory "
+                "host (e.g. 'gb10') without running against 'homelab'. Resolved and "
+                "authorized through the same alias store tm_remote/tm_hosts use, so "
+                "the two are one source of truth: an unknown or unauthorized alias "
+                "is rejected outright, never silently skipped. Takes precedence over "
+                "'group' when set."
+            ),
+        ),
+        preview: bool = Field(
+            default=False,
+            description=(
+                "run_command only. If true, resolve the exact target host(s) for "
+                "'host'/'group' and return them in 'resolved_hosts' WITHOUT running "
+                "'cmd' — lets a caller verify scope before executing for real (no "
+                "surprise fan-out). The real (non-preview) response also always "
+                "includes 'resolved_hosts' for the same reason."
+            ),
+        ),
+        parallel: bool = Field(
+            default=bool(setting("TUNNEL_PARALLEL", False)),
+            description="Run parallel.",
+        ),
+        max_threads: int = Field(
+            default=int(setting("TUNNEL_MAX_THREADS", 6)),
+            description="Max threads.",
+        ),
+        cmd: str = Field(default="", description="Shell command (run_command)."),
+        key: str = Field(
+            default=setting(
+                "TUNNEL_IDENTITY_FILE", os.path.expanduser("~/.ssh/id_shared")
+            ),
+            description="Shared key path (configure_key_auth).",
+        ),
+        key_type: str = Field(
+            default="ed25519", description="Key type: rsa or ed25519."
+        ),
+        key_pfx: str = Field(
+            default=os.path.expanduser("~/.ssh/id_"),
+            description="Prefix for new keys (rotate_key).",
+        ),
+        cfg: str = Field(
+            default="", description="Local SSH config path (copy_ssh_config)."
+        ),
+        rmt_cfg: str = Field(
+            default=os.path.expanduser("~/.ssh/config"),
+            description="Remote config path (copy_ssh_config).",
+        ),
+        lpath: str = Field(default="", description="Local file path (send_file)."),
+        rpath: str = Field(
+            default="", description="Remote file path (send_file/receive_file)."
+        ),
+        lpath_prefix: str = Field(
+            default="", description="Local dir prefix (receive_file)."
+        ),
+        timeout: int = Field(default=60, description="Command timeout in seconds."),
+        ctx: Context = Field(description="MCP context.", default=""),
+    ) -> dict:
+        """Receive file (one operation of tm_inventory)."""
+        return await call_routed(
+            _tm_inventory_routed,
+            "receive_file",
+            {
+                "inventory": inventory,
+                "group": group,
+                "host": host,
+                "preview": preview,
+                "parallel": parallel,
+                "max_threads": max_threads,
+                "cmd": cmd,
+                "key": key,
+                "key_type": key_type,
+                "key_pfx": key_pfx,
+                "cfg": cfg,
+                "rmt_cfg": rmt_cfg,
+                "lpath": lpath,
+                "rpath": rpath,
+                "lpath_prefix": lpath_prefix,
+                "timeout": timeout,
+                "ctx": ctx,
+            },
         )
 
 
@@ -2861,16 +4385,7 @@ _TM_OPERATIONS_ACTIONS = {
 def register_operations_tools(mcp: FastMCP):
     """Register operation lifecycle and session management tool."""
 
-    @mcp.tool(
-        annotations={
-            "title": "Operation Management",
-            "readOnlyHint": False,
-            "destructiveHint": True,
-            "idempotentHint": False,
-        },
-        tags={"operation_management"},
-    )
-    async def tm_operations(
+    async def _tm_operations_routed(
         action: str = Field(
             description="Action: 'start', 'get_progress', 'cancel', 'get_metrics', 'list_sessions'"
         ),
@@ -2912,6 +4427,251 @@ def register_operations_tools(mcp: FastMCP):
             )
         return await handler(
             action, operation_id, operation_type, total_steps, details, ctx
+        )
+
+    @mcp.tool(
+        name="tm_operation_start",
+        description="Start (tm_operations). Operation lifecycle and session management.",
+        tags={
+            "operations",
+            "granular",
+            "gated",
+            "operation_management",
+            "split-action",
+        },
+        annotations={
+            "title": "Start",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_operation_start(
+        operation_id: str = Field(
+            default="", description="Operation ID (get_progress/cancel/get_metrics)."
+        ),
+        operation_type: str = Field(
+            default="", description="Type of operation (start)."
+        ),
+        total_steps: int = Field(default=0, description="Total steps (start)."),
+        details: dict = Field(
+            description="Additional details (start).", default_factory=dict
+        ),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (cancel) without elicitation.",
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Start (one operation of tm_operations)."""
+        return await call_routed(
+            _tm_operations_routed,
+            "start",
+            {
+                "operation_id": operation_id,
+                "operation_type": operation_type,
+                "total_steps": total_steps,
+                "details": details,
+                "confirm": confirm,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_operation_get_progress",
+        description="Get progress (tm_operations). Operation lifecycle and session management.",
+        tags={
+            "operations",
+            "granular",
+            "gated",
+            "operation_management",
+            "split-action",
+        },
+        annotations={
+            "title": "Get Progress",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_operation_get_progress(
+        operation_id: str = Field(
+            default="", description="Operation ID (get_progress/cancel/get_metrics)."
+        ),
+        operation_type: str = Field(
+            default="", description="Type of operation (start)."
+        ),
+        total_steps: int = Field(default=0, description="Total steps (start)."),
+        details: dict = Field(
+            description="Additional details (start).", default_factory=dict
+        ),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (cancel) without elicitation.",
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Get progress (one operation of tm_operations)."""
+        return await call_routed(
+            _tm_operations_routed,
+            "get_progress",
+            {
+                "operation_id": operation_id,
+                "operation_type": operation_type,
+                "total_steps": total_steps,
+                "details": details,
+                "confirm": confirm,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_operation_cancel",
+        description="Cancel (tm_operations). Operation lifecycle and session management.",
+        tags={
+            "operations",
+            "granular",
+            "gated",
+            "operation_management",
+            "split-action",
+        },
+        annotations={
+            "title": "Cancel",
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_operation_cancel(
+        operation_id: str = Field(
+            default="", description="Operation ID (get_progress/cancel/get_metrics)."
+        ),
+        operation_type: str = Field(
+            default="", description="Type of operation (start)."
+        ),
+        total_steps: int = Field(default=0, description="Total steps (start)."),
+        details: dict = Field(
+            description="Additional details (start).", default_factory=dict
+        ),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (cancel) without elicitation.",
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Cancel (one operation of tm_operations)."""
+        return await call_routed(
+            _tm_operations_routed,
+            "cancel",
+            {
+                "operation_id": operation_id,
+                "operation_type": operation_type,
+                "total_steps": total_steps,
+                "details": details,
+                "confirm": confirm,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_operation_get_metrics",
+        description="Get metrics (tm_operations). Operation lifecycle and session management.",
+        tags={
+            "operations",
+            "granular",
+            "gated",
+            "operation_management",
+            "split-action",
+        },
+        annotations={
+            "title": "Get Metrics",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_operation_get_metrics(
+        operation_id: str = Field(
+            default="", description="Operation ID (get_progress/cancel/get_metrics)."
+        ),
+        operation_type: str = Field(
+            default="", description="Type of operation (start)."
+        ),
+        total_steps: int = Field(default=0, description="Total steps (start)."),
+        details: dict = Field(
+            description="Additional details (start).", default_factory=dict
+        ),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (cancel) without elicitation.",
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Get metrics (one operation of tm_operations)."""
+        return await call_routed(
+            _tm_operations_routed,
+            "get_metrics",
+            {
+                "operation_id": operation_id,
+                "operation_type": operation_type,
+                "total_steps": total_steps,
+                "details": details,
+                "confirm": confirm,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_operation_list_sessions",
+        description="List sessions (tm_operations). Operation lifecycle and session management.",
+        tags={
+            "operations",
+            "granular",
+            "gated",
+            "operation_management",
+            "split-action",
+        },
+        annotations={
+            "title": "List Sessions",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_operation_list_sessions(
+        operation_id: str = Field(
+            default="", description="Operation ID (get_progress/cancel/get_metrics)."
+        ),
+        operation_type: str = Field(
+            default="", description="Type of operation (start)."
+        ),
+        total_steps: int = Field(default=0, description="Total steps (start)."),
+        details: dict = Field(
+            description="Additional details (start).", default_factory=dict
+        ),
+        confirm: bool = Field(
+            default=False,
+            description="Confirm a destructive action (cancel) without elicitation.",
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """List sessions (one operation of tm_operations)."""
+        return await call_routed(
+            _tm_operations_routed,
+            "list_sessions",
+            {
+                "operation_id": operation_id,
+                "operation_type": operation_type,
+                "total_steps": total_steps,
+                "details": details,
+                "confirm": confirm,
+                "ctx": ctx,
+            },
         )
 
 
@@ -2998,16 +4758,7 @@ async def _tm_system_dispatch(
 def register_system_tools(mcp: FastMCP):
     """Register remote system intelligence tool."""
 
-    @mcp.tool(
-        annotations={
-            "title": "System Intelligence",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
-        },
-        tags={"system_intelligence"},
-    )
-    async def tm_system(
+    async def _tm_system_routed(
         action: str = Field(
             description="Action: 'get_info', 'discover_services', 'analyze_logs', 'network_topology'"
         ),
@@ -3063,6 +4814,174 @@ def register_system_tools(mcp: FastMCP):
                 {"host": remote_host},
                 describe_error(e),
             )
+
+    @mcp.tool(
+        name="tm_system_get_info",
+        description="Get info (tm_system). Remote system intelligence via SSH.",
+        tags={"system", "granular", "gated", "split-action", "system_intelligence"},
+        annotations={
+            "title": "Get Info",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_system_get_info(
+        remote_host: str = Field(description="Remote host."),
+        username: str = Field(default="", description="SSH username."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
+        identity_file: str = Field(default="", description="SSH identity file path."),
+        log_paths: list[str] = Field(
+            default=[], description="Log file paths (analyze_logs)."
+        ),
+        patterns: list[str] = Field(
+            default=[], description="Search patterns (analyze_logs)."
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Get info (one operation of tm_system)."""
+        return await call_routed(
+            _tm_system_routed,
+            "get_info",
+            {
+                "remote_host": remote_host,
+                "username": username,
+                "password_ref": password_ref,
+                "identity_file": identity_file,
+                "log_paths": log_paths,
+                "patterns": patterns,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_system_discover_services",
+        description="Discover services (tm_system). Remote system intelligence via SSH.",
+        tags={"system", "granular", "gated", "split-action", "system_intelligence"},
+        annotations={
+            "title": "Discover Services",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_system_discover_services(
+        remote_host: str = Field(description="Remote host."),
+        username: str = Field(default="", description="SSH username."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
+        identity_file: str = Field(default="", description="SSH identity file path."),
+        log_paths: list[str] = Field(
+            default=[], description="Log file paths (analyze_logs)."
+        ),
+        patterns: list[str] = Field(
+            default=[], description="Search patterns (analyze_logs)."
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Discover services (one operation of tm_system)."""
+        return await call_routed(
+            _tm_system_routed,
+            "discover_services",
+            {
+                "remote_host": remote_host,
+                "username": username,
+                "password_ref": password_ref,
+                "identity_file": identity_file,
+                "log_paths": log_paths,
+                "patterns": patterns,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_system_analyze_logs",
+        description="Analyze logs (tm_system). Remote system intelligence via SSH.",
+        tags={"system", "granular", "gated", "split-action", "system_intelligence"},
+        annotations={
+            "title": "Analyze Logs",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_system_analyze_logs(
+        remote_host: str = Field(description="Remote host."),
+        username: str = Field(default="", description="SSH username."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
+        identity_file: str = Field(default="", description="SSH identity file path."),
+        log_paths: list[str] = Field(
+            default=[], description="Log file paths (analyze_logs)."
+        ),
+        patterns: list[str] = Field(
+            default=[], description="Search patterns (analyze_logs)."
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Analyze logs (one operation of tm_system)."""
+        return await call_routed(
+            _tm_system_routed,
+            "analyze_logs",
+            {
+                "remote_host": remote_host,
+                "username": username,
+                "password_ref": password_ref,
+                "identity_file": identity_file,
+                "log_paths": log_paths,
+                "patterns": patterns,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_system_network_topology",
+        description="Network topology (tm_system). Remote system intelligence via SSH.",
+        tags={"system", "granular", "gated", "split-action", "system_intelligence"},
+        annotations={
+            "title": "Network Topology",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_system_network_topology(
+        remote_host: str = Field(description="Remote host."),
+        username: str = Field(default="", description="SSH username."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
+        identity_file: str = Field(default="", description="SSH identity file path."),
+        log_paths: list[str] = Field(
+            default=[], description="Log file paths (analyze_logs)."
+        ),
+        patterns: list[str] = Field(
+            default=[], description="Search patterns (analyze_logs)."
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Network topology (one operation of tm_system)."""
+        return await call_routed(
+            _tm_system_routed,
+            "network_topology",
+            {
+                "remote_host": remote_host,
+                "username": username,
+                "password_ref": password_ref,
+                "identity_file": identity_file,
+                "log_paths": log_paths,
+                "patterns": patterns,
+                "ctx": ctx,
+            },
+        )
 
 
 def _file_manager(conn: dict) -> AdvancedFileManager:
@@ -3298,16 +5217,7 @@ _TM_FILES_ACTIONS = {
 def register_file_tools(mcp: FastMCP):
     """Register advanced file operations tool."""
 
-    @mcp.tool(
-        annotations={
-            "title": "Advanced File Operations",
-            "readOnlyHint": False,
-            "destructiveHint": True,
-            "idempotentHint": False,
-        },
-        tags={"advanced_file_operations"},
-    )
-    async def tm_files(
+    async def _tm_files_routed(
         action: str = Field(
             description="Action: 'recursive_ops', 'content_search', 'watch', 'diff_compare', 'backup'"
         ),
@@ -3435,6 +5345,521 @@ def register_file_tools(mcp: FastMCP):
             ctx,
         )
 
+    @mcp.tool(
+        name="tm_file_recursive_ops",
+        description="Recursive ops (tm_files). Advanced file operations on remote hosts.",
+        tags={"advanced_file_operations", "granular", "gated", "split-action", "files"},
+        annotations={
+            "title": "Recursive Ops",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_file_recursive_ops(
+        remote_host: str = Field(default="", description="Remote host."),
+        username: str = Field(default="", description="SSH username."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
+        identity_file: str = Field(default="", description="SSH identity file path."),
+        operation: str = Field(
+            default="",
+            description="Operation type: copy, move, delete, list, chmod, chown (recursive_ops).",
+        ),
+        source: str = Field(default="", description="Source path (recursive_ops)."),
+        destination: str = Field(
+            default="", description="Destination path (recursive_ops/copy/move)."
+        ),
+        mode: str = Field(
+            default="755", description="Permission mode (recursive_ops/chmod)."
+        ),
+        owner: str = Field(default="", description="Owner (recursive_ops/chown)."),
+        group: str = Field(default="", description="Group (recursive_ops/chown)."),
+        search_paths: list[str] = Field(
+            default=[], description="Directories to search (content_search)."
+        ),
+        pattern: str = Field(
+            default="", description="Search pattern (content_search)."
+        ),
+        case_sensitive: bool = Field(
+            default=False, description="Case-sensitive (content_search)."
+        ),
+        recursive: bool = Field(
+            default=True, description="Recursive search (content_search)."
+        ),
+        max_results: int = Field(
+            default=1000, description="Max results (content_search)."
+        ),
+        watch_paths: list[str] = Field(
+            default=[], description="Paths to monitor (watch)."
+        ),
+        duration: int = Field(default=60, description="Monitor duration secs (watch)."),
+        file_path: str = Field(
+            default="", description="File path to compare (diff_compare)."
+        ),
+        host1: str = Field(default="", description="First host (diff_compare)."),
+        host2: str = Field(default="", description="Second host (diff_compare)."),
+        backup_paths: list[str] = Field(
+            default=[], description="Paths to backup (backup)."
+        ),
+        backup_dest: str = Field(
+            default="", description="Backup destination (backup)."
+        ),
+        compression: bool = Field(
+            default=True, description="Enable compression (backup)."
+        ),
+        incremental: bool = Field(
+            default=False, description="Incremental backup (backup)."
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Recursive ops (one operation of tm_files)."""
+        return await call_routed(
+            _tm_files_routed,
+            "recursive_ops",
+            {
+                "remote_host": remote_host,
+                "username": username,
+                "password_ref": password_ref,
+                "identity_file": identity_file,
+                "operation": operation,
+                "source": source,
+                "destination": destination,
+                "mode": mode,
+                "owner": owner,
+                "group": group,
+                "search_paths": search_paths,
+                "pattern": pattern,
+                "case_sensitive": case_sensitive,
+                "recursive": recursive,
+                "max_results": max_results,
+                "watch_paths": watch_paths,
+                "duration": duration,
+                "file_path": file_path,
+                "host1": host1,
+                "host2": host2,
+                "backup_paths": backup_paths,
+                "backup_dest": backup_dest,
+                "compression": compression,
+                "incremental": incremental,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_file_content_search",
+        description="Content search (tm_files). Advanced file operations on remote hosts.",
+        tags={"advanced_file_operations", "granular", "gated", "split-action", "files"},
+        annotations={
+            "title": "Content Search",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_file_content_search(
+        remote_host: str = Field(default="", description="Remote host."),
+        username: str = Field(default="", description="SSH username."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
+        identity_file: str = Field(default="", description="SSH identity file path."),
+        operation: str = Field(
+            default="",
+            description="Operation type: copy, move, delete, list, chmod, chown (recursive_ops).",
+        ),
+        source: str = Field(default="", description="Source path (recursive_ops)."),
+        destination: str = Field(
+            default="", description="Destination path (recursive_ops/copy/move)."
+        ),
+        mode: str = Field(
+            default="755", description="Permission mode (recursive_ops/chmod)."
+        ),
+        owner: str = Field(default="", description="Owner (recursive_ops/chown)."),
+        group: str = Field(default="", description="Group (recursive_ops/chown)."),
+        search_paths: list[str] = Field(
+            default=[], description="Directories to search (content_search)."
+        ),
+        pattern: str = Field(
+            default="", description="Search pattern (content_search)."
+        ),
+        case_sensitive: bool = Field(
+            default=False, description="Case-sensitive (content_search)."
+        ),
+        recursive: bool = Field(
+            default=True, description="Recursive search (content_search)."
+        ),
+        max_results: int = Field(
+            default=1000, description="Max results (content_search)."
+        ),
+        watch_paths: list[str] = Field(
+            default=[], description="Paths to monitor (watch)."
+        ),
+        duration: int = Field(default=60, description="Monitor duration secs (watch)."),
+        file_path: str = Field(
+            default="", description="File path to compare (diff_compare)."
+        ),
+        host1: str = Field(default="", description="First host (diff_compare)."),
+        host2: str = Field(default="", description="Second host (diff_compare)."),
+        backup_paths: list[str] = Field(
+            default=[], description="Paths to backup (backup)."
+        ),
+        backup_dest: str = Field(
+            default="", description="Backup destination (backup)."
+        ),
+        compression: bool = Field(
+            default=True, description="Enable compression (backup)."
+        ),
+        incremental: bool = Field(
+            default=False, description="Incremental backup (backup)."
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Content search (one operation of tm_files)."""
+        return await call_routed(
+            _tm_files_routed,
+            "content_search",
+            {
+                "remote_host": remote_host,
+                "username": username,
+                "password_ref": password_ref,
+                "identity_file": identity_file,
+                "operation": operation,
+                "source": source,
+                "destination": destination,
+                "mode": mode,
+                "owner": owner,
+                "group": group,
+                "search_paths": search_paths,
+                "pattern": pattern,
+                "case_sensitive": case_sensitive,
+                "recursive": recursive,
+                "max_results": max_results,
+                "watch_paths": watch_paths,
+                "duration": duration,
+                "file_path": file_path,
+                "host1": host1,
+                "host2": host2,
+                "backup_paths": backup_paths,
+                "backup_dest": backup_dest,
+                "compression": compression,
+                "incremental": incremental,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_file_watch",
+        description="Watch (tm_files). Advanced file operations on remote hosts.",
+        tags={"advanced_file_operations", "granular", "gated", "split-action", "files"},
+        annotations={
+            "title": "Watch",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_file_watch(
+        remote_host: str = Field(default="", description="Remote host."),
+        username: str = Field(default="", description="SSH username."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
+        identity_file: str = Field(default="", description="SSH identity file path."),
+        operation: str = Field(
+            default="",
+            description="Operation type: copy, move, delete, list, chmod, chown (recursive_ops).",
+        ),
+        source: str = Field(default="", description="Source path (recursive_ops)."),
+        destination: str = Field(
+            default="", description="Destination path (recursive_ops/copy/move)."
+        ),
+        mode: str = Field(
+            default="755", description="Permission mode (recursive_ops/chmod)."
+        ),
+        owner: str = Field(default="", description="Owner (recursive_ops/chown)."),
+        group: str = Field(default="", description="Group (recursive_ops/chown)."),
+        search_paths: list[str] = Field(
+            default=[], description="Directories to search (content_search)."
+        ),
+        pattern: str = Field(
+            default="", description="Search pattern (content_search)."
+        ),
+        case_sensitive: bool = Field(
+            default=False, description="Case-sensitive (content_search)."
+        ),
+        recursive: bool = Field(
+            default=True, description="Recursive search (content_search)."
+        ),
+        max_results: int = Field(
+            default=1000, description="Max results (content_search)."
+        ),
+        watch_paths: list[str] = Field(
+            default=[], description="Paths to monitor (watch)."
+        ),
+        duration: int = Field(default=60, description="Monitor duration secs (watch)."),
+        file_path: str = Field(
+            default="", description="File path to compare (diff_compare)."
+        ),
+        host1: str = Field(default="", description="First host (diff_compare)."),
+        host2: str = Field(default="", description="Second host (diff_compare)."),
+        backup_paths: list[str] = Field(
+            default=[], description="Paths to backup (backup)."
+        ),
+        backup_dest: str = Field(
+            default="", description="Backup destination (backup)."
+        ),
+        compression: bool = Field(
+            default=True, description="Enable compression (backup)."
+        ),
+        incremental: bool = Field(
+            default=False, description="Incremental backup (backup)."
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Watch (one operation of tm_files)."""
+        return await call_routed(
+            _tm_files_routed,
+            "watch",
+            {
+                "remote_host": remote_host,
+                "username": username,
+                "password_ref": password_ref,
+                "identity_file": identity_file,
+                "operation": operation,
+                "source": source,
+                "destination": destination,
+                "mode": mode,
+                "owner": owner,
+                "group": group,
+                "search_paths": search_paths,
+                "pattern": pattern,
+                "case_sensitive": case_sensitive,
+                "recursive": recursive,
+                "max_results": max_results,
+                "watch_paths": watch_paths,
+                "duration": duration,
+                "file_path": file_path,
+                "host1": host1,
+                "host2": host2,
+                "backup_paths": backup_paths,
+                "backup_dest": backup_dest,
+                "compression": compression,
+                "incremental": incremental,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_file_diff_compare",
+        description="Diff compare (tm_files). Advanced file operations on remote hosts.",
+        tags={"advanced_file_operations", "granular", "gated", "split-action", "files"},
+        annotations={
+            "title": "Diff Compare",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_file_diff_compare(
+        remote_host: str = Field(default="", description="Remote host."),
+        username: str = Field(default="", description="SSH username."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
+        identity_file: str = Field(default="", description="SSH identity file path."),
+        operation: str = Field(
+            default="",
+            description="Operation type: copy, move, delete, list, chmod, chown (recursive_ops).",
+        ),
+        source: str = Field(default="", description="Source path (recursive_ops)."),
+        destination: str = Field(
+            default="", description="Destination path (recursive_ops/copy/move)."
+        ),
+        mode: str = Field(
+            default="755", description="Permission mode (recursive_ops/chmod)."
+        ),
+        owner: str = Field(default="", description="Owner (recursive_ops/chown)."),
+        group: str = Field(default="", description="Group (recursive_ops/chown)."),
+        search_paths: list[str] = Field(
+            default=[], description="Directories to search (content_search)."
+        ),
+        pattern: str = Field(
+            default="", description="Search pattern (content_search)."
+        ),
+        case_sensitive: bool = Field(
+            default=False, description="Case-sensitive (content_search)."
+        ),
+        recursive: bool = Field(
+            default=True, description="Recursive search (content_search)."
+        ),
+        max_results: int = Field(
+            default=1000, description="Max results (content_search)."
+        ),
+        watch_paths: list[str] = Field(
+            default=[], description="Paths to monitor (watch)."
+        ),
+        duration: int = Field(default=60, description="Monitor duration secs (watch)."),
+        file_path: str = Field(
+            default="", description="File path to compare (diff_compare)."
+        ),
+        host1: str = Field(default="", description="First host (diff_compare)."),
+        host2: str = Field(default="", description="Second host (diff_compare)."),
+        backup_paths: list[str] = Field(
+            default=[], description="Paths to backup (backup)."
+        ),
+        backup_dest: str = Field(
+            default="", description="Backup destination (backup)."
+        ),
+        compression: bool = Field(
+            default=True, description="Enable compression (backup)."
+        ),
+        incremental: bool = Field(
+            default=False, description="Incremental backup (backup)."
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Diff compare (one operation of tm_files)."""
+        return await call_routed(
+            _tm_files_routed,
+            "diff_compare",
+            {
+                "remote_host": remote_host,
+                "username": username,
+                "password_ref": password_ref,
+                "identity_file": identity_file,
+                "operation": operation,
+                "source": source,
+                "destination": destination,
+                "mode": mode,
+                "owner": owner,
+                "group": group,
+                "search_paths": search_paths,
+                "pattern": pattern,
+                "case_sensitive": case_sensitive,
+                "recursive": recursive,
+                "max_results": max_results,
+                "watch_paths": watch_paths,
+                "duration": duration,
+                "file_path": file_path,
+                "host1": host1,
+                "host2": host2,
+                "backup_paths": backup_paths,
+                "backup_dest": backup_dest,
+                "compression": compression,
+                "incremental": incremental,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_file_backup",
+        description="Backup (tm_files). Advanced file operations on remote hosts.",
+        tags={"advanced_file_operations", "granular", "gated", "split-action", "files"},
+        annotations={
+            "title": "Backup",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_file_backup(
+        remote_host: str = Field(default="", description="Remote host."),
+        username: str = Field(default="", description="SSH username."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
+        identity_file: str = Field(default="", description="SSH identity file path."),
+        operation: str = Field(
+            default="",
+            description="Operation type: copy, move, delete, list, chmod, chown (recursive_ops).",
+        ),
+        source: str = Field(default="", description="Source path (recursive_ops)."),
+        destination: str = Field(
+            default="", description="Destination path (recursive_ops/copy/move)."
+        ),
+        mode: str = Field(
+            default="755", description="Permission mode (recursive_ops/chmod)."
+        ),
+        owner: str = Field(default="", description="Owner (recursive_ops/chown)."),
+        group: str = Field(default="", description="Group (recursive_ops/chown)."),
+        search_paths: list[str] = Field(
+            default=[], description="Directories to search (content_search)."
+        ),
+        pattern: str = Field(
+            default="", description="Search pattern (content_search)."
+        ),
+        case_sensitive: bool = Field(
+            default=False, description="Case-sensitive (content_search)."
+        ),
+        recursive: bool = Field(
+            default=True, description="Recursive search (content_search)."
+        ),
+        max_results: int = Field(
+            default=1000, description="Max results (content_search)."
+        ),
+        watch_paths: list[str] = Field(
+            default=[], description="Paths to monitor (watch)."
+        ),
+        duration: int = Field(default=60, description="Monitor duration secs (watch)."),
+        file_path: str = Field(
+            default="", description="File path to compare (diff_compare)."
+        ),
+        host1: str = Field(default="", description="First host (diff_compare)."),
+        host2: str = Field(default="", description="Second host (diff_compare)."),
+        backup_paths: list[str] = Field(
+            default=[], description="Paths to backup (backup)."
+        ),
+        backup_dest: str = Field(
+            default="", description="Backup destination (backup)."
+        ),
+        compression: bool = Field(
+            default=True, description="Enable compression (backup)."
+        ),
+        incremental: bool = Field(
+            default=False, description="Incremental backup (backup)."
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Backup (one operation of tm_files)."""
+        return await call_routed(
+            _tm_files_routed,
+            "backup",
+            {
+                "remote_host": remote_host,
+                "username": username,
+                "password_ref": password_ref,
+                "identity_file": identity_file,
+                "operation": operation,
+                "source": source,
+                "destination": destination,
+                "mode": mode,
+                "owner": owner,
+                "group": group,
+                "search_paths": search_paths,
+                "pattern": pattern,
+                "case_sensitive": case_sensitive,
+                "recursive": recursive,
+                "max_results": max_results,
+                "watch_paths": watch_paths,
+                "duration": duration,
+                "file_path": file_path,
+                "host1": host1,
+                "host2": host2,
+                "backup_paths": backup_paths,
+                "backup_dest": backup_dest,
+                "compression": compression,
+                "incremental": incremental,
+                "ctx": ctx,
+            },
+        )
+
 
 async def _tm_security_audit(
     auditor, remote_host: str, scope: list, standard: str, scan_type: str
@@ -3529,16 +5954,7 @@ async def _tm_security_dispatch(
 def register_security_tools(mcp: FastMCP):
     """Register security scanning and compliance tool."""
 
-    @mcp.tool(
-        annotations={
-            "title": "Security Auditing",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
-        },
-        tags={"security_auditing"},
-    )
-    async def tm_security(
+    async def _tm_security_routed(
         action: str = Field(
             description="Action: 'security_audit', 'compliance_check', 'vulnerability_scan', 'access_control_audit'"
         ),
@@ -3604,6 +6020,198 @@ def register_security_tools(mcp: FastMCP):
                 {"host": remote_host},
                 describe_error(e),
             )
+
+    @mcp.tool(
+        name="tm_security_security_audit",
+        description="Security audit (tm_security). Security scanning and compliance.",
+        tags={"security_auditing", "granular", "gated", "split-action", "security"},
+        annotations={
+            "title": "Security Audit",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_security_security_audit(
+        remote_host: str = Field(description="Remote host to audit."),
+        username: str = Field(default="", description="SSH username."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
+        identity_file: str = Field(default="", description="SSH identity file path."),
+        scope: list[str] = Field(
+            default=[], description="Security areas to audit (security_audit)."
+        ),
+        standard: str = Field(
+            default="cis_benchmark",
+            description="Compliance standard: cis_benchmark, pci_dss, hipaa (compliance_check).",
+        ),
+        scan_type: str = Field(
+            default="basic",
+            description="Scan type: basic, package, config (vulnerability_scan).",
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Security audit (one operation of tm_security)."""
+        return await call_routed(
+            _tm_security_routed,
+            "security_audit",
+            {
+                "remote_host": remote_host,
+                "username": username,
+                "password_ref": password_ref,
+                "identity_file": identity_file,
+                "scope": scope,
+                "standard": standard,
+                "scan_type": scan_type,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_security_compliance_check",
+        description="Compliance check (tm_security). Security scanning and compliance.",
+        tags={"security_auditing", "granular", "gated", "split-action", "security"},
+        annotations={
+            "title": "Compliance Check",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_security_compliance_check(
+        remote_host: str = Field(description="Remote host to audit."),
+        username: str = Field(default="", description="SSH username."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
+        identity_file: str = Field(default="", description="SSH identity file path."),
+        scope: list[str] = Field(
+            default=[], description="Security areas to audit (security_audit)."
+        ),
+        standard: str = Field(
+            default="cis_benchmark",
+            description="Compliance standard: cis_benchmark, pci_dss, hipaa (compliance_check).",
+        ),
+        scan_type: str = Field(
+            default="basic",
+            description="Scan type: basic, package, config (vulnerability_scan).",
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Compliance check (one operation of tm_security)."""
+        return await call_routed(
+            _tm_security_routed,
+            "compliance_check",
+            {
+                "remote_host": remote_host,
+                "username": username,
+                "password_ref": password_ref,
+                "identity_file": identity_file,
+                "scope": scope,
+                "standard": standard,
+                "scan_type": scan_type,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_security_vulnerability_scan",
+        description="Vulnerability scan (tm_security). Security scanning and compliance.",
+        tags={"security_auditing", "granular", "gated", "split-action", "security"},
+        annotations={
+            "title": "Vulnerability Scan",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_security_vulnerability_scan(
+        remote_host: str = Field(description="Remote host to audit."),
+        username: str = Field(default="", description="SSH username."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
+        identity_file: str = Field(default="", description="SSH identity file path."),
+        scope: list[str] = Field(
+            default=[], description="Security areas to audit (security_audit)."
+        ),
+        standard: str = Field(
+            default="cis_benchmark",
+            description="Compliance standard: cis_benchmark, pci_dss, hipaa (compliance_check).",
+        ),
+        scan_type: str = Field(
+            default="basic",
+            description="Scan type: basic, package, config (vulnerability_scan).",
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Vulnerability scan (one operation of tm_security)."""
+        return await call_routed(
+            _tm_security_routed,
+            "vulnerability_scan",
+            {
+                "remote_host": remote_host,
+                "username": username,
+                "password_ref": password_ref,
+                "identity_file": identity_file,
+                "scope": scope,
+                "standard": standard,
+                "scan_type": scan_type,
+                "ctx": ctx,
+            },
+        )
+
+    @mcp.tool(
+        name="tm_security_access_control_audit",
+        description="Access control audit (tm_security). Security scanning and compliance.",
+        tags={"security_auditing", "granular", "gated", "split-action", "security"},
+        annotations={
+            "title": "Access Control Audit",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def tm_security_access_control_audit(
+        remote_host: str = Field(description="Remote host to audit."),
+        username: str = Field(default="", description="SSH username."),
+        password_ref: str = Field(
+            default="", description="Runtime secret reference for the SSH password."
+        ),
+        identity_file: str = Field(default="", description="SSH identity file path."),
+        scope: list[str] = Field(
+            default=[], description="Security areas to audit (security_audit)."
+        ),
+        standard: str = Field(
+            default="cis_benchmark",
+            description="Compliance standard: cis_benchmark, pci_dss, hipaa (compliance_check).",
+        ),
+        scan_type: str = Field(
+            default="basic",
+            description="Scan type: basic, package, config (vulnerability_scan).",
+        ),
+        ctx: Context = Field(description="MCP context.", default=None),
+    ) -> dict:
+        """Access control audit (one operation of tm_security)."""
+        return await call_routed(
+            _tm_security_routed,
+            "access_control_audit",
+            {
+                "remote_host": remote_host,
+                "username": username,
+                "password_ref": password_ref,
+                "identity_file": identity_file,
+                "scope": scope,
+                "standard": standard,
+                "scan_type": scan_type,
+                "ctx": ctx,
+            },
+        )
 
 
 def register_ingest_tools(mcp: FastMCP):

@@ -2,88 +2,26 @@
 name: tunnel-manager-remote-execution
 skill_type: skill
 description: >-
-  Run shell commands and transfer files over SSH via the tunnel-manager MCP
-  server — on a single host (tm_remote) or fanned out across an inventory group
-  (tm_inventory), plus SSH reachability and key-auth checks. Use when the agent
-  must execute a command remotely, copy a file to/from a host, run something across
-  a whole group, or verify a host is reachable. Do NOT use to add/remove host
-  aliases (use tunnel-manager-host-inventory) or to set up passwordless auth / audit
-  a host (use tunnel-manager-ssh-hardening).
-license: MIT
-tags: [tunnel-manager, ssh, remote, exec, scp, mcp]
-metadata:
-  author: Knuckles-Team
-  version: '0.1.0'
+  Run commands and move files over SSH through tunnel-manager, on one host (tm_remote_*) or across an inventory group (tm_inventory_*), with a reachability check first. Use to execute a command remotely, copy a file to or from hosts, or run something across a group.
 ---
-# Tunnel Manager — Remote Execution
 
-Execute commands and move files over SSH via the **`tunnel-manager`** MCP server —
-either against one host or fanned out across an inventory group.
+# Tunnel manager remote execution
 
-## When to use
-- Run a shell command on a single host and read stdout/stderr.
-- Send or receive a file to/from a host (SFTP).
-- Run the same command across every host in a group (optionally in parallel).
-- Check SSH reachability or verify key auth before relying on a host.
+## One host
 
-## When NOT to use
-- Registering / removing host aliases → `tunnel-manager-host-inventory`.
-- Passwordless key setup, key rotation, mesh, or security audits →
-  `tunnel-manager-ssh-hardening`.
-- Long-running orchestration you want to track → pair with `tm_operations`.
+1. `tm_remote_check_ssh` (`host`) proves the host answers.
+2. `tm_remote_run_command` (`host`, `cmd`, optional `user`, `port`, `id_file`, `timeout`) returns stdout, stderr and a status code.
+3. `tm_remote_send_file` and `tm_remote_receive_file` (`host`, `lpath`, `rpath`) copy over SFTP.
 
-## Prerequisites & environment
-Connect via the `mcp-client` skill against the **`tunnel-manager`** MCP server.
+## A group
 
-| Variable | Required | Notes |
-|----------|----------|-------|
-| `TUNNEL_REMOTE_HOST` / `TUNNEL_USERNAME` | optional | Defaults for single-host `tm_remote` |
-| `TUNNEL_IDENTITY_FILE` | optional | Default private key path |
-| `TUNNEL_INVENTORY` / `TUNNEL_INVENTORY_GROUP` | optional | Group ops with `tm_inventory` |
-| `TUNNEL_PARALLEL` / `TUNNEL_MAX_THREADS` | optional | Parallel fan-out controls |
+1. `tm_inventory_run_command` with `preview=true` lists the hosts and the command without running it. Show that list.
+2. Run it again with `preview=false`; `parallel` and `max_threads` control fan-out. The same command runs on every host in the group.
+3. `tm_inventory_send_file` and `tm_inventory_receive_file` (`lpath`, `rpath`, `lpath_prefix`) copy to or from each host.
+4. Report each host's result on its own line.
 
-## Tools & actions
-| Condensed tool | Actions |
-|----------------|---------|
-| `tm_remote` | `run_command`, `send_file`, `receive_file`, `check_ssh`, `test_key_auth`, `remove_host_key` |
-| `tm_inventory` | `run_command`, `send_file`, `receive_file` (group fan-out) |
+## Rules
 
-### Key parameters
-- `host`, `user`, `port`, `id_file` — single-host connection (or `password`).
-- `cmd` — the shell command for `run_command`.
-- `lpath` / `rpath` — local / remote paths for `send_file` / `receive_file`.
-- `group`, `parallel`, `max_threads` — fan-out controls on `tm_inventory`.
-- `timeout` — per-command timeout in seconds (default 60).
-
-## Recipes
-Run a command on one host:
-```json
-{"action": "run_command", "host": "host-a", "user": "admin", "id_file": "~/.ssh/id_shared", "cmd": "uptime"}
-```
-Copy a file up to a host:
-```json
-{"action": "send_file", "host": "host-a", "user": "admin", "lpath": "./deploy.sh", "rpath": "/tmp/deploy.sh"}
-```
-Verify a host is reachable before using it:
-```json
-{"action": "check_ssh", "host": "host-a", "user": "admin", "id_file": "~/.ssh/id_shared"}
-```
-Fan a command across a whole group (`tm_inventory`), in parallel:
-```json
-{"action": "run_command", "group": "homelab", "cmd": "df -h /", "parallel": true, "max_threads": 6}
-```
-
-## Gotchas
-- Prefer `id_file` (key) over `password`; a bare password is a last resort.
-- `run_command` returns a `CommandResult` (`success`, `stdout`, `stderr`) — inspect
-  `success` and `stderr`, not just `stdout`.
-- Set a sane `timeout`; a hung remote command will otherwise block up to the default.
-- Group fan-out (`tm_inventory`) runs the SAME command on EVERY host in the group —
-  scope the group and avoid destructive commands without confirmation.
-- First-time connections may need the host key accepted; `remove_host_key` clears a
-  stale/changed key from `known_hosts` if a host was rebuilt.
-
-## Related
-- `tunnel-manager-host-inventory` — register the hosts / groups you target here.
-- `tunnel-manager-ssh-hardening` — get key auth working so these calls need no password.
-- `tm_operations` — track a long-running fan-out as a progress-bearing operation.
+- Address hosts by inventory alias. An unknown alias is refused.
+- Credentials are secret references (`password_ref`), never literals.
+- Track a long fan-out with the operation tools in `tunnel-manager-operations`.

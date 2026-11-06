@@ -7,25 +7,24 @@ For the ecosystem role and the distributed-SSH scaling model, see
 
 ## As an MCP server
 
-Once [deployed](deployment.md), the server registers seven action-routed tools. Each
-tool dispatches on an `action` argument, which keeps the LLM tool surface compact:
+Once [deployed](deployment.md), the server serves one typed tool per operation:
 
-| Tool | Toggle | Representative actions |
-|---|---|---|
-| `tm_hosts` | `TM_HOSTS_TOOL` | `add`, `list`, `remove` |
-| `tm_remote` | `TM_REMOTE_TOOL` | `run_command`, `send_file`, `receive_file`, `setup_passwordless`, `rotate_key`, `check_ssh` |
-| `tm_inventory` | `TM_INVENTORY_TOOL` | `run_command`, `send_file`, `receive_file`, `configure_key_auth`, `mesh_bootstrap`, `rotate_key` |
-| `tm_operations` | `TM_OPERATIONS_TOOL` | `start`, `get_progress`, `cancel`, `get_metrics`, `list_sessions` |
-| `tm_system` | `TM_SYSTEM_TOOL` | `get_info`, `discover_services`, `analyze_logs`, `network_topology` |
-| `tm_files` | `TM_FILES_TOOL` | `recursive_ops`, `content_search`, `watch`, `diff_compare`, `backup` |
-| `tm_security` | `TM_SECURITY_TOOL` | `security_audit`, `compliance_check`, `vulnerability_scan`, `access_control_audit` |
+| Area | Tools |
+|---|---|
+| Host inventory | `tunnel_manager_list_hosts`, `tunnel_manager_get_host`, `tunnel_manager_add_host`, `tunnel_manager_remove_host`, `tunnel_manager_load_inventory`, `tunnel_manager_save_inventory`, `tunnel_ingest_hosts` |
+| One host | `tm_remote_run_command`, `tm_remote_send_file`, `tm_remote_receive_file`, `tm_remote_check_ssh`, `tm_remote_test_key_auth`, `tm_remote_setup_passwordless`, `tm_remote_copy_ssh_config`, `tm_remote_rotate_key`, `tm_remote_remove_host_key` |
+| A group | `tm_inventory_run_command`, `tm_inventory_send_file`, `tm_inventory_receive_file`, `tm_inventory_configure_key_auth`, `tm_inventory_mesh_bootstrap`, `tm_inventory_copy_ssh_config`, `tm_inventory_rotate_key` |
+| Operations | `tm_operation_start`, `tm_operation_get_progress`, `tm_operation_get_metrics`, `tm_operation_list_sessions`, `tm_operation_cancel` |
+| System | `tm_system_get_info`, `tm_system_discover_services`, `tm_system_analyze_logs`, `tm_system_network_topology` |
+| Files | `tm_file_content_search`, `tm_file_diff_compare`, `tm_file_backup`, `tm_file_watch`, `tm_file_recursive_ops` |
+| Security | `tm_security_security_audit`, `tm_security_access_control_audit`, `tm_security_compliance_check`, `tm_security_vulnerability_scan` |
 
 Example agent prompts that map onto these tools:
 
-- *"Run `uptime` on every host in the `web` inventory group"* → `tm_inventory` (`run_command`)
-- *"Bootstrap full-mesh passwordless SSH across my inventory"* → `tm_inventory` (`mesh_bootstrap`)
-- *"What OS and services is host `db-01` running?"* → `tm_system` (`get_info`, `discover_services`)
-- *"Audit `db-01` against the CIS benchmark"* → `tm_security` (`compliance_check`)
+- *"Run `uptime` on every host in the `web` inventory group"* → `tm_inventory_run_command`
+- *"Bootstrap full-mesh passwordless SSH across my inventory"* → `tm_inventory_mesh_bootstrap`
+- *"What OS and services is host `db-01` running?"* → `tm_system_get_info`, `tm_system_discover_services`
+- *"Audit `db-01` against the CIS benchmark"* → `tm_security_compliance_check`
 
 ## As a Python API
 

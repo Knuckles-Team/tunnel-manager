@@ -15,20 +15,30 @@ import pytest
 
 
 def _capture_tm_inventory():
-    """Register the tool against a fake FastMCP and return the raw async fn."""
+    """Register the tools against a fake FastMCP; return a caller that picks the per-action tool."""
+    import inspect
+
     from tunnel_manager.mcp_server import register_inventory_tools
 
     mcp = MagicMock()
     captured = {}
 
-    def decorator(fn):
-        captured["fn"] = fn
-        return fn
+    def tool(*_args, **kwargs):
+        def decorator(fn):
+            captured[kwargs["name"]] = fn
+            return fn
 
-    mcp.tool.return_value = decorator
+        return decorator
+
+    mcp.tool.side_effect = tool
     register_inventory_tools(mcp)
-    assert "fn" in captured
-    return captured["fn"]
+
+    async def call(action, **kwargs):
+        served = captured[f"tm_inventory_{action}"]
+        accepted = inspect.signature(served).parameters
+        return await served(**{k: v for k, v in kwargs.items() if k in accepted})
+
+    return call
 
 
 DEFAULT_KWARGS = dict(
@@ -382,17 +392,3 @@ class TestBulkHostFailureFailClosed:
         assert "not entitled to ssh host 'bad-host'" in " ".join(
             by_host["bad-host"]["errors"]
         )
-
-
-class TestUnknownAction:
-    @pytest.mark.asyncio
-    async def test_unresolvable_action_raises_before_dispatch(self):
-        """CXA-FL-TUNNELMANAGER-01 FINDING: `resolve_action` runs before the
-        dispatch chain and RAISES ValueError for any action string outside
-        the 7-item whitelist (it never returns a plain string that could fall
-        through to the dispatcher's own `else`), so the tm_inventory
-        dispatcher's trailing `else: return ResponseBuilder.build(400,
-        "Unknown action...")` branch is unreachable given current wiring."""
-        fn = _capture_tm_inventory()
-        with pytest.raises(ValueError, match="Unknown action"):
-            await _call(fn, action="not_a_real_action")

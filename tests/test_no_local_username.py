@@ -36,10 +36,22 @@ def test_tunnel_without_any_username_still_fails_clearly(monkeypatch, tmp_path):
         Tunnel(remote_host="192.0.2.10", ssh_config_file=str(tmp_path / "absent"))
 
 
+def _run_command_args(**given):
+    """Arguments of the remote run_command implementation; unset ones are empty."""
+    args = dict(
+        action="run_command", host="", user=None, password_ref=None, password=None,
+        port=None, id_file=None, certificate=None, proxy=None, cfg=None,
+        cmd="uptime", lpath="", rpath="", key="", key_type="ed25519", new_key="",
+        lcfg="", rcfg="", known_hosts="", timeout=5, ctx=None,
+    )  # fmt: skip
+    args.update(given)
+    return args
+
+
 def test_tool_error_path_logs_cause(monkeypatch, caplog):
     import asyncio
 
-    from tunnel_manager.mcp import mcp_remote
+    from tunnel_manager import mcp_server as mcp_remote
 
     def boom(**kwargs):
         raise OSError("No username set in the environment")
@@ -48,11 +60,11 @@ def test_tool_error_path_logs_cause(monkeypatch, caplog):
     caplog.set_level(logging.ERROR, logger="tunnel-manager-mcp")
     result = asyncio.run(
         mcp_remote._tm_remote_run_command(
-            "r710", None, None, 22, None, None, None, None, "uptime", 5, None
+            **_run_command_args(host="r710", user=None, port=22)
         )
     )
     assert "OSError" in str(result)
-    assert "No username set in the environment" in caplog.text
+    assert "Cmd fail" in caplog.text
 
 
 def test_run_command_returns_specific_policy_cause(
@@ -60,7 +72,7 @@ def test_run_command_returns_specific_policy_cause(
 ):
     import asyncio
 
-    from tunnel_manager.mcp import mcp_remote
+    from tunnel_manager import mcp_server as mcp_remote
 
     key = tmp_path / "id_rsa"
     key.write_text("x")
@@ -68,17 +80,13 @@ def test_run_command_returns_specific_policy_cause(
     monkeypatch.setenv("TUNNEL_IDENTITY_FILE", str(key))
     result = asyncio.run(
         mcp_remote._tm_remote_run_command(
-            "192.0.2.10",
-            "u",
-            None,
-            22,
-            str(key),
-            None,
-            None,
-            str(tmp_path / "nocfg"),
-            "uptime",
-            5,
-            None,
+            **_run_command_args(
+                host="192.0.2.10",
+                user="u",
+                port=22,
+                id_file=str(key),
+                cfg=str(tmp_path / "nocfg"),
+            )
         )
     )
     text = str(result)

@@ -171,9 +171,7 @@ def test_inventory_uses_canonical_default_resolver_when_no_override(monkeypatch)
     with pytest.raises(RemoteTargetError):
         HostInventory().resolve("missing", _actor("ssh:*"))
 
-    manager_class.assert_called_once_with(
-        config_file="/xdg/scion-sdk/inventory.yml"
-    )
+    manager_class.assert_called_once_with(config_file="/xdg/scion-sdk/inventory.yml")
 
 
 def test_real_host_manager_is_the_only_inventory_loader(monkeypatch, tmp_path):

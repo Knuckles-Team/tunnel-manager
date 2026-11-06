@@ -16,19 +16,30 @@ import pytest
 
 
 def _capture_tm_remote():
+    """Register the tools against a fake FastMCP; return a caller that picks the per-action tool."""
+    import inspect
+
     from tunnel_manager.mcp_server import register_remote_tools
 
     mcp = MagicMock()
     captured = {}
 
-    def decorator(fn):
-        captured["fn"] = fn
-        return fn
+    def tool(*_args, **kwargs):
+        def decorator(fn):
+            captured[kwargs["name"]] = fn
+            return fn
 
-    mcp.tool.return_value = decorator
+        return decorator
+
+    mcp.tool.side_effect = tool
     register_remote_tools(mcp)
-    assert "fn" in captured
-    return captured["fn"]
+
+    async def call(action, **kwargs):
+        served = captured[f"tm_remote_{action}"]
+        accepted = inspect.signature(served).parameters
+        return await served(**{k: v for k, v in kwargs.items() if k in accepted})
+
+    return call
 
 
 DEFAULT_KWARGS = dict(
@@ -438,9 +449,3 @@ class TestSharedValidation:
         )
         assert result["status_code"] == 400
         assert "credential" in result["message"].lower()
-
-    @pytest.mark.asyncio
-    async def test_unresolvable_action_raises_before_dispatch(self):
-        fn = _capture_tm_remote()
-        with pytest.raises(ValueError, match="Unknown action"):
-            await _call(fn, action="not_a_real_action")
