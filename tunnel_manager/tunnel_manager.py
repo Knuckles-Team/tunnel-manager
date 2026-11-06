@@ -626,6 +626,9 @@ def remove_known_host_key(known_hosts_path: str, hostname: str, port: int = 22) 
     return "Removed managed-host key"
 
 
+_MISSING_HOST = object()
+
+
 class HostManager:
     def __init__(self, config_file: str = None):
         if config_file:
@@ -742,14 +745,28 @@ class HostManager:
             proxy_command=proxy_command,
             **kwargs,
         )
+        previous = self.hosts.get(alias, _MISSING_HOST)
         self.hosts[alias] = host_config.model_dump(exclude_unset=True)
-        self.save_inventory()
+        try:
+            self.save_inventory()
+        except Exception:
+            # A failed save (read-only projection, bad mount) must not leave the
+            # host visible in memory as if it had been persisted.
+            if previous is _MISSING_HOST:
+                self.hosts.pop(alias, None)
+            else:
+                self.hosts[alias] = previous
+            raise
         self.logger.info("Added inventory host")
 
     def remove_host(self, alias: str):
         if alias in self.hosts:
-            del self.hosts[alias]
-            self.save_inventory()
+            previous = self.hosts.pop(alias)
+            try:
+                self.save_inventory()
+            except Exception:
+                self.hosts[alias] = previous
+                raise
             self.logger.info("Removed inventory host")
         else:
             self.logger.warning("Inventory host was not found")
