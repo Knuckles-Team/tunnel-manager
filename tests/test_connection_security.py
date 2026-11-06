@@ -115,7 +115,7 @@ def test_active_mcp_tool_schemas_do_not_accept_literal_passwords():
                 return decorator
 
         registrar(FakeMcp(captured))
-        signatures = [inspect.signature(function) for function in captured]
+        signatures = [inspect.signature(fn) for fn in captured]
         assert captured
         assert all("password" not in sig.parameters for sig in signatures)
         assert any("password_ref" in sig.parameters for sig in signatures)
