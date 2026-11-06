@@ -4,8 +4,7 @@ ontology_source: tunnel
 sync:
 - preset: tunnel-hosts
   server: tunnel-manager-mcp
-  tool: tm_hosts
-  action: list
+  tool: tunnel_manager_list_hosts
   records_path: hosts
   id_field: source_key
   title_field: hostname

@@ -2,32 +2,28 @@
 name: tunnel-manager-operations
 skill_type: skill
 description: >-
-  Operate tunnel-manager through its governed MCP and Arbora capabilities, including tunnel manager host inventory, tunnel manager remote execution, tunnel manager ssh hardening. Use when a request requires this provider's read, change, automation, ingestion, troubleshooting, or evidence workflows.
+  Inspect hosts, track long operations and work with remote files through tunnel-manager: system information, services, logs and network topology; start, watch, measure and cancel tracked operations; search, compare, back up, watch and bulk-change files. Use for read-only host discovery, for progress on a long fan-out, or for file work on a host.
 ---
 
-# Tunnel Manager Operations
+# Tunnel manager operations
 
-Use the provider's governed MCP tools through Arbora delegation.
+## Inspect a host
 
-## Workflow
+`tm_system_get_info`, `tm_system_discover_services`, `tm_system_analyze_logs` (`log_paths`, `patterns`) and `tm_system_network_topology` take `remote_host` and only read.
 
-1. Establish the verified GraphSession and tenant before discovery or retrieval.
-2. Discover the current condensed tool surface; never assume a stale tool name or schema.
-3. Prefer read-only inspection first. For changes, present impact and use the provider's
-   dry-run or preview mode when available.
-4. Execute mutations as fenced WorkItems so retries remain idempotent and auditable.
-5. Ingest source data only through the signed connector preset and ChangeEnvelope path.
-6. Verify the durable result and its trace/evidence before reporting completion.
+## Track an operation
 
-## Safety contract
+1. `tm_operation_start` (`operation_type`, `total_steps`, `details`) returns an `operation_id`.
+2. `tm_operation_get_progress` and `tm_operation_get_metrics` (`operation_id`) show state.
+3. `tm_operation_list_sessions` lists tracked operations.
+4. `tm_operation_cancel` (`operation_id`) stops one and needs `confirm=true`.
 
-- Never persist credentials, endpoints, raw personal identifiers, hostnames, or local paths.
-- Resolve TLS trust and verification from environment/configuration; never hardcode bypasses.
-- Treat unknown ACL, tenant, schema, or tool-contract state as a hard failure.
-- Require explicit approval for destructive, externally visible, or irreversible actions.
-- Keep runtime traces policy-scoped and privacy-sanitized.
+## Files on a host
 
-## Specialized workflows
+All take `remote_host` and an `operation` value that names the variant:
 
-Read [the workflow catalog](references/catalog.md) only when the request needs a
-provider-specific procedure, parameter map, script, or reference asset.
+- `tm_file_content_search` (`search_paths`, `pattern`, `case_sensitive`, `recursive`, `max_results`).
+- `tm_file_diff_compare` (`host1`, `host2`, `file_path`) compares a file across hosts.
+- `tm_file_backup` (`backup_paths`, `backup_dest`, `compression`, `incremental`).
+- `tm_file_watch` (`watch_paths`, `duration`) reports changes for a period.
+- `tm_file_recursive_ops` (`source`, `destination`, `mode`, `owner`, `group`) changes many files; it writes, so confirm first.

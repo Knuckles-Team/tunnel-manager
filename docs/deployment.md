@@ -125,7 +125,6 @@ Each action-routed tool can be toggled independently:
 
 | Var | Default | Tool |
 |---|---|---|
-| `TM_HOSTS_TOOL` | `True` | Host inventory management (`tm_hosts`) |
 | `TM_REMOTE_TOOL` | `True` | Single-host SSH operations (`tm_remote`) |
 | `TM_INVENTORY_TOOL` | `True` | Bulk inventory operations (`tm_inventory`) |
 | `TM_OPERATIONS_TOOL` | `True` | Operation lifecycle / sessions (`tm_operations`) |

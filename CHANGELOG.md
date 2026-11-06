@@ -5,6 +5,15 @@ All notable changes to `tunnel-manager` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.0] - 2026-11-06
+
+### Changed
+- Every operation is its own explicit tool in source (`tm_remote_run_command`, `tm_inventory_rotate_key`, `tm_operation_start`, ...). The routing tools that took an `action` argument are now private implementations behind per-action tools. Tool names and parameters served are unchanged.
+- Complete connector surface on `scion-sdk>=0.9.0`: 15 task contracts, data locations, three business roles with an operator prompt and three role prompts, rewritten skills, and ontology classes that extend the core.
+
+### Removed
+- The duplicate `tunnel_manager.mcp` package and the unserved `tm_hosts` routing tool; host aliases are managed by the `tunnel_manager_*_host` tools.
+
 ## [3.4.8] - 2026-11-06
 
 ### Fixed

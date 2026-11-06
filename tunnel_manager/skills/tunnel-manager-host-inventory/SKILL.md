@@ -2,90 +2,26 @@
 name: tunnel-manager-host-inventory
 skill_type: skill
 description: >-
-  Manage the shared SSH host inventory via the tunnel-manager MCP server — list,
-  add, and remove host aliases (hostname, user, port, identity_file) and push the
-  inventory into the knowledge graph as typed :Host / :HostGroup / :SshKey nodes.
-  Use when the agent must register a new SSH target, look up how a host is reached,
-  prune a stale alias, or sync the fleet inventory into the KG. Do NOT use to run
-  commands on a host (use tunnel-manager-remote-execution) or to set up key auth /
-  audits (use tunnel-manager-ssh-hardening).
-license: MIT
-tags: [tunnel-manager, ssh, inventory, hosts, mcp]
-metadata:
-  author: Knuckles-Team
-  version: '0.1.0'
+  Manage the shared SSH host inventory through tunnel-manager: list and look up host aliases, add, remove, load and save them, and push the inventory into the knowledge graph. Use to register an SSH target, see how a host is reached, prune a stale alias, or sync the fleet into the graph.
 ---
-# Tunnel Manager — Host Inventory
 
-Domain-typed access to the shared SSH inventory (`$XDG_CONFIG_HOME/scion-sdk/inventory.yml`)
-via the **`tunnel-manager`** MCP server. One inventory, shared with the HostManager
-library, container-manager, and the `ssh-bootstrap` skill.
+# Tunnel manager host inventory
 
-## When to use
-- Register a new SSH target (alias → hostname / user / port / identity_file).
-- List existing aliases or read how a host is reached.
-- Remove a stale alias.
-- Push the current inventory into the knowledge graph (`:Host` nodes).
+Hosts are addressed by alias. The inventory file is declared by `TUNNEL_INVENTORY` and may be read-only.
 
-## When NOT to use
-- Running a command / copying a file on a host → `tunnel-manager-remote-execution`.
-- Passwordless key setup, key rotation, mesh, or security audit →
-  `tunnel-manager-ssh-hardening`.
-- Editing container/service definitions → `container-manager` skills.
+## Read
 
-## Prerequisites & environment
-Connect via the `mcp-client` skill against the **`tunnel-manager`** MCP server.
+- `tunnel_manager_list_hosts` lists every alias.
+- `tunnel_manager_get_host` (`alias`) returns hostname, user, port and identity reference.
 
-| Variable | Required | Notes |
-|----------|----------|-------|
-| `TUNNEL_INVENTORY` | optional | Inventory YAML path (defaults to the shared XDG file) |
-| `TUNNEL_INVENTORY_GROUP` | optional | Default target group (`all`) |
-| `TUNNEL_KG_INGEST` | optional | Set `false` to disable the default-on KG ingest on `list` |
+## Change
 
-The inventory is an Ansible-style YAML (`all` → `children` → groups → `hosts`); the
-server flattens it to aliases automatically.
+1. `tunnel_manager_load_inventory` reloads the file from disk.
+2. `tunnel_manager_add_host` (`alias`, `hostname`, `user`, optional `port`, `identity_file`, `password_ref`, `known_hosts_file`, `proxy_command`). Use `password_ref`, a secret reference; never a literal password.
+3. `tunnel_manager_remove_host` (`alias`) needs `confirm=true`.
+4. `tunnel_manager_save_inventory` writes the file. If the inventory is read-only the add, remove and save refuse; report the refusal, do not retry.
+5. `tunnel_manager_list_hosts` again to prove the change.
 
-## Tools & actions
-| Condensed tool | Actions |
-|----------------|---------|
-| `tm_hosts` | `list`, `add`, `remove` |
-| `tunnel_ingest_hosts` | (no action — lists + pushes to KG) |
+## Graph
 
-### Key parameters
-- `alias` — the inventory key; required for `add` / `remove`.
-- `hostname`, `user` — required for `add`; `port` (default 22), `identity_file`,
-  `password`, `proxy_command` optional.
-- `group` (on `tunnel_ingest_hosts`) — the `:HostGroup` to attach hosts to.
-
-## Recipes
-List every managed host (also default-on ingests them to the KG):
-```json
-{"action": "list"}
-```
-Add a key-authenticated host:
-```json
-{"action": "add", "alias": "host-a", "hostname": "192.0.2.14", "user": "admin", "port": 22, "identity_file": "~/.ssh/id_shared"}
-```
-Remove a stale alias (destructive — the server confirms):
-```json
-{"action": "remove", "alias": "old-box"}
-```
-Sync the inventory into the knowledge graph:
-```json
-{"group": "homelab"}
-```
-
-## Gotchas
-- `add` needs `alias` + `hostname` + `user` — a 400 comes back otherwise.
-- `remove` is destructive and prompts for confirmation via the MCP context.
-- Adds are written back to the **shared** inventory file (Ansible layout preserved);
-  other tools/skills read the same file, so an added alias is fleet-wide.
-- `identity_file` (or the legacy `key_path`) is preferred over `password`; a host
-  with an identity file becomes a `:SshKey` node linked by `:usesKey` on ingest.
-- KG ingest is best-effort: with no reachable engine it silently no-ops, and `list`
-  still returns the hosts.
-
-## Related
-- `tunnel-manager-remote-execution` — act on the hosts you register here.
-- `tunnel-manager-ssh-hardening` — set up key auth for these hosts.
-- The `ssh-bootstrap` universal skill seeds the same shared inventory file.
+`tunnel_ingest_hosts` (`group`) writes `Host`, `HostGroup` and `SshKey` nodes to the knowledge graph.
