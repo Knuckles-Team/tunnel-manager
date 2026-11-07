@@ -13,3 +13,4 @@ Each task line reads `- [ ] T001 [P] [US1] <ID>-R012.4 description`. Tasks run p
 - [x] T007 [US7] CONN-TUNNEL-MANAGER-SDK-R005.2 Every tool behaves the same on every transport.
 - [x] T008 [US8] CONN-TUNNEL-MANAGER-SDK-R005.3 Failures name their cause; no host binaries.
 - [x] T009 [US9] CONN-TUNNEL-MANAGER-SDK-R006 Windows portability.
+- [ ] T010 [US1] CONN-TUNNEL-MANAGER-SDK-R007 Adopt scion-sdk 0.10.0 import paths. Size: S, 1 PR, 30 minutes.
