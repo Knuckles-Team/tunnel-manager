@@ -1,4 +1,4 @@
-"""Native epistemic-graph ingestion for governed SSH inventory metadata.
+"""Native medulla ingestion for governed SSH inventory metadata.
 
 All writes go through the ``scion_sdk.ingest`` knowledge-ingest facade
 (the generated EG client). Nodes use canonical ``node_type`` and edges use

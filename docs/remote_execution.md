@@ -62,7 +62,7 @@ caller-owned shell string.
 sequenceDiagram
     participant RM as Repository Manager
     participant HI as HostInventory
-    participant AU as Agent Utilities entitlement resolver
+    participant AU as Meristem entitlement resolver
     participant TM as Tunnel / SSH transport
     participant Host as Inventory host
 
