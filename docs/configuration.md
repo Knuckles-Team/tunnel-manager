@@ -3,7 +3,7 @@
 This page is the operator contract for `tunnel-manager`. Package-specific endpoint,
 authentication, tool-toggle, and model settings remain documented in the
 repository README and the installed command's `--help` output. Every runtime
-read goes through the Agent Utilities configuration boundary (`AgentConfig` and
+read goes through the Meristem configuration boundary (`AgentConfig` and
 its live `setting` accessor), so explicit process values and XDG `config.json`
 values use the same resolution rules. They do not belong in source, packaged
 skill content, traces, or generated reports.
@@ -67,7 +67,7 @@ ranges enforced by the runtime:
 
 Connection, authentication, command, and key-generation operations also have
 bounded timeouts and retry counts. Run `tunnel-manager-doctor` before deployment;
-it resolves the same Agent Utilities configuration boundary as the runtime and
+it resolves the same Meristem configuration boundary as the runtime and
 reports security readiness plus endpoint, inventory, identity, proxy, KG-ingest,
 and health-feature presence. Its JSON contains booleans and numeric limits only,
 never configured hosts, paths, commands, or secret references.

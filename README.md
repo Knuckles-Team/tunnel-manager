@@ -70,7 +70,7 @@ _Auto-generated from the live MCP server — do not edit by hand._
 | `tm_remote` | `REMOTETOOL` | Single-host SSH operations with shared connection params. |
 | `tm_security` | `SECURITYTOOL` | Security scanning and compliance. |
 | `tm_system` | `SYSTEMTOOL` | Remote system intelligence via SSH. |
-| `tunnel_ingest_hosts` | `INGESTTOOL` | List the managed SSH inventory and push it into the epistemic-graph KG. |
+| `tunnel_ingest_hosts` | `INGESTTOOL` | List the managed SSH inventory and push it into the medulla KG. |
 
 #### Verbose 1:1 API-mapped tools (`MCP_TOOL_MODE=verbose` or `both`)
 
@@ -119,8 +119,8 @@ When query strings or parameters are supplied, an LLM-free **Knowledge Graph res
 <!-- MCP-CONFIG-EXAMPLES:START -->
 
 > **Install the connector-focused `[mcp]` extra.** Examples use `tunnel-manager[mcp]` to add
-> FastMCP / FastAPI through `scion-sdk[mcp]`; the required Agent Utilities core
-> still carries `epistemic-graph[full]`. The `[agent-runtime]` extra additionally
+> FastMCP / FastAPI through `scion-sdk[mcp]`; the required Meristem core
+> still carries `medulla[full]`. The `[agent-runtime]` extra additionally
 > enables model orchestration.
 
 #### stdio Transport (local IDEs — Cursor, Claude Desktop, VS Code)
@@ -358,7 +358,7 @@ Full schema, every host field, the copy-paste template, and override options liv
 | `SYSTEMTOOL` | `True` |  |
 | `FILETOOL` | `True` |  |
 | `SECURITYTOOL` | `True` |  |
-| `INGESTTOOL` | `True` | KG-ingest tools (list the SSH inventory into epistemic-graph) |
+| `INGESTTOOL` | `True` | KG-ingest tools (list the SSH inventory into medulla) |
 | `TUNNEL_KG_INGEST` | `true` | default-on best-effort inventory ingest on `list` |
 | `TUNNEL_MANAGER_HEALTH_INGEST` | `true` | default-on best-effort network-signal trend ingestion |
 | `TUNNEL_MANAGER_HEALTH_AGGREGATE_S` | `3600` | window (s) over which samples distill to ONE :HealthTrend node/host/signal |
@@ -562,8 +562,8 @@ Pick the extra that matches what the operator want to run:
 
 | Extra | Installs | Use when |
 |-------|----------|----------|
-| `tunnel-manager[mcp]` | Connector-focused MCP server (`scion-sdk[mcp]` — FastMCP/FastAPI + `epistemic-graph[full]`) | The operator only run the **MCP server** (smallest install / image) |
-| `tunnel-manager[agent]` | Agent runtime (`scion-sdk[agent-runtime,logfire]` — model orchestration + `epistemic-graph[full]`) | The operator run the **integrated agent** |
+| `tunnel-manager[mcp]` | Connector-focused MCP server (`scion-sdk[mcp]` — FastMCP/FastAPI + `medulla[full]`) | The operator only run the **MCP server** (smallest install / image) |
+| `tunnel-manager[agent]` | Agent runtime (`scion-sdk[agent-runtime,logfire]` — model orchestration + `medulla[full]`) | The operator run the **integrated agent** |
 | `tunnel-manager[all]` | Everything (`mcp` + `agent` + `logfire`) | Development / both surfaces |
 
 ```bash
@@ -583,8 +583,8 @@ One multi-stage `docker/Dockerfile` builds two right-sized images, selected by `
 
 | Image tag | Build target | Contents | Entrypoint |
 |-----------|--------------|----------|------------|
-| `example/tunnel-manager:mcp` | `--target mcp` | `tunnel-manager[mcp]` — **connector-focused**, includes `epistemic-graph[full]`; no model-orchestration stack | `tunnel-manager-mcp` |
-| `example/tunnel-manager@sha256:<digest>` | `--target agent` (default) | `tunnel-manager[agent]` — **agent runtime**, model orchestration + `epistemic-graph[full]` | `tunnel-manager-agent` |
+| `example/tunnel-manager:mcp` | `--target mcp` | `tunnel-manager[mcp]` — **connector-focused**, includes `medulla[full]`; no model-orchestration stack | `tunnel-manager-mcp` |
+| `example/tunnel-manager@sha256:<digest>` | `--target agent` (default) | `tunnel-manager[agent]` — **agent runtime**, model orchestration + `medulla[full]` | `tunnel-manager-agent` |
 
 ```bash
 docker build --target mcp   -t example/tunnel-manager:mcp    docker/   # connector-focused MCP server
@@ -594,16 +594,16 @@ docker build --target agent -t example/tunnel-manager:agent-local docker/   # ag
 `docker/mcp.compose.yml` runs the connector-focused `:mcp` server; `docker/agent.compose.yml` runs the
 agent (`immutable agent digest`) with a co-located `:mcp` sidecar.
 
-### Knowledge-graph database (`epistemic-graph`)
+### Knowledge-graph database (`medulla`)
 
-Both `[mcp]` and `[agent]` carry the **epistemic-graph** engine through the required
-Agent Utilities core dependency (`epistemic-graph[full]`). The `[mcp]` extra keeps
+Both `[mcp]` and `[agent]` carry the **medulla** engine through the required
+Meristem core dependency (`medulla[full]`). The `[mcp]` extra keeps
 the server connector-focused; `[agent]` also enables model orchestration. Local
 deployments can use the bundled engine. For production or shared state, run
-**epistemic-graph as a dedicated database service** and configure the runtime to use it.
+**medulla as a dedicated database service** and configure the runtime to use it.
 Deployment recipes (single-node + Raft HA), connection configuration, and architecture
 diagrams are documented in the
-[epistemic-graph deployment guide](https://knuckles-team.github.io/epistemic-graph/deployment/).
+[medulla deployment guide](https://knuckles-team.github.io/medulla/deployment/).
 
 ---
 

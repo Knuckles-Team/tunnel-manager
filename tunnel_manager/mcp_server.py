@@ -6233,7 +6233,7 @@ def register_ingest_tools(mcp: FastMCP):
         ),
         ctx: Context = Field(description="MCP context.", default=None),
     ) -> dict:
-        """List the managed SSH inventory and push it into the epistemic-graph KG.
+        """List the managed SSH inventory and push it into the medulla KG.
 
         Maps each alias → a typed ``:Host`` node (+ ``:HostGroup`` / ``:SshKey`` and
         their ``:inGroup`` / ``:usesKey`` links). Best-effort: no-ops cleanly when no

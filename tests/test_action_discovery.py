@@ -2,7 +2,7 @@
 
 import asyncio
 
-from scion_sdk._connector_serve import build_server
+from scion_sdk.connector import build_server
 
 OPERATIONS = {
     "tm_remote": (
