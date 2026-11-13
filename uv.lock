@@ -1504,7 +1504,7 @@ wheels = [
 
 [[package]]
 name = "tunnel-manager"
-version = "3.5.0"
+version = "3.5.1"
 source = { editable = "." }
 dependencies = [
     { name = "asyncssh" },
