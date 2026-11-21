@@ -7,3 +7,6 @@ Each task line reads `- [x] T001 [P] [US1] <ID>-R012.4 description`. Tasks run p
 - [x] T001 [US1] CONN-TUNNEL-MANAGER-INVENTORY-R001 One canonical host inventory path across surfaces.
 - [x] T002 [US2] CONN-TUNNEL-MANAGER-INVENTORY-R002 Fleet name.
 - [ ] T003 [US3] CONN-TUNNEL-MANAGER-INVENTORY-R003 SSH runs without a local username.
+- [ ] T004 [US1] CONN-TUNNEL-MANAGER-INVENTORY-R005 Structured jump host replaces free-form proxy arguments.
+- [ ] T005 [US1] CONN-TUNNEL-MANAGER-INVENTORY-R006 First contact pins the host key against an operator fingerprint.
+- [ ] T006 [US1] CONN-TUNNEL-MANAGER-INVENTORY-R007 Key rotation verifies the new key and updates the inventory.
