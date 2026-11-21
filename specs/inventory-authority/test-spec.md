@@ -8,6 +8,9 @@ Governing spec: [spec.md](spec.md).
 | T-002 | `CONN-TUNNEL-MANAGER-INVENTORY-R002` | `tests/test_fleet_name.py::test_connector_name_is_the_fleet_name` | Every connector name in the package is `tunnel-manager-mcp`. |
 | T-003 | `CONN-TUNNEL-MANAGER-INVENTORY-R003` | `tests/test_no_local_username.py::test_tunnel_uses_explicit_user_without_local_username` | With `getpass.getuser` raising `OSError`, a `Tunnel` built from an inventory entry resolves its username, and a failing tool call logs the underlying exception. |
 | T-004 | `CONN-TUNNEL-MANAGER-INVENTORY-R004` | `tests/test_inventory_rollback.py::test_failed_add_host_does_not_leave_a_ghost` | With `save_inventory` raising, `add_host` raises and the alias is absent; `remove_host` raises and the alias is still present. |
+| T-005 | `CONN-TUNNEL-MANAGER-INVENTORY-R005` | `tests/test_jump_host.py::test_jump_host_chain_verifies_each_hop_and_refuses_free_form_arguments` | The test named in the row passes. |
+| T-006 | `CONN-TUNNEL-MANAGER-INVENTORY-R006` | `tests/test_pin_host_key.py::test_pin_writes_only_on_a_matching_fingerprint` | The test named in the row passes. |
+| T-007 | `CONN-TUNNEL-MANAGER-INVENTORY-R007` | `tests/test_rotate_key_verified.py::test_old_key_is_kept_until_the_new_key_logs_in_and_inventory_is_updated` | The test named in the row passes. |
 
 ## Negative and boundary cases
 
