@@ -3,6 +3,7 @@
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
 @prefix dc: <http://purl.org/dc/terms/> .
 @prefix : <https://knuckles-team.github.io/ontology/connector/ssh-tunnels#> .
+@prefix infra: <https://knuckles-team.github.io/ontology/infrastructure#> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
@@ -15,20 +16,10 @@
 
 # --- classes (owl:Class) ---
 
-:Host a owl:Class ;
-    rdfs:subClassOf core:InfrastructureHost ;
-    rdfs:label "Host" ;
-    rdfs:comment "A managed SSH host / inventory alias with a hostname, user, port and identity (tunnel_manager_list_hosts)." .
-
 :HostGroup a owl:Class ;
     rdfs:label "Host Group" ;
     rdfs:comment "An inventory group that collects hosts for fleet-wide operations (e.g. 'all', 'homelab')." ;
     rdfs:subClassOf core:ResourceGroup .
-
-:Tunnel a owl:Class ;
-    rdfs:label "Tunnel" ;
-    rdfs:comment "An SSH connection/tunnel opened to a Host to run commands or transfer files (tm_remote)." ;
-    rdfs:subClassOf core:Session .
 
 :SshKey a owl:Class ;
     rdfs:label "SSH Key" ;
@@ -60,20 +51,20 @@
 :inGroup a owl:ObjectProperty ;
     rdfs:label "in group" ;
     rdfs:comment "Links a Host to a HostGroup it is a member of." ;
-    rdfs:domain :Host ;
+    rdfs:domain infra:Host ;
     rdfs:range :HostGroup .
 
 :tunnelsTo a owl:ObjectProperty ;
     rdfs:label "tunnels to" ;
     rdfs:comment "Links a Tunnel to the Host it connects to." ;
-    rdfs:domain :Tunnel ;
-    rdfs:range :Host .
+    rdfs:domain infra:Tunnel ;
+    rdfs:range infra:Host .
 
 :proxiesThrough a owl:ObjectProperty ;
     rdfs:label "proxies through" ;
     rdfs:comment "Links a Host to a jump/proxy Host it is reached through (proxy_command)." ;
-    rdfs:domain :Host ;
-    rdfs:range :Host .
+    rdfs:domain infra:Host ;
+    rdfs:range infra:Host .
 
 :usesKey a owl:ObjectProperty ;
     rdfs:label "uses key" ;
@@ -83,21 +74,15 @@
 :ranOnHost a owl:ObjectProperty ;
     rdfs:label "ran on host" ;
     rdfs:comment "Links a CommandExecution, FileTransfer or SecurityAudit to the Host it targeted." ;
-    rdfs:range :Host .
+    rdfs:range infra:Host .
 
 :accessedBy a owl:ObjectProperty ;
     rdfs:label "accessed by" ;
     rdfs:comment "Links a Host to the Person/account (SSH user) that authenticates to it." ;
-    rdfs:domain :Host ;
+    rdfs:domain infra:Host ;
     rdfs:range core:Person .
 
 # --- fields (owl:DatatypeProperty) ---
-
-:hostname a owl:DatatypeProperty ;
-    rdfs:label "hostname" ;
-    rdfs:comment "Real hostname or IP address of a Host." ;
-    rdfs:domain :Host ;
-    rdfs:range xsd:string .
 
 :sshUser a owl:DatatypeProperty ;
     rdfs:label "ssh user" ;
@@ -107,7 +92,7 @@
 :sshPort a owl:DatatypeProperty ;
     rdfs:label "ssh port" ;
     rdfs:comment "TCP port of the SSH service on a Host (default 22)." ;
-    rdfs:domain :Host ;
+    rdfs:domain infra:Host ;
     rdfs:range xsd:integer .
 
 :identityFile a owl:DatatypeProperty ;
@@ -118,7 +103,7 @@
 :proxyCommand a owl:DatatypeProperty ;
     rdfs:label "proxy command" ;
     rdfs:comment "SSH ProxyCommand / jump specification used to reach a Host." ;
-    rdfs:domain :Host ;
+    rdfs:domain infra:Host ;
     rdfs:range xsd:string .
 
 :connectionStatus a owl:DatatypeProperty ;

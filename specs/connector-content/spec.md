@@ -34,6 +34,7 @@ The fleet operator and the engine rely on this behaviour of `tunnel-manager`: `p
 ## Requirements
 
 - **FR-001**: Default content. Rows: `CONN-TUNNEL-MANAGER-CONNECTOR-CONTENT-R001`.
+- **FR-002**: The packaged ontology extends only the core ontology and redeclares no core term (`CONN-TUNNEL-MANAGER-CONNECTOR-CONTENT-R002`).
 
 ## Success Criteria
 
@@ -49,3 +50,4 @@ The fleet operator and the engine rely on this behaviour of `tunnel-manager`: `p
 | Label | Rows | Design section | Test ID | Evidence |
 |---|---|---|---|---|
 | FR-001 | `CONN-TUNNEL-MANAGER-CONNECTOR-CONTENT-R001` | plan.md Production caller chain | T-001 | tests/test_default_content_surfaces.py::test_default_content_surfaces |
+| FR-002 | `CONN-TUNNEL-MANAGER-CONNECTOR-CONTENT-R002` | plan.md Production caller chain | T-002 | tests/test_ontology_extends_core.py::test_pack_declares_no_core_term |
