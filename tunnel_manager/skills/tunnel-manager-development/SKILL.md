@@ -2,10 +2,7 @@
 name: tunnel-manager-development
 skill_type: skill
 description: >-
-  Develop, test, and publish tunnel-manager without breaking its typed SSH
-  inventory, remote-execution, MCP action, packaged-content, spec-dashboard, or
-  governed Pages contracts. Use when changing connector code, docs, skills,
-  workflows, or repository-owned specifications.
+  Develop, test, and publish tunnel-manager without breaking its typed SSH inventory, remote-execution, MCP action, packaged-content, spec-dashboard, or governed Pages contracts. Use when changing connector code, docs, skills, workflows, or repository-owned specifications.
 license: MIT
 tags: [tunnel-manager, ssh, connector, development, testing, pages, specs]
 metadata:
