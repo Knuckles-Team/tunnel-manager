@@ -20,8 +20,8 @@
 ![PyPI - Wheel](https://img.shields.io/pypi/wheel/tunnel-manager)
 ![PyPI - Implementation](https://img.shields.io/pypi/implementation/tunnel-manager)
 
-> **Documentation** — Installation, deployment, usage across the API, CLI, and MCP
-> and agent interfaces are maintained in the
+> **Documentation** — Installation, deployment, and usage across the API, CLI, MCP,
+> and A2A agent interfaces are maintained in the
 > [official documentation](https://knuckles-team.github.io/tunnel-manager/).
 
 ---
@@ -312,6 +312,113 @@ Full schema, every host field, the copy-paste template, and override options liv
 
 ---
 
+## Agent
+
+This repository features a fully integrated Pydantic AI Graph Agent. It communicates over the **Agent Control Protocol (ACP)** and interacts smoothly with the **Agent Web UI (AG-UI)** and Terminal interface.
+
+### Running the Agent CLI
+To start the interactive command-line agent:
+
+```bash
+# Set credentials
+export TUNNEL_IDENTITY_FILE="your_value"
+export DEBUG="your_value"
+export PYTHONUNBUFFERED="your_value"
+
+# Run the agent server
+tunnel-manager-agent --provider openai --model-id gpt-4o
+```
+
+### Docker Compose Orchestration
+The following `docker/agent.compose.yml` configures the Agent, Web UI, and Terminal Interface together:
+
+```yaml
+version: '3.8'
+
+services:
+  tunnel-manager-mcp:
+    image: example/tunnel-manager:mcp
+    container_name: tunnel-manager-mcp
+    hostname: tunnel-manager-mcp
+    restart: always
+    env_file:
+      - ../.env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HOST=0.0.0.0
+      - PORT=8000
+      - TRANSPORT=streamable-http
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  tunnel-manager-agent:
+    image: example/tunnel-manager@sha256:<digest>
+    container_name: tunnel-manager-agent
+    hostname: tunnel-manager-agent
+    restart: always
+    depends_on:
+      - tunnel-manager-mcp
+    env_file:
+      - ../.env
+    command: [ "tunnel-manager-agent" ]
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HOST=0.0.0.0
+      - PORT=9002
+      - MCP_URL=http://tunnel-manager-mcp:8000/mcp
+      - PROVIDER=${PROVIDER:-openai}
+      - MODEL_ID=${MODEL_ID:-gpt-4o}
+      - ENABLE_WEB_UI=True
+      - ENABLE_OTEL=True
+    ports:
+      - "9002:9002"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9002/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+```
+
+Detailed graph node architecture explanations, custom skill configurations, and agentic trace guides are available in [docs/deployment.md](docs/deployment.md).
+
+---
+
+## Security & Governance
+
+Built directly upon the enterprise-ready [`scion-sdk`](https://github.com/Knuckles-Team/scion-sdk) core, standard security parameters are fully supported:
+
+### Access Control & Policy Enforcement
+- **Eunomia Policies:** Fine-grained, policy-driven tool authorization. Supports `none`, local `embedded` (`mcp_policies.json`), or centralized `remote` modes.
+- **OIDC Token Delegation:** Compliant with RFC 8693 token exchange for flowing authenticating user credentials from Web UI / ACP → Agent → MCP.
+- **Scoped Credentials:** Execution context runs restricted to the specific caller identity.
+
+### Runtime Security Grid
+| Feature | Feature | Enablement |
+|---------|---------------|------------|
+| **Tool Guard** | Sensitivity inspection with human-in-the-loop validation | Enabled by default |
+| **Prompt Injection Defense** | Input scanning, repetition monitoring, and recursive loop blocks | Enabled by default |
+| **Context Safety Guard** | Stuck-loop detectors and contextual overflow preemptive alerts | Enabled by default |
+
+---
+
 ## Environment Variables
 
 <!-- ENV-VARS-TABLE:START -->
@@ -449,111 +556,6 @@ The full list is in the [Available MCP Tools](#available-mcp-tools) table above
 | `MODEL_ID` | Model id (e.g. `gpt-4o`) | `gpt-4o` |
 | `ENABLE_WEB_UI` | Serve the AG-UI web interface | `True` |
 
-## Agent
-
-This repository features a fully integrated Pydantic AI Graph Agent. It communicates over the **Agent Control Protocol (ACP)** and interacts smoothly with the **Agent Web UI (AG-UI)** and Terminal interface.
-
-### Running the Agent CLI
-To start the interactive command-line agent:
-
-```bash
-# Set credentials
-export TUNNEL_IDENTITY_FILE="your_value"
-export DEBUG="your_value"
-export PYTHONUNBUFFERED="your_value"
-
-# Run the agent server
-tunnel-manager-agent --provider openai --model-id gpt-4o
-```
-
-### Docker Compose Orchestration
-The following `docker/agent.compose.yml` configures the Agent, Web UI, and Terminal Interface together:
-
-```yaml
-version: '3.8'
-
-services:
-  tunnel-manager-mcp:
-    image: example/tunnel-manager:mcp
-    container_name: tunnel-manager-mcp
-    hostname: tunnel-manager-mcp
-    restart: always
-    env_file:
-      - ../.env
-    environment:
-      - PYTHONUNBUFFERED=1
-      - HOST=0.0.0.0
-      - PORT=8000
-      - TRANSPORT=streamable-http
-    ports:
-      - "8000:8000"
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  tunnel-manager-agent:
-    image: example/tunnel-manager@sha256:<digest>
-    container_name: tunnel-manager-agent
-    hostname: tunnel-manager-agent
-    restart: always
-    depends_on:
-      - tunnel-manager-mcp
-    env_file:
-      - ../.env
-    command: [ "tunnel-manager-agent" ]
-    environment:
-      - PYTHONUNBUFFERED=1
-      - HOST=0.0.0.0
-      - PORT=9002
-      - MCP_URL=http://tunnel-manager-mcp:8000/mcp
-      - PROVIDER=${PROVIDER:-openai}
-      - MODEL_ID=${MODEL_ID:-gpt-4o}
-      - ENABLE_WEB_UI=True
-      - ENABLE_OTEL=True
-    ports:
-      - "9002:9002"
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9002/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-```
-
-Detailed graph node architecture explanations, custom skill configurations, and agentic trace guides are available in [docs/deployment.md](docs/deployment.md).
-
----
-
-## Security & Governance
-
-Built directly upon the enterprise-ready [`scion-sdk`](https://github.com/Knuckles-Team/scion-sdk) core, standard security parameters are fully supported:
-
-### Access Control & Policy Enforcement
-- **Eunomia Policies:** Fine-grained, policy-driven tool authorization. Supports `none`, local `embedded` (`mcp_policies.json`), or centralized `remote` modes.
-- **OIDC Token Delegation:** Compliant with RFC 8693 token exchange for flowing authenticating user credentials from Web UI / ACP → Agent → MCP.
-- **Scoped Credentials:** Execution context runs restricted to the specific caller identity.
-
-### Runtime Security Grid
-| Feature | Feature | Enablement |
-|---------|---------------|------------|
-| **Tool Guard** | Sensitivity inspection with human-in-the-loop validation | Enabled by default |
-| **Prompt Injection Defense** | Input scanning, repetition monitoring, and recursive loop blocks | Enabled by default |
-| **Context Safety Guard** | Stuck-loop detectors and contextual overflow preemptive alerts | Enabled by default |
-
 ---
 
 ## Installation
@@ -625,10 +627,21 @@ the recommended reference for installation, deployment, and day-to-day operation
 
 `AGENTS.md` is the canonical contributor/agent guidance.
 
+---
+
 ## Maintainers
 
 Maintained by the project contributor team. Package metadata intentionally uses a
 role address rather than personal identity.
+
+---
+
+## Repository Owners
+
+<img width="100%" height="180em" src="https://github-readme-stats.vercel.app/api?username=example&show_icons=true&hide_border=true&&count_private=true&include_all_commits=true" />
+
+![GitHub followers](https://img.shields.io/github/followers/example)
+![GitHub User's stars](https://img.shields.io/github/stars/example)
 
 ---
 
@@ -639,7 +652,6 @@ Contributions are welcome! Please ensure code quality by running local checks be
 - Lint code using `ruff check .`
 - Validate type-safety with `mypy .`
 - Run test suites using `pytest`
-
 
 <!-- BEGIN scion-sdk-deployment (generated; do not edit between markers) -->
 
