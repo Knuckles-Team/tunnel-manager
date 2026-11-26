@@ -2,7 +2,7 @@
 name: tunnel-manager-remote-execution
 skill_type: skill
 description: >-
-  Run commands and move files over SSH through tunnel-manager, on one host (tm_remote_*) or across an inventory group (tm_inventory_*), with a reachability check first. Use to execute a command remotely, copy a file to or from hosts, or run something across a group.
+  Run commands and move files over SSH through tunnel-manager, on one host (tm_remote_<op>) or across an inventory group (tm_inventory_<op>), with a reachability check first. Use to execute a command remotely, copy a file to or from hosts, or run something across a group.
 ---
 
 # Tunnel manager remote execution
