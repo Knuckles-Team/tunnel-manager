@@ -39,6 +39,16 @@ No unknowns. Every row names its code and test; the caller chain of each row was
 
 ## Phase 1: Design
 
+### Machine roll-up design
+
+1. **Owner.** tunnel-manager owns its host class, its ingest and the hardware tool. Medulla owns the machine class and the key anchors.
+2. **Cohesion.** The class parent, the mapping and the link change together in the ingest of hosts. The hardware tool changes for another reason and lives in the system intelligence module.
+3. **Dependency direction.** The connector imports `scion_sdk.machine`, which imports the engine client. Nothing points upward.
+4. **Interface depth.** The new shared helper is `observes_machine` of the SDK. Its two current call sites are `tunnel_manager/kg_ingest.py` and `fan_manager/kg_ingest.py`.
+5. **Special cases.** A refused key skips one link and never fails the record write.
+6. **State.** none. The connector holds no lifecycle. The lifecycle machine belongs to medulla.
+7. **Environment.** none. The roll-up and the link need no configuration.
+
 ### Summary
 
 This plan states how `tunnel-manager` delivers the rows of `CONN-TUNNEL-MANAGER-INVENTORY`. The live caller is the `tunnel-manager` console script. The owner is the `tunnel_manager` package. The rows reuse the `scion-sdk` helpers and add no second authority. The plan changes no runtime code.
@@ -274,3 +284,4 @@ None. The constitution check passed.
 ## Cross-repo seams
 
 - `CONN-TUNNEL-MANAGER-INVENTORY-R001` with `CONN-CONTAINER-MANAGER-MCP-R004`: `contracts/inventory-volume.md`.
+- `CONN-TUNNEL-MANAGER-INVENTORY-R008.1` consumes the observer helper of `SCION-CENTRALIZED-CAPABILITIES-R057.1`. Contract: `contracts/machine-observer.md`.
