@@ -10,3 +10,8 @@ Each task line reads `- [x] T001 [P] [US1] <ID>-R012.4 description`. Tasks run p
 - [ ] T004 [US1] CONN-TUNNEL-MANAGER-INVENTORY-R005 Structured jump host replaces free-form proxy arguments.
 - [ ] T005 [US1] CONN-TUNNEL-MANAGER-INVENTORY-R006 First contact pins the host key against an operator fingerprint.
 - [ ] T006 [US1] CONN-TUNNEL-MANAGER-INVENTORY-R007 Key rotation verifies the new key and updates the inventory.
+- [ ] T007 [US1] CONN-TUNNEL-MANAGER-INVENTORY-R008 Machine roll-up and hardware facts (rollup).
+- [ ] T008 [US1] CONN-TUNNEL-MANAGER-INVENTORY-R008.1 SSH host rolls up to the machine class.
+- [ ] T009 [US1] CONN-TUNNEL-MANAGER-INVENTORY-R008.2 Hardware facts tool.
+- [ ] T010 [US1] CONN-TUNNEL-MANAGER-INVENTORY-R008.3 Wiring.
+- [ ] T011 [US1] CONN-TUNNEL-MANAGER-INVENTORY-R008.4 Hot-path proof: the served tool returns the schema.

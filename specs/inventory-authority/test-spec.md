@@ -19,3 +19,11 @@ Each proving test above includes the refusal or error case that its row names. A
 ## Quality and release proof
 
 Run `uv run pytest tests` and `pre-commit run --all-files` from the repository root. A planned test is added by the code change that lands the row.
+
+## Machine roll-up proofs
+
+- `CONN-TUNNEL-MANAGER-INVENTORY-R008`: `tests/test_system_hardware.py::test_served_hardware_tool_returns_the_probe_schema` (planned; the owning change adds the test)
+- `CONN-TUNNEL-MANAGER-INVENTORY-R008.1`: `tests/test_machine_rollup.py::test_host_rolls_up_to_machine_and_ingest_emits_observes_links` (planned; the owning change adds the test)
+- `CONN-TUNNEL-MANAGER-INVENTORY-R008.2`: `tests/test_system_hardware.py::test_hardware_payload_matches_the_probe_schema` (planned; the owning change adds the test)
+- `CONN-TUNNEL-MANAGER-INVENTORY-R008.3`: `tests/test_system_hardware.py::test_served_tool_set_lists_the_hardware_tool` (planned; the owning change adds the test)
+- `CONN-TUNNEL-MANAGER-INVENTORY-R008.4`: `tests/test_system_hardware.py::test_served_hardware_tool_returns_the_probe_schema` (planned; the owning change adds the test)
